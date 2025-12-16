@@ -30,6 +30,7 @@ rust_defaults {
         // keep-sorted start
         "libanyhow",
         "libprotobuf",
+        "libsdv_vsidl_common",
         // keep-sorted end
     ],
     ld_flags: ["-Wl,--no-as-needed"],
