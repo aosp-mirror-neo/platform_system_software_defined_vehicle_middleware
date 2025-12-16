@@ -14,6 +14,7 @@
 
 package {
     default_applicable_licenses: ["Android-Apache-2.0"],
+    default_team: "trendy_team_connectivity_telemetry",
 }
 
 rust_defaults {
@@ -39,4 +40,17 @@ rust_library {
     crate_name: "sdv_wire_format",
     defaults: ["sdv_wire_format_defaults"],
     min_sdk_version: "35",
+}
+
+rust_test {
+    name: "sdv_core_middleware_unit_wire_format_test",
+    defaults: ["sdv_wire_format_defaults"],
+    test_options: {
+        unit_test: true,
+    },
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+    test_config_template: ":sdv_authz_enforcement_flag_enabled_config_template",
 }
