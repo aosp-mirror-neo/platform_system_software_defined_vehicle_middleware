@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License
 
-#![allow(dead_code)]
+//! Metadata module containing structs and methods for building protobuf reflection metadata
 
+pub mod api;
+mod error;
 mod field_type;
 mod map;
 mod message;

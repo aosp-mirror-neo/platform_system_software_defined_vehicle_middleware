@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License
 
+use protobuf::descriptor::field_descriptor_proto::Type;
+
+use crate::reflection::metadata::error::MetadataBuildError;
 use crate::reflection::metadata::field_type::ProtobufSimpleType;
 
 /// Simple field type metadata (no nested types)
@@ -19,4 +22,20 @@ use crate::reflection::metadata::field_type::ProtobufSimpleType;
 pub struct SimpleMetadata {
     // How to interpret the field from the input buffer
     field_type: ProtobufSimpleType,
+}
+
+impl SimpleMetadata {
+    pub(crate) fn new(field_type: ProtobufSimpleType) -> Self {
+        Self { field_type }
+    }
+
+    pub(crate) fn build(field_type: Type) -> Result<Self, MetadataBuildError> {
+        let field_type = ProtobufSimpleType::try_from(field_type)?;
+        Ok(Self::new(field_type))
+    }
+
+    /// Get the type of the simple field
+    pub(crate) fn get_field_type(&self) -> ProtobufSimpleType {
+        self.field_type
+    }
 }

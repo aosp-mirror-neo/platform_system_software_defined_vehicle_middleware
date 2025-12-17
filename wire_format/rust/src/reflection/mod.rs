@@ -17,4 +17,4 @@
 
 pub mod codec;
 mod message;
-mod metadata;
+pub mod metadata;

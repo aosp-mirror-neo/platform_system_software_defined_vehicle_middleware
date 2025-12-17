@@ -31,6 +31,7 @@ rust_defaults {
         "libanyhow",
         "libprotobuf",
         "libsdv_vsidl_common",
+        "libthiserror",
         // keep-sorted end
     ],
     ld_flags: ["-Wl,--no-as-needed"],
@@ -49,6 +50,12 @@ rust_test {
     test_options: {
         unit_test: true,
     },
+    rustlibs: [
+        // keep-sorted start
+        "libprotobuf_parse",
+        "libtempfile",
+        // keep-sorted end
+    ],
     test_suites: [
         "automotive-sdv-tests",
         "general-tests",

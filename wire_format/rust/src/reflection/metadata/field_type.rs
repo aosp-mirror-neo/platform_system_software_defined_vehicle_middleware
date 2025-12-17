@@ -12,9 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License
 
+use protobuf::descriptor::field_descriptor_proto::Type;
+
+use crate::reflection::metadata::error::MetadataBuildError;
+
 /// Simple protobuf types - these represent all scalar protobuf types and enums
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum ProtobufSimpleType {
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ProtobufSimpleType {
     /// Double
     Double,
     /// Float
@@ -47,4 +51,84 @@ pub(crate) enum ProtobufSimpleType {
     Bytes,
     /// Enum
     Enum,
+}
+
+impl TryFrom<Type> for ProtobufSimpleType {
+    type Error = MetadataBuildError;
+
+    fn try_from(value: Type) -> Result<Self, Self::Error> {
+        let simple_type = match value {
+            Type::TYPE_DOUBLE => ProtobufSimpleType::Double,
+            Type::TYPE_FLOAT => ProtobufSimpleType::Float,
+            Type::TYPE_INT64 => ProtobufSimpleType::Int64,
+            Type::TYPE_UINT64 => ProtobufSimpleType::Uint64,
+            Type::TYPE_INT32 => ProtobufSimpleType::Int32,
+            Type::TYPE_FIXED64 => ProtobufSimpleType::Fixed64,
+            Type::TYPE_FIXED32 => ProtobufSimpleType::Fixed32,
+            Type::TYPE_BOOL => ProtobufSimpleType::Bool,
+            Type::TYPE_STRING => ProtobufSimpleType::String,
+            Type::TYPE_BYTES => ProtobufSimpleType::Bytes,
+            Type::TYPE_UINT32 => ProtobufSimpleType::Uint32,
+            Type::TYPE_ENUM => ProtobufSimpleType::Enum,
+            Type::TYPE_SFIXED32 => ProtobufSimpleType::Sfixed32,
+            Type::TYPE_SFIXED64 => ProtobufSimpleType::Sfixed64,
+            Type::TYPE_SINT32 => ProtobufSimpleType::Sint32,
+            Type::TYPE_SINT64 => ProtobufSimpleType::Sint64,
+            Type::TYPE_GROUP => {
+                return Err(MetadataBuildError::SimpleTypeExpected("Group"));
+            }
+            Type::TYPE_MESSAGE => {
+                return Err(MetadataBuildError::SimpleTypeExpected("Message"));
+            }
+        };
+        Ok(simple_type)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::collections::HashMap;
+
+    use protobuf::descriptor::field_descriptor_proto::Type;
+
+    #[test]
+    fn test_try_from_simple_type_succeeds() {
+        let simple_type_map = HashMap::from([
+            (Type::TYPE_DOUBLE, ProtobufSimpleType::Double),
+            (Type::TYPE_FLOAT, ProtobufSimpleType::Float),
+            (Type::TYPE_INT64, ProtobufSimpleType::Int64),
+            (Type::TYPE_UINT64, ProtobufSimpleType::Uint64),
+            (Type::TYPE_INT32, ProtobufSimpleType::Int32),
+            (Type::TYPE_FIXED64, ProtobufSimpleType::Fixed64),
+            (Type::TYPE_FIXED32, ProtobufSimpleType::Fixed32),
+            (Type::TYPE_BOOL, ProtobufSimpleType::Bool),
+            (Type::TYPE_STRING, ProtobufSimpleType::String),
+            (Type::TYPE_BYTES, ProtobufSimpleType::Bytes),
+            (Type::TYPE_UINT32, ProtobufSimpleType::Uint32),
+            (Type::TYPE_ENUM, ProtobufSimpleType::Enum),
+            (Type::TYPE_SFIXED32, ProtobufSimpleType::Sfixed32),
+            (Type::TYPE_SFIXED64, ProtobufSimpleType::Sfixed64),
+            (Type::TYPE_SINT32, ProtobufSimpleType::Sint32),
+            (Type::TYPE_SINT64, ProtobufSimpleType::Sint64),
+        ]);
+
+        for (type_value, expected_simple_type) in simple_type_map {
+            let actual_simple_type = ProtobufSimpleType::try_from(type_value);
+            assert!(actual_simple_type.is_ok());
+            assert_eq!(actual_simple_type.unwrap(), expected_simple_type);
+        }
+    }
+
+    #[test]
+    fn test_try_from_non_simple_type_fails() {
+        let group_result = ProtobufSimpleType::try_from(Type::TYPE_GROUP);
+        assert!(group_result.is_err());
+        assert_eq!(group_result.unwrap_err(), MetadataBuildError::SimpleTypeExpected("Group"));
+
+        let message_result = ProtobufSimpleType::try_from(Type::TYPE_MESSAGE);
+        assert!(message_result.is_err());
+        assert_eq!(message_result.unwrap_err(), MetadataBuildError::SimpleTypeExpected("Message"));
+    }
 }
