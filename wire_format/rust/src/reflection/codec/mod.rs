@@ -12,4 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License
 
+//! Codec module containing structs and APIs that provides custom de/serialization APIs and implementations
+
+pub mod api;
 mod writer;

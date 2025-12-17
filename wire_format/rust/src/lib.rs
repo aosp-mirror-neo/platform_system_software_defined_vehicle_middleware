@@ -14,4 +14,4 @@
 
 //! Library that encapsulates SDV wire format
 
-mod reflection;
+pub mod reflection;

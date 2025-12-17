@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License
 
-mod codec;
+//! Reflection module containing structs and APIs that provides custom de/serialization structs,
+//! reflection metadata and dynamically generated messages
+
+pub mod codec;
 mod message;
 mod metadata;
