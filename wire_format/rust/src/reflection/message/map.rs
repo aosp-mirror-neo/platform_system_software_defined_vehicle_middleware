@@ -46,6 +46,76 @@ pub enum MapField {
     String(MapFieldContainer<String>),
 }
 
+impl MapField {
+    fn len(&self) -> usize {
+        match self {
+            MapField::Int32(container) => container.len(),
+            MapField::Int64(container) => container.len(),
+            MapField::Uint32(container) => container.len(),
+            MapField::Uint64(container) => container.len(),
+            MapField::Sint32(container) => container.len(),
+            MapField::Sint64(container) => container.len(),
+            MapField::Fixed32(container) => container.len(),
+            MapField::Fixed64(container) => container.len(),
+            MapField::Sfixed32(container) => container.len(),
+            MapField::Sfixed64(container) => container.len(),
+            MapField::Bool(container) => container.len(),
+            MapField::String(container) => container.len(),
+        }
+    }
+
+    // Merging a map field is equivalent to merging the underlying map entries. In particular, this
+    // means that in the case of duplicate keys, the entry in `other_map_field` will overwrite the
+    // entry in self.
+    pub(crate) fn merge(&mut self, other_map_field: MapField) -> anyhow::Result<()> {
+        match (self, other_map_field) {
+            (MapField::Int32(self_int32_map), MapField::Int32(other_int32_map)) => {
+                self_int32_map.merge(other_int32_map)
+            }
+            (MapField::Int64(self_int64_map), MapField::Int64(other_int64_map)) => {
+                self_int64_map.merge(other_int64_map)
+            }
+            (MapField::Uint32(self_uint32_map), MapField::Uint32(other_uint32_map)) => {
+                self_uint32_map.merge(other_uint32_map)
+            }
+            (MapField::Uint64(self_uint64_map), MapField::Uint64(other_uint64_map)) => {
+                self_uint64_map.merge(other_uint64_map)
+            }
+            (MapField::Sint32(self_sint32_map), MapField::Sint32(other_sint32_map)) => {
+                self_sint32_map.merge(other_sint32_map)
+            }
+            (MapField::Sint64(self_sint64_map), MapField::Sint64(other_sint64_map)) => {
+                self_sint64_map.merge(other_sint64_map)
+            }
+            (MapField::Fixed32(self_fixed32_map), MapField::Fixed32(other_fixed32_map)) => {
+                self_fixed32_map.merge(other_fixed32_map)
+            }
+            (MapField::Fixed64(self_fixed64_map), MapField::Fixed64(other_fixed64_map)) => {
+                self_fixed64_map.merge(other_fixed64_map)
+            }
+            (MapField::Sfixed32(self_sfixed32_map), MapField::Sfixed32(other_sfixed32_map)) => {
+                self_sfixed32_map.merge(other_sfixed32_map)
+            }
+            (MapField::Sfixed64(self_sfixed64_map), MapField::Sfixed64(other_sfixed64_map)) => {
+                self_sfixed64_map.merge(other_sfixed64_map)
+            }
+            (MapField::Bool(self_bool_map), MapField::Bool(other_bool_map)) => {
+                self_bool_map.merge(other_bool_map)
+            }
+            (MapField::String(self_string_map), MapField::String(other_string_map)) => {
+                self_string_map.merge(other_string_map)
+            }
+            (self_map_field, other_map_field) => {
+                anyhow::bail!(
+                    "Attempting to merge map field with different types: Self is {:?}, other is {:?}",
+                    self_map_field,
+                    other_map_field
+                )
+            }
+        }
+    }
+}
+
 /// Container for dynamic protobuf map entries
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapFieldContainer<K: Eq + Hash> {
@@ -59,6 +129,10 @@ impl<K: Eq + Hash> MapFieldContainer<K> {
 
     pub fn get(&self, key: &K) -> Option<&SingularField> {
         self.map.get(key)
+    }
+
+    pub fn get_map(&self) -> &HashMap<K, SingularField> {
+        &self.map
     }
 
     pub fn merge(&mut self, other: MapFieldContainer<K>) -> anyhow::Result<()> {
@@ -213,5 +287,123 @@ mod tests {
 
         container.remove(&2);
         assert_eq!(container.len(), 0);
+    }
+
+    #[test]
+    fn test_merge_map_field_succeeds() {
+        let mut container1 = MapFieldContainer::new();
+        container1.insert(1, SingularField::Simple(SimpleField::Int32(100))).unwrap();
+        container1.insert(2, SingularField::Simple(SimpleField::Int32(200))).unwrap();
+
+        let mut container2 = MapFieldContainer::new();
+        container2.insert(2, SingularField::Simple(SimpleField::Int32(300))).unwrap(); // Overwrites
+        container2.insert(3, SingularField::Simple(SimpleField::Int32(400))).unwrap();
+
+        let mut map_field_one = MapField::Int32(container1);
+        let map_field_two = MapField::Int32(container2);
+
+        assert!(map_field_one.merge(map_field_two).is_ok());
+        assert_eq!(map_field_one.len(), 3);
+    }
+
+    #[test]
+    fn test_merge_map_field_on_key_type_mismatch_fails() {
+        let mut container1 = MapFieldContainer::new();
+        container1.insert(1, SingularField::Simple(SimpleField::Int32(100))).unwrap();
+        container1.insert(2, SingularField::Simple(SimpleField::Int32(200))).unwrap();
+
+        let mut container2 = MapFieldContainer::new();
+        container2.insert(2, SingularField::Simple(SimpleField::Int32(300))).unwrap();
+        container2.insert(3, SingularField::Simple(SimpleField::Int32(400))).unwrap();
+
+        let mut map_field_one = MapField::Int32(container1);
+        let map_field_two = MapField::Sint32(container2);
+
+        assert!(map_field_one.merge(map_field_two).is_err());
+        assert_eq!(map_field_one.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_map_field_on_value_type_mismatch_fails() {
+        let mut container1 = MapFieldContainer::new();
+        container1.insert(1, SingularField::Simple(SimpleField::Int32(100))).unwrap();
+
+        let mut container2 = MapFieldContainer::new();
+        container2
+            .insert(
+                3,
+                SingularField::Message(Box::new(DynamicMessage::new(
+                    "test_message_two".to_owned(),
+                ))),
+            )
+            .unwrap();
+
+        let mut map_field_one = MapField::Int32(container1);
+        let map_field_two = MapField::Int32(container2);
+
+        assert!(map_field_one.merge(map_field_two).is_err());
+        assert_eq!(map_field_one.len(), 1);
+    }
+
+    #[test]
+    fn test_merge_map_field_on_simple_value_type_mismatch_fails() {
+        let mut container1 = MapFieldContainer::new();
+        container1.insert(1, SingularField::Simple(SimpleField::Int32(100))).unwrap();
+        container1.insert(2, SingularField::Simple(SimpleField::Int32(200))).unwrap();
+
+        let mut container2 = MapFieldContainer::new();
+        container2.insert(2, SingularField::Simple(SimpleField::Fixed32(300))).unwrap();
+        container2.insert(3, SingularField::Simple(SimpleField::Fixed32(400))).unwrap();
+
+        let mut map_field_one = MapField::Int32(container1);
+        let map_field_two = MapField::Int32(container2);
+
+        assert!(map_field_one.merge(map_field_two).is_err());
+        assert_eq!(map_field_one.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_map_field_on_message_value_type_mismatch_fails() {
+        let mut container1 = MapFieldContainer::new();
+        container1
+            .insert(
+                1,
+                SingularField::Message(Box::new(DynamicMessage::new(
+                    "test_message_one".to_owned(),
+                ))),
+            )
+            .unwrap();
+        container1
+            .insert(
+                2,
+                SingularField::Message(Box::new(DynamicMessage::new(
+                    "test_message_one".to_owned(),
+                ))),
+            )
+            .unwrap();
+
+        let mut container2 = MapFieldContainer::new();
+        container2
+            .insert(
+                3,
+                SingularField::Message(Box::new(DynamicMessage::new(
+                    "test_message_two".to_owned(),
+                ))),
+            )
+            .unwrap();
+        container2
+            .insert(
+                4,
+                SingularField::Message(Box::new(DynamicMessage::new(
+                    "test_message_two".to_owned(),
+                ))),
+            )
+            .unwrap();
+
+        let mut map_field_one = MapField::Int32(container1);
+        let map_field_two = MapField::Int32(container2);
+
+        assert!(map_field_one.merge(map_field_two).is_err());
+        assert_eq!(map_field_one.len(), 2);
     }
 }

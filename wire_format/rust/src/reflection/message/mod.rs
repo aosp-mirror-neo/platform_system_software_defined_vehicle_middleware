@@ -15,6 +15,7 @@
 #![allow(dead_code)]
 
 mod dynamic_message;
+mod error;
 mod map;
 mod repeated;
 mod simple;
