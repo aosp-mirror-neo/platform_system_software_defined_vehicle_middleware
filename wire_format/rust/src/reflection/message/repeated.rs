@@ -44,6 +44,14 @@ impl RepeatedField {
         }
     }
 
+    /// Returns true if the repeated field is empty
+    pub fn is_empty(&self) -> bool {
+        match self {
+            RepeatedField::Simple(simple_repeated_field) => simple_repeated_field.len() == 0,
+            RepeatedField::Message(message_repeated_field) => message_repeated_field.is_empty(),
+        }
+    }
+
     pub(crate) fn merge(&mut self, other_repeated_field: RepeatedField) -> anyhow::Result<()> {
         match (self, other_repeated_field) {
             (
@@ -102,6 +110,7 @@ pub enum SimpleRepeatedField {
     Enum(Vec<i32>),
 }
 
+/// Dynamic protobuf message repeated field
 #[derive(Debug, Clone, PartialEq)]
 pub struct MessageRepeatedField {
     messages: Vec<DynamicMessage>,
@@ -119,6 +128,7 @@ impl MessageRepeatedField {
             .unwrap_or_else(|| "Unknown".to_owned())
     }
 
+    /// Merges a message repeated field into this one. The merging follows standard protobuf merging rules.
     pub fn merge(&mut self, other: MessageRepeatedField) -> anyhow::Result<()> {
         let self_type = self.messages.first().map(|m| m.get_full_name());
         let other_type = other.messages.first().map(|m| m.get_full_name());
@@ -136,10 +146,13 @@ impl MessageRepeatedField {
         Ok(())
     }
 
+    /// Gets the messages in the repeated message field
     pub fn get_messages(&self) -> &[DynamicMessage] {
         &self.messages
     }
 
+    /// Adds a message to the repeated message field. This is the only way to add a message to a repeated
+    /// message field.
     pub fn add_message(&mut self, message: DynamicMessage) -> anyhow::Result<()> {
         if let Some(existing_message) = self.messages.first() {
             if !existing_message.get_full_name().eq(message.get_full_name()) {
@@ -154,8 +167,14 @@ impl MessageRepeatedField {
         Ok(())
     }
 
+    /// Returns the number of elements in the repeated field
     pub fn len(&self) -> usize {
         self.messages.len()
+    }
+
+    /// Returns true if the repeated field is empty
+    pub fn is_empty(&self) -> bool {
+        self.messages.is_empty()
     }
 }
 

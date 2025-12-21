@@ -14,6 +14,9 @@
 
 #![allow(dead_code)]
 
+//! Message module containing structs and methods for generic protobuf messages and values
+
+pub mod api;
 mod dynamic_message;
 mod error;
 mod map;

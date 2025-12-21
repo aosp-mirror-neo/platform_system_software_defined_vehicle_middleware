@@ -70,7 +70,7 @@ impl DynamicMessage {
         Ok(())
     }
 
-    // Get dynamic message field with number `field_number`
+    /// Get dynamic message field with number `field_number`
     pub fn get_message_field(&self, field_number: &u32) -> Option<&DynamicMessageField> {
         self.fields.get(field_number)
     }
@@ -106,6 +106,7 @@ pub enum DynamicMessageField {
     Map(MapField),
 }
 
+/// Singular field value
 #[derive(Debug, Clone, PartialEq)]
 pub enum SingularField {
     /// Simple field

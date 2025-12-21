@@ -127,15 +127,17 @@ impl<K: Eq + Hash> MapFieldContainer<K> {
         Self { map: HashMap::new() }
     }
 
+    /// Gets the value (if it exists) that corresponds to the given key.
     pub fn get(&self, key: &K) -> Option<&SingularField> {
         self.map.get(key)
     }
 
+    /// Gets an immutable reference to the underlying map.
     pub fn get_map(&self) -> &HashMap<K, SingularField> {
         &self.map
     }
 
-    pub fn merge(&mut self, other: MapFieldContainer<K>) -> anyhow::Result<()> {
+    pub(crate) fn merge(&mut self, other: MapFieldContainer<K>) -> anyhow::Result<()> {
         let self_existing_value = self.map.values().next();
         let other_existing_value = other.map.values().next();
 
@@ -152,6 +154,7 @@ impl<K: Eq + Hash> MapFieldContainer<K> {
         Ok(())
     }
 
+    /// Inserts a key-value pair into the map. This is the only way to add entries to the MapFieldContainer.
     pub fn insert(&mut self, key: K, value: SingularField) -> anyhow::Result<()> {
         if let Some(existing_value) = self.map.values().next() {
             if !existing_value.type_matches(&value) {
@@ -166,12 +169,19 @@ impl<K: Eq + Hash> MapFieldContainer<K> {
         Ok(())
     }
 
+    /// Removes a key-value pair from the map.
     pub fn remove(&mut self, key: &K) -> Option<SingularField> {
         self.map.remove(key)
     }
 
+    /// Returns the number of key-value pairs in the map.
     pub fn len(&self) -> usize {
         self.map.len()
+    }
+
+    /// Returns true if the map is empty.
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
     }
 }
 
