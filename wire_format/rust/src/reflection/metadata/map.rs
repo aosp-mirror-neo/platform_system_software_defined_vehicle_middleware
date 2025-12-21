@@ -14,7 +14,13 @@
 
 use protobuf::reflect::FieldDescriptor;
 use protobuf::reflect::MessageDescriptor;
+use protobuf::rt::WireType;
 
+use crate::reflection::codec::api::protobuf::ProtobufReader;
+use crate::reflection::message::api::protobuf::MapField;
+use crate::reflection::message::api::protobuf::MapFieldContainer;
+use crate::reflection::message::api::protobuf::SimpleField;
+use crate::reflection::message::api::protobuf::SingularField;
 use crate::reflection::metadata::error::MetadataBuildError;
 use crate::reflection::metadata::field_type::ProtobufSimpleType;
 use crate::reflection::metadata::message::FieldMetadata;
@@ -131,6 +137,155 @@ impl MapMetadata {
     pub fn get_value_metadata(&self) -> &SingularTypeMetadata {
         &self.value_metadata
     }
+
+    pub(crate) fn parse_from_reader(
+        &self,
+        reader: &mut ProtobufReader,
+        wire_type: WireType,
+    ) -> anyhow::Result<MapField> {
+        // Map entries are serialized as a virtual message with 2 fields
+        if wire_type != WireType::LengthDelimited {
+            anyhow::bail!("Unexpected wire type, expected length delimited wire type for map entry, found {wire_type:?}")
+        }
+        let length = reader.read_raw_varint32()?;
+        self.parse_map_entry_from_reader(reader, i64::from(length))
+    }
+
+    fn parse_map_entry_from_reader(
+        &self,
+        reader: &mut ProtobufReader,
+        length: i64,
+    ) -> anyhow::Result<MapField> {
+        let mut key_field: Option<SimpleField> = None;
+        let mut value_field: Option<SingularField> = None;
+
+        let initial_reader_position = reader.pos();
+        let mut read_bytes = 0;
+        while !reader.eof()? && read_bytes < length {
+            let Some(field_tag) = reader.read_raw_tag_or_eof()? else {
+                anyhow::bail!("Unexpected EOF")
+            };
+            let wire_type = WireType::new(field_tag & 0x7).ok_or_else(|| {
+                anyhow::anyhow!("Invalid wire type: {}. Field tag: {}", field_tag & 0x7, field_tag)
+            })?;
+            let field_number = field_tag >> 3;
+
+            if field_number == 1 {
+                // read the key field
+                let key: SimpleField = match self.key_metadata {
+                    MapKeyType::Int32 => SimpleField::Int32(reader.read_int32()?),
+                    MapKeyType::Int64 => SimpleField::Int64(reader.read_int64()?),
+                    MapKeyType::Uint32 => SimpleField::Uint32(reader.read_uint32()?),
+                    MapKeyType::Uint64 => SimpleField::Uint64(reader.read_uint64()?),
+                    MapKeyType::Sint32 => SimpleField::Sint32(reader.read_sint32()?),
+                    MapKeyType::Sint64 => SimpleField::Sint64(reader.read_sint64()?),
+                    MapKeyType::Fixed32 => SimpleField::Fixed32(reader.read_fixed32()?),
+                    MapKeyType::Fixed64 => SimpleField::Fixed64(reader.read_fixed64()?),
+                    MapKeyType::Sfixed32 => SimpleField::Sfixed32(reader.read_sfixed32()?),
+                    MapKeyType::Sfixed64 => SimpleField::Sfixed64(reader.read_sfixed64()?),
+                    MapKeyType::Bool => SimpleField::Bool(reader.read_bool()?),
+                    MapKeyType::String => SimpleField::String(reader.read_string()?),
+                };
+                if let Some(ref mut existing_key_field) = key_field {
+                    existing_key_field.merge(key)?;
+                } else {
+                    key_field = Some(key);
+                }
+            } else if field_number == 2 {
+                // read the value field
+                let value = self.value_metadata.parse_from_reader(reader, wire_type)?;
+                if let Some(ref mut existing_value_field) = value_field {
+                    existing_value_field.merge(value)?;
+                } else {
+                    value_field = Some(value);
+                }
+            } else {
+                reader.skip_field(wire_type)?;
+            }
+            read_bytes = (reader.pos() - initial_reader_position) as i64;
+        }
+
+        if read_bytes != length {
+            anyhow::bail!(
+                "Length mismatch: expected to read {length} bytes, but read {read_bytes} bytes",
+            )
+        }
+        build_map_field(key_field, value_field)
+    }
+}
+
+fn build_map_field(
+    key_field: Option<SimpleField>,
+    value_field: Option<SingularField>,
+) -> anyhow::Result<MapField> {
+    let Some(key_field) = key_field else { anyhow::bail!("Missing key for map entry") };
+    let Some(value) = value_field else { anyhow::bail!("Missing value for map entry") };
+    let map_field = match key_field {
+        SimpleField::Int32(key) => {
+            let mut map_field_container = MapFieldContainer::new();
+            map_field_container.insert(key, value)?;
+            MapField::Int32(map_field_container)
+        }
+        SimpleField::Int64(key) => {
+            let mut map_field_container = MapFieldContainer::new();
+            map_field_container.insert(key, value)?;
+            MapField::Int64(map_field_container)
+        }
+        SimpleField::Uint32(key) => {
+            let mut map_field_container = MapFieldContainer::new();
+            map_field_container.insert(key, value)?;
+            MapField::Uint32(map_field_container)
+        }
+        SimpleField::Uint64(key) => {
+            let mut map_field_container = MapFieldContainer::new();
+            map_field_container.insert(key, value)?;
+            MapField::Uint64(map_field_container)
+        }
+        SimpleField::Sint32(key) => {
+            let mut map_field_container = MapFieldContainer::new();
+            map_field_container.insert(key, value)?;
+            MapField::Sint32(map_field_container)
+        }
+        SimpleField::Sint64(key) => {
+            let mut map_field_container = MapFieldContainer::new();
+            map_field_container.insert(key, value)?;
+            MapField::Sint64(map_field_container)
+        }
+        SimpleField::Fixed32(key) => {
+            let mut map_field_container = MapFieldContainer::new();
+            map_field_container.insert(key, value)?;
+            MapField::Fixed32(map_field_container)
+        }
+        SimpleField::Fixed64(key) => {
+            let mut map_field_container = MapFieldContainer::new();
+            map_field_container.insert(key, value)?;
+            MapField::Fixed64(map_field_container)
+        }
+        SimpleField::Sfixed32(key) => {
+            let mut map_field_container = MapFieldContainer::new();
+            map_field_container.insert(key, value)?;
+            MapField::Sfixed32(map_field_container)
+        }
+        SimpleField::Sfixed64(key) => {
+            let mut map_field_container = MapFieldContainer::new();
+            map_field_container.insert(key, value)?;
+            MapField::Sfixed64(map_field_container)
+        }
+        SimpleField::Bool(key) => {
+            let mut map_field_container = MapFieldContainer::new();
+            map_field_container.insert(key, value)?;
+            MapField::Bool(map_field_container)
+        }
+        SimpleField::String(key) => {
+            let mut map_field_container = MapFieldContainer::new();
+            map_field_container.insert(key, value)?;
+            MapField::String(map_field_container)
+        }
+        _ => {
+            anyhow::bail!("Internal error")
+        }
+    };
+    Ok(map_field)
 }
 
 #[cfg(test)]

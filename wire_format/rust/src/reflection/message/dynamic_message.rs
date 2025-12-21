@@ -167,7 +167,7 @@ impl SingularField {
         }
     }
 
-    fn merge(&mut self, other: SingularField) -> anyhow::Result<()> {
+    pub(crate) fn merge(&mut self, other: SingularField) -> anyhow::Result<()> {
         match (self, other) {
             (
                 SingularField::Simple(self_simple_field),

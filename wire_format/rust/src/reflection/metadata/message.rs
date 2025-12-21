@@ -19,9 +19,15 @@ use protobuf::reflect::MessageDescriptor;
 use protobuf::reflect::RuntimeFieldType;
 use protobuf::reflect::RuntimeType;
 use protobuf::reflect::Syntax;
+use protobuf::rt::WireType;
 
+use crate::reflection::codec::api::protobuf::ProtobufReader;
+use crate::reflection::message::api::protobuf::DynamicMessage;
+use crate::reflection::message::api::protobuf::DynamicMessageField;
+use crate::reflection::message::api::protobuf::SingularField;
 use crate::reflection::metadata::error::MetadataBuildError;
 use crate::reflection::metadata::map::MapMetadata;
+use crate::reflection::metadata::repeated::parse_repeated_field;
 use crate::reflection::metadata::simple::SimpleMetadata;
 
 /// Protobuf Message metadata that contains information relevant to wire format de/serialization, message
@@ -52,6 +58,26 @@ pub enum FieldMetadata {
     Map(Box<MapMetadata>),
 }
 
+impl FieldMetadata {
+    fn parse_from_reader(
+        &self,
+        reader: &mut ProtobufReader,
+        wire_type: WireType,
+    ) -> anyhow::Result<DynamicMessageField> {
+        match self {
+            FieldMetadata::Singular(singular_metadata) => Ok(DynamicMessageField::Singular(
+                singular_metadata.parse_from_reader(reader, wire_type)?,
+            )),
+            FieldMetadata::Repeated(singular_metadata) => Ok(DynamicMessageField::Repeated(
+                parse_repeated_field(reader, wire_type, singular_metadata)?,
+            )),
+            FieldMetadata::Map(map_metadata) => {
+                Ok(DynamicMessageField::Map(map_metadata.parse_from_reader(reader, wire_type)?))
+            }
+        }
+    }
+}
+
 /// Singular (non-repeated, non-map) metadata
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SingularTypeMetadata {
@@ -59,6 +85,23 @@ pub enum SingularTypeMetadata {
     Simple(SimpleMetadata),
     /// Message field type
     Message(Box<MessageMetadata>),
+}
+
+impl SingularTypeMetadata {
+    pub(crate) fn parse_from_reader(
+        &self,
+        reader: &mut ProtobufReader,
+        wire_type: WireType,
+    ) -> anyhow::Result<SingularField> {
+        match self {
+            SingularTypeMetadata::Simple(simple_metadata) => {
+                Ok(SingularField::Simple(simple_metadata.parse_from_reader(reader, wire_type)?))
+            }
+            SingularTypeMetadata::Message(message_metadata) => Ok(SingularField::Message(
+                Box::new(message_metadata.parse_message_field_from_reader(reader, wire_type)?),
+            )),
+        }
+    }
 }
 
 impl MessageMetadata {
@@ -220,6 +263,68 @@ impl MessageMetadata {
             let message_metadata = MessageMetadata::build(&embedded_message_descriptor)?;
             Ok(FieldMetadata::Repeated(SingularTypeMetadata::Message(Box::new(message_metadata))))
         }
+    }
+
+    /// Parse a `DynamicMessage` from bytes
+    pub fn parse_from_bytes(&self, bytes: &[u8]) -> anyhow::Result<DynamicMessage> {
+        let mut reader = ProtobufReader::new(bytes);
+        self.parse_message_from_reader(&mut reader, -1)
+    }
+
+    /// Parse a `DynamicMessage` from bytes prefixed with the message's serialized length
+    pub fn parse_from_bytes_length_delimited(
+        &self,
+        bytes: &[u8],
+    ) -> anyhow::Result<DynamicMessage> {
+        let mut reader = ProtobufReader::new(bytes);
+        let length = reader.read_raw_varint32()?;
+        reader.push_limit(u64::from(length))?;
+        self.parse_message_from_reader(&mut reader, -1)
+    }
+
+    pub(crate) fn parse_message_field_from_reader(
+        &self,
+        reader: &mut ProtobufReader,
+        wire_type: WireType,
+    ) -> anyhow::Result<DynamicMessage> {
+        if wire_type != WireType::LengthDelimited {
+            anyhow::bail!("Unexpected wire type, expected length delimited wire type for message, found {wire_type:?}")
+        }
+        let length = reader.read_raw_varint32()?;
+        self.parse_message_from_reader(reader, i64::from(length))
+    }
+
+    pub(crate) fn parse_message_from_reader(
+        &self,
+        reader: &mut ProtobufReader,
+        length: i64,
+    ) -> anyhow::Result<DynamicMessage> {
+        let mut message = DynamicMessage::new(self.get_message_full_name().to_owned());
+        let initial_reader_position = reader.pos();
+        let mut read_bytes = 0;
+        while !reader.eof()? && (length == -1 || read_bytes < length) {
+            let Some(field_tag) = reader.read_raw_tag_or_eof()? else {
+                anyhow::bail!("Unexpected EOF")
+            };
+            let wire_type = WireType::new(field_tag & 0x7).ok_or_else(|| {
+                anyhow::anyhow!("Invalid wire type: {}. Field tag: {}", field_tag & 0x7, field_tag)
+            })?;
+            let field_number = field_tag >> 3;
+
+            if let Some(field_metadata) = self.get_field_metadata(&field_number) {
+                let message_field = field_metadata.parse_from_reader(reader, wire_type)?;
+                message.add_field(field_number, message_field)?;
+            } else {
+                reader.skip_field(wire_type)?;
+            }
+            read_bytes = (reader.pos() - initial_reader_position) as i64;
+        }
+        if length != -1 && read_bytes != length {
+            anyhow::bail!(
+                "Length mismatch: expected to read {length} bytes, but read {read_bytes} bytes",
+            )
+        }
+        Ok(message)
     }
 }
 
