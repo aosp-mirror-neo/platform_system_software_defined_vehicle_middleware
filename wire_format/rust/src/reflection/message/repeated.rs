@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use protobuf::rt::WireType;
+
+use crate::reflection::codec::api::protobuf::IProtobufWriter;
+use crate::reflection::codec::api::protobuf::RpcWriter;
 use crate::reflection::message::dynamic_message::DynamicMessage;
 use crate::reflection::metadata::api::protobuf::ProtobufSimpleType;
 
@@ -70,6 +74,24 @@ impl RepeatedField {
                 )
             }
         }
+    }
+
+    pub(crate) fn write_repeated_field(
+        &self,
+        field_number: u32,
+        writer: &mut RpcWriter,
+    ) -> anyhow::Result<()> {
+        match self {
+            RepeatedField::Simple(simple_repeated_field) => {
+                simple_repeated_field.write_simple_repeated_field(field_number, writer)?;
+            }
+            RepeatedField::Message(message_repeated_field) => {
+                for message in message_repeated_field.get_messages() {
+                    message.write_message_field(field_number, writer)?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -333,11 +355,207 @@ impl SimpleRepeatedField {
         }
         Ok(())
     }
+
+    pub(crate) fn write_simple_repeated_field(
+        &self,
+        field_number: u32,
+        writer: &mut RpcWriter,
+    ) -> anyhow::Result<()> {
+        match self {
+            SimpleRepeatedField::Double(double_array) => {
+                if double_array.is_empty() {
+                    return Ok(());
+                }
+
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.write_raw_varint32((double_array.len() << 3) as u32)?;
+                for double in double_array {
+                    writer.write_double_no_tag(*double)?;
+                }
+                Ok(())
+            }
+            SimpleRepeatedField::Float(float_array) => {
+                if float_array.is_empty() {
+                    return Ok(());
+                }
+
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.write_raw_varint32((float_array.len() << 2) as u32)?;
+                for float in float_array {
+                    writer.write_float_no_tag(*float)?;
+                }
+                Ok(())
+            }
+            SimpleRepeatedField::Int32(int32_array) => {
+                if int32_array.is_empty() {
+                    return Ok(());
+                }
+
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.start_length_delimited_message()?;
+                for int32 in int32_array {
+                    writer.write_int32_no_tag(*int32)?;
+                }
+                writer.end_length_delimited_message()
+            }
+            SimpleRepeatedField::Int64(int64_array) => {
+                if int64_array.is_empty() {
+                    return Ok(());
+                }
+
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.start_length_delimited_message()?;
+                for int64 in int64_array {
+                    writer.write_int64_no_tag(*int64)?;
+                }
+                writer.end_length_delimited_message()
+            }
+            SimpleRepeatedField::Uint32(uint32_array) => {
+                if uint32_array.is_empty() {
+                    return Ok(());
+                }
+
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.start_length_delimited_message()?;
+                for uint32 in uint32_array {
+                    writer.write_uint32_no_tag(*uint32)?;
+                }
+                writer.end_length_delimited_message()
+            }
+            SimpleRepeatedField::Uint64(uint64_array) => {
+                if uint64_array.is_empty() {
+                    return Ok(());
+                }
+
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.start_length_delimited_message()?;
+                for uint64 in uint64_array {
+                    writer.write_uint64_no_tag(*uint64)?;
+                }
+                writer.end_length_delimited_message()
+            }
+            SimpleRepeatedField::Sint32(sint32_array) => {
+                if sint32_array.is_empty() {
+                    return Ok(());
+                }
+
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.start_length_delimited_message()?;
+                for sint32 in sint32_array {
+                    writer.write_sint32_no_tag(*sint32)?;
+                }
+                writer.end_length_delimited_message()
+            }
+            SimpleRepeatedField::Sint64(sint64_array) => {
+                if sint64_array.is_empty() {
+                    return Ok(());
+                }
+
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.start_length_delimited_message()?;
+                for sint64 in sint64_array {
+                    writer.write_sint64_no_tag(*sint64)?;
+                }
+                writer.end_length_delimited_message()
+            }
+            SimpleRepeatedField::Fixed32(fixed32_array) => {
+                if fixed32_array.is_empty() {
+                    return Ok(());
+                }
+
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.write_raw_varint32((fixed32_array.len() << 2) as u32)?;
+                for fixed32 in fixed32_array {
+                    writer.write_fixed32_no_tag(*fixed32)?;
+                }
+                Ok(())
+            }
+            SimpleRepeatedField::Fixed64(fixed64_array) => {
+                if fixed64_array.is_empty() {
+                    return Ok(());
+                }
+
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.write_raw_varint32((fixed64_array.len() << 3) as u32)?;
+                for fixed64 in fixed64_array {
+                    writer.write_fixed64_no_tag(*fixed64)?;
+                }
+                Ok(())
+            }
+            SimpleRepeatedField::Sfixed32(sfixed32_array) => {
+                if sfixed32_array.is_empty() {
+                    return Ok(());
+                }
+
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.write_raw_varint32((sfixed32_array.len() << 2) as u32)?;
+                for sfixed32 in sfixed32_array {
+                    writer.write_sfixed32_no_tag(*sfixed32)?;
+                }
+                Ok(())
+            }
+            SimpleRepeatedField::Sfixed64(sfixed64_array) => {
+                if sfixed64_array.is_empty() {
+                    return Ok(());
+                }
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.write_raw_varint32((sfixed64_array.len() << 3) as u32)?;
+                for sfixed64 in sfixed64_array {
+                    writer.write_sfixed64_no_tag(*sfixed64)?;
+                }
+                Ok(())
+            }
+            SimpleRepeatedField::Bool(bool_array) => {
+                if bool_array.is_empty() {
+                    return Ok(());
+                }
+
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.write_raw_varint32(bool_array.len() as u32)?;
+                for bool_value in bool_array {
+                    writer.write_bool_no_tag(*bool_value)?;
+                }
+                Ok(())
+            }
+            SimpleRepeatedField::String(string_array) => {
+                if string_array.is_empty() {
+                    return Ok(());
+                }
+
+                for string in string_array {
+                    writer.write_string(field_number, string)?;
+                }
+                Ok(())
+            }
+            SimpleRepeatedField::Bytes(bytes_array) => {
+                if bytes_array.is_empty() {
+                    return Ok(());
+                }
+
+                for bytes in bytes_array {
+                    writer.write_bytes(field_number, bytes)?;
+                }
+                Ok(())
+            }
+            SimpleRepeatedField::Enum(enum_array) => {
+                if enum_array.is_empty() {
+                    return Ok(());
+                }
+                writer.write_tag(field_number, WireType::LengthDelimited)?;
+                writer.start_length_delimited_message()?;
+                for enum_value in enum_array {
+                    writer.write_enum_no_tag(*enum_value)?;
+                }
+                writer.end_length_delimited_message()
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reflection::codec::api::protobuf::RpcWriter;
 
     #[test]
     fn test_message_repeated_field_new() {
@@ -519,5 +737,79 @@ mod tests {
         });
         let result = original_repeated_field.merge(update_repeated_field);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_write_simple_repeated_field() {
+        let cases = vec![
+            (SimpleRepeatedField::Int32(vec![150, 1]), 1, vec![0x0A, 0x03, 0x96, 0x01, 0x01]),
+            (
+                SimpleRepeatedField::String(vec!["a".to_string(), "b".to_string()]),
+                2,
+                vec![0x12, 0x01, 0x61, 0x12, 0x01, 0x62],
+            ),
+            (
+                SimpleRepeatedField::Fixed32(vec![1, 2]),
+                3,
+                vec![0x1A, 0x08, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00],
+            ),
+            (SimpleRepeatedField::Int32(vec![]), 4, vec![]),
+            (
+                SimpleRepeatedField::Double(vec![1.0, 2.0]),
+                5,
+                vec![
+                    0x2A, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x40,
+                ],
+            ),
+            (
+                SimpleRepeatedField::Float(vec![1.0, 2.0]),
+                6,
+                vec![0x32, 0x08, 0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x40],
+            ),
+            (SimpleRepeatedField::Int64(vec![150, 1]), 7, vec![0x3A, 0x03, 0x96, 0x01, 0x01]),
+            (SimpleRepeatedField::Uint32(vec![150, 1]), 8, vec![0x42, 0x03, 0x96, 0x01, 0x01]),
+            (SimpleRepeatedField::Uint64(vec![150, 1]), 9, vec![0x4A, 0x03, 0x96, 0x01, 0x01]),
+            (SimpleRepeatedField::Sint32(vec![-1, 1]), 10, vec![0x52, 0x02, 0x01, 0x02]),
+            (SimpleRepeatedField::Sint64(vec![-1, 1]), 11, vec![0x5A, 0x02, 0x01, 0x02]),
+            (
+                SimpleRepeatedField::Fixed64(vec![1, 2]),
+                12,
+                vec![
+                    0x62, 0x10, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00,
+                ],
+            ),
+            (
+                SimpleRepeatedField::Sfixed32(vec![-1, 1]),
+                13,
+                vec![0x6A, 0x08, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00],
+            ),
+            (
+                SimpleRepeatedField::Sfixed64(vec![-1, 1]),
+                14,
+                vec![
+                    0x72, 0x10, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00,
+                ],
+            ),
+            (SimpleRepeatedField::Bool(vec![true, false]), 15, vec![0x7A, 0x02, 0x01, 0x00]),
+            (
+                SimpleRepeatedField::Bytes(vec![vec![1, 2], vec![3]]),
+                16,
+                vec![0x82, 0x01, 0x02, 0x01, 0x02, 0x82, 0x01, 0x01, 0x03],
+            ),
+            (SimpleRepeatedField::Enum(vec![1, 2]), 17, vec![0x8A, 0x01, 0x02, 0x01, 0x02]),
+        ];
+
+        for (field, field_number, expected) in cases {
+            let mut buffer = Vec::new();
+            let mut writer = RpcWriter::create_rpc_writer(&mut buffer);
+            field
+                .write_simple_repeated_field(field_number, &mut writer)
+                .expect("Writing simple repeated field should succeed");
+            writer.finalize().expect("Finalizing writer should succeed");
+            assert_eq!(buffer, expected, "Mismatch for {:?}", field);
+        }
     }
 }

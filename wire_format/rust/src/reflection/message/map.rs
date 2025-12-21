@@ -15,7 +15,14 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
+use protobuf::rt::WireType;
+
+use crate::reflection::codec::api::protobuf::IProtobufWriter;
+use crate::reflection::codec::api::protobuf::RpcWriter;
 use crate::reflection::message::dynamic_message::SingularField;
+
+const MAP_KEY_FIELD_NUMBER: u32 = 1;
+const MAP_VALUE_FIELD_NUMBER: u32 = 2;
 
 /// Dynamic protobuf map field
 #[derive(Debug, Clone, PartialEq)]
@@ -114,16 +121,109 @@ impl MapField {
             }
         }
     }
+
+    pub(crate) fn write_map_field(
+        &self,
+        field_number: u32,
+        writer: &mut RpcWriter,
+    ) -> anyhow::Result<()> {
+        match self {
+            MapField::Int32(container) => {
+                self.write_map_field_internal(container, field_number, writer, |writer, key| {
+                    Ok(writer.write_int32(MAP_KEY_FIELD_NUMBER, *key)?)
+                })?;
+            }
+            MapField::Int64(container) => {
+                self.write_map_field_internal(container, field_number, writer, |writer, key| {
+                    Ok(writer.write_int64(MAP_KEY_FIELD_NUMBER, *key)?)
+                })?;
+            }
+            MapField::Uint32(container) => {
+                self.write_map_field_internal(container, field_number, writer, |writer, key| {
+                    Ok(writer.write_uint32(MAP_KEY_FIELD_NUMBER, *key)?)
+                })?;
+            }
+            MapField::Uint64(container) => {
+                self.write_map_field_internal(container, field_number, writer, |writer, key| {
+                    Ok(writer.write_uint64(MAP_KEY_FIELD_NUMBER, *key)?)
+                })?;
+            }
+            MapField::Sint32(container) => {
+                self.write_map_field_internal(container, field_number, writer, |writer, key| {
+                    Ok(writer.write_sint32(MAP_KEY_FIELD_NUMBER, *key)?)
+                })?;
+            }
+            MapField::Sint64(container) => {
+                self.write_map_field_internal(container, field_number, writer, |writer, key| {
+                    Ok(writer.write_sint64(MAP_KEY_FIELD_NUMBER, *key)?)
+                })?;
+            }
+            MapField::Fixed32(container) => {
+                self.write_map_field_internal(container, field_number, writer, |writer, key| {
+                    Ok(writer.write_fixed32(MAP_KEY_FIELD_NUMBER, *key)?)
+                })?;
+            }
+            MapField::Fixed64(container) => {
+                self.write_map_field_internal(container, field_number, writer, |writer, key| {
+                    Ok(writer.write_fixed64(MAP_KEY_FIELD_NUMBER, *key)?)
+                })?;
+            }
+            MapField::Sfixed32(container) => {
+                self.write_map_field_internal(container, field_number, writer, |writer, key| {
+                    Ok(writer.write_sfixed32(MAP_KEY_FIELD_NUMBER, *key)?)
+                })?;
+            }
+            MapField::Sfixed64(container) => {
+                self.write_map_field_internal(container, field_number, writer, |writer, key| {
+                    Ok(writer.write_sfixed64(MAP_KEY_FIELD_NUMBER, *key)?)
+                })?;
+            }
+            MapField::Bool(container) => {
+                self.write_map_field_internal(container, field_number, writer, |writer, key| {
+                    Ok(writer.write_bool(MAP_KEY_FIELD_NUMBER, *key)?)
+                })?;
+            }
+            MapField::String(container) => {
+                self.write_map_field_internal(container, field_number, writer, |writer, key| {
+                    Ok(writer.write_string(MAP_KEY_FIELD_NUMBER, key)?)
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    fn write_map_field_internal<F, K>(
+        &self,
+        map_field_container: &MapFieldContainer<K>,
+        field_number: u32,
+        writer: &mut RpcWriter,
+        key_writer: F,
+    ) -> anyhow::Result<()>
+    where
+        F: Fn(&mut RpcWriter, &K) -> anyhow::Result<()>,
+        K: Eq + Hash,
+    {
+        for (key, value) in map_field_container.get_map() {
+            writer.write_tag(field_number, WireType::LengthDelimited)?;
+            writer.start_length_delimited_message()?;
+
+            key_writer(writer, key)?;
+            value.write_singular_field(MAP_VALUE_FIELD_NUMBER, writer)?;
+
+            writer.end_length_delimited_message()?;
+        }
+        Ok(())
+    }
 }
 
-/// Container for dynamic protobuf map entries
+/// Possible values for a protobuf map key
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapFieldContainer<K: Eq + Hash> {
     map: HashMap<K, SingularField>,
 }
 
 impl<K: Eq + Hash> MapFieldContainer<K> {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { map: HashMap::new() }
     }
 
@@ -188,6 +288,7 @@ impl<K: Eq + Hash> MapFieldContainer<K> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reflection::codec::api::protobuf::RpcWriter;
     use crate::reflection::message::{
         dynamic_message::{DynamicMessage, SingularField},
         simple::SimpleField,
@@ -415,5 +516,144 @@ mod tests {
 
         assert!(map_field_one.merge(map_field_two).is_err());
         assert_eq!(map_field_one.len(), 2);
+    }
+
+    #[test]
+    fn test_write_map_field() {
+        let cases = vec![
+            (
+                {
+                    let mut c = MapFieldContainer::new();
+                    c.insert(1, SingularField::Simple(SimpleField::Int32(10)))
+                        .expect("Failed to insert");
+                    MapField::Int32(c)
+                },
+                1,
+                vec![0x0A, 0x04, 0x08, 0x01, 0x10, 0x0A],
+            ),
+            (
+                {
+                    let mut c = MapFieldContainer::new();
+                    c.insert(
+                        "k".to_string(),
+                        SingularField::Simple(SimpleField::String("v".to_string())),
+                    )
+                    .expect("Failed to insert");
+                    MapField::String(c)
+                },
+                2,
+                // Tag 2 (0x12), Length 6, Key (Tag 1, Len 1, 'k'), Value (Tag 2, Len 1, 'v')
+                vec![0x12, 0x06, 0x0A, 0x01, 0x6B, 0x12, 0x01, 0x76],
+            ),
+            (MapField::Int32(MapFieldContainer::new()), 3, vec![]),
+            (
+                {
+                    let mut c = MapFieldContainer::new();
+                    c.insert(1i64, SingularField::Simple(SimpleField::Int32(10)))
+                        .expect("Failed to insert");
+                    MapField::Int64(c)
+                },
+                4,
+                vec![0x22, 0x04, 0x08, 0x01, 0x10, 0x0A],
+            ),
+            (
+                {
+                    let mut c = MapFieldContainer::new();
+                    c.insert(1u32, SingularField::Simple(SimpleField::Int32(10)))
+                        .expect("Failed to insert");
+                    MapField::Uint32(c)
+                },
+                5,
+                vec![0x2A, 0x04, 0x08, 0x01, 0x10, 0x0A],
+            ),
+            (
+                {
+                    let mut c = MapFieldContainer::new();
+                    c.insert(1u64, SingularField::Simple(SimpleField::Int32(10)))
+                        .expect("Failed to insert");
+                    MapField::Uint64(c)
+                },
+                6,
+                vec![0x32, 0x04, 0x08, 0x01, 0x10, 0x0A],
+            ),
+            (
+                {
+                    let mut c = MapFieldContainer::new();
+                    c.insert(-1, SingularField::Simple(SimpleField::Int32(10)))
+                        .expect("Failed to insert");
+                    MapField::Sint32(c)
+                },
+                7,
+                vec![0x3A, 0x04, 0x08, 0x01, 0x10, 0x0A],
+            ),
+            (
+                {
+                    let mut c = MapFieldContainer::new();
+                    c.insert(-1i64, SingularField::Simple(SimpleField::Int32(10)))
+                        .expect("Failed to insert");
+                    MapField::Sint64(c)
+                },
+                8,
+                vec![0x42, 0x04, 0x08, 0x01, 0x10, 0x0A],
+            ),
+            (
+                {
+                    let mut c = MapFieldContainer::new();
+                    c.insert(100u32, SingularField::Simple(SimpleField::Int32(10)))
+                        .expect("Failed to insert");
+                    MapField::Fixed32(c)
+                },
+                9,
+                vec![0x4A, 0x07, 0x0D, 0x64, 0x00, 0x00, 0x00, 0x10, 0x0A],
+            ),
+            (
+                {
+                    let mut c = MapFieldContainer::new();
+                    c.insert(100u64, SingularField::Simple(SimpleField::Int32(10)))
+                        .expect("Failed to insert");
+                    MapField::Fixed64(c)
+                },
+                10,
+                vec![0x52, 0x0B, 0x09, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x0A],
+            ),
+            (
+                {
+                    let mut c = MapFieldContainer::new();
+                    c.insert(-1, SingularField::Simple(SimpleField::Int32(10)))
+                        .expect("Failed to insert");
+                    MapField::Sfixed32(c)
+                },
+                11,
+                vec![0x5A, 0x07, 0x0D, 0xFF, 0xFF, 0xFF, 0xFF, 0x10, 0x0A],
+            ),
+            (
+                {
+                    let mut c = MapFieldContainer::new();
+                    c.insert(-1i64, SingularField::Simple(SimpleField::Int32(10)))
+                        .expect("Failed to insert");
+                    MapField::Sfixed64(c)
+                },
+                12,
+                vec![0x62, 0x0B, 0x09, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x10, 0x0A],
+            ),
+            (
+                {
+                    let mut c = MapFieldContainer::new();
+                    c.insert(true, SingularField::Simple(SimpleField::Int32(10)))
+                        .expect("Failed to insert");
+                    MapField::Bool(c)
+                },
+                13,
+                vec![0x6A, 0x04, 0x08, 0x01, 0x10, 0x0A],
+            ),
+        ];
+
+        for (field, field_number, expected) in cases {
+            let mut buffer = Vec::new();
+            let mut writer = RpcWriter::create_rpc_writer(&mut buffer);
+            field.write_map_field(field_number, &mut writer).expect("Failed to write map field");
+            writer.finalize().expect("Failed to finalize writer");
+            assert_eq!(buffer, expected, "Mismatch for {:?}", field);
+        }
     }
 }
