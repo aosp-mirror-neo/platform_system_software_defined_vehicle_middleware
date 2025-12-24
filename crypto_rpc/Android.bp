@@ -1,0 +1,71 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package {
+    default_applicable_licenses: ["sdv_license"],
+    default_team: "trendy_team_automotive",
+}
+
+rust_defaults {
+    name: "crypto_rpc@rust_defaults",
+    defaults: [
+        "sdv@rust_defaults",
+    ],
+    crate_name: "crypto_rpc",
+    rustlibs: [
+        "libanyhow",
+        "libdata_encoding",
+        "liblog_rust",
+        "librand",
+        "libsdv_status_rs",
+    ],
+    target: {
+        host: {
+            rlibs: ["libopenssl_static"],
+        },
+        android: {
+            rustlibs: ["libopenssl"],
+        },
+    },
+}
+
+rust_library {
+    name: "libcrypto_rpc_rs",
+    defaults: [
+        "crypto_rpc@rust_defaults",
+    ],
+    srcs: ["src/lib.rs"],
+    min_sdk_version: "34",
+    product_available: true,
+    vendor_available: true,
+    host_supported: true,
+}
+
+rust_test {
+    name: "sdv_core_core_services_unit_libcrypto_rpc_test",
+    defaults: ["crypto_rpc@rust_defaults"],
+    srcs: [
+        "src/lib.rs",
+    ],
+
+    test_options: {
+        unit_test: true,
+    },
+    ld_flags: ["-Wl,--no-as-needed"],
+
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
