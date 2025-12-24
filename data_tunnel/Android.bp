@@ -1,0 +1,354 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package {
+    default_team: "trendy_team_automotive",
+    default_applicable_licenses: ["sdv_license"],
+}
+
+cc_defaults {
+    name: "dt_agent_defaults",
+    srcs: [
+        "src/authorities_listener.cpp",
+        "src/config.cpp",
+        "src/service.cpp",
+        "src/topic.cpp",
+        "src/topic_manager.cpp",
+        "src/connection.cpp",
+        "src/connection_grpc/client_authenticator.cpp",
+        "src/connection_grpc/client_connection.cpp",
+        "src/connection_grpc/connection_manager.cpp",
+        "src/connection_grpc/operation_state_machine.cpp",
+        "src/connection_grpc/read_data.cpp",
+        "src/connection_grpc/server_connection.cpp",
+        "src/certs.cpp",
+        "src/remote_agent/remote_agent_client.cpp",
+        "src/remote_agent/remote_agent_client_manager.cpp",
+        "src/remote_agent/remote_agent_common.cpp",
+        "src/remote_agent/remote_agent_handshaker.cpp",
+        "src/remote_agent/remote_agent_server.cpp",
+        "src/remote_agent/remote_agent_server_session.cpp",
+        "src/remote_agent/remote_agent_service.cpp",
+        "src/remote_agent/remote_agent_topic_exporter.cpp",
+    ],
+    local_include_dirs: ["src"],
+    shared_libs: [
+        "android.hardware.common.fmq-V1-ndk",
+        "google.sdv.authz-V2-ndk",
+        "google.sdv.data_tunnel-V2-ndk",
+        "google.sdv.ca-V1-ndk",
+        "google.sdv.identity-V2-ndk",
+        "google.sdv.rpc-V2-ndk",
+        "google.sdv.vpm-V1-ndk",
+        "google.sdv.service_discovery.discovery-V2-ndk",
+        "libbase",
+        "libbinder_ndk",
+        "libcrypto",
+        "libcutils",
+        "libfmq",
+        "libgrpc++",
+        "liblog",
+        "libsdv_dt_core",
+        "libsdv_log",
+        "libsdv_status",
+        "libsdv_status_cpp",
+        "libutils",
+    ],
+}
+
+cc_library {
+    name: "dt_agent_lib",
+    defaults: ["dt_agent_defaults"],
+    vendor: true,
+    min_sdk_version: "35",
+}
+
+// Usage within the platform
+cc_binary {
+    name: "dt_agent",
+    defaults: ["dt_agent_defaults"],
+    srcs: [
+        "src/agent.cpp",
+    ],
+    system_ext_specific: true,
+    vintf_fragment_modules: [
+        "google.sdv.data_tunnel-service.xml",
+    ],
+}
+
+cc_defaults {
+    name: "dt_test_defaults",
+    vendor_available: true,
+    system_ext_specific: true,
+    defaults: ["sdv@cc_defaults"],
+    shared_libs: [
+        "libbase",
+        "libcutils",
+        "libutils",
+    ],
+    require_root: true,
+}
+
+cc_test {
+    name: "sdv_core_core_services_unit_dt_proto_test",
+    srcs: ["tests/dt_proto_test.cpp"],
+    defaults: ["dt_test_defaults"],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+}
+
+cc_test {
+    name: "sdv_core_core_services_unit_dt_agent_test",
+    srcs: [
+        "tests/dt_agent_test.cpp",
+    ],
+    shared_libs: [
+        "android.hardware.common.fmq-V1-ndk",
+        "google.sdv.data_tunnel-V2-ndk",
+        "google.sdv.identity-V2-ndk",
+        "google.sdv.service_discovery.common-V2-ndk",
+        "google.sdv.service_discovery.discovery-V2-ndk",
+        "google.sdv.rpc-V2-ndk",
+        "libbinder_ndk",
+        "libfmq",
+        "liblog",
+        "libsdv_dt_core",
+    ],
+    defaults: [
+        "dt_agent_defaults",
+        "dt_test_defaults",
+    ],
+    local_include_dirs: ["src"],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+    // TODO(398771552): Remove authz disabling exception. This should not be used in the new code.
+    test_config_template: ":sdv_authz_enforcement_flag_disabled_gtest_config_template",
+    test_options: {
+        unit_test: false,
+    },
+}
+
+filegroup {
+    name: "dt_agent_ssl_test_pems",
+    srcs: ["tests/ssl_test_data/*.pem"],
+}
+
+cc_binary_host {
+    name: "dt_agent_generate_key_and_cert_req",
+    defaults: ["sdv@cc_defaults"],
+    srcs: [
+        "tests/generate_key_and_cert_req.cpp",
+        "src/certs.cpp",
+    ],
+    local_include_dirs: ["src"],
+    shared_libs: [
+        "libbase",
+        "libcrypto",
+        "liblog",
+    ],
+}
+
+cc_test {
+    name: "sdv_core_core_services_unit_dt_agent_connection_manager_test",
+    srcs: [
+        "tests/dt_agent_connection_manager_test.cpp",
+        "src/certs.cpp",
+        "src/connection.cpp",
+        "src/connection_grpc/client_authenticator.cpp",
+        "src/connection_grpc/client_connection.cpp",
+        "src/connection_grpc/connection_manager.cpp",
+        "src/connection_grpc/operation_state_machine.cpp",
+        "src/connection_grpc/read_data.cpp",
+        "src/connection_grpc/server_connection.cpp",
+    ],
+    data: [
+        ":dt_agent_ssl_test_pems",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    local_include_dirs: ["src"],
+    shared_libs: [
+        "libcrypto",
+        "libgrpc++",
+        "libsdv_status",
+    ],
+    static_libs: [
+        "libbase",
+        "liblog",
+        "libgtest",
+        "libsdv_status_cpp",
+    ],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
+
+cc_test {
+    name: "sdv_core_core_services_unit_dt_agent_certs_test",
+    srcs: [
+        "tests/certs_test.cpp",
+        "src/certs.cpp",
+    ],
+    data: [
+        ":dt_agent_ssl_test_pems",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    local_include_dirs: ["src"],
+    shared_libs: [
+        "libcrypto",
+    ],
+    static_libs: [
+        "libbase",
+        "liblog",
+        "libgtest",
+    ],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
+
+cc_test {
+    name: "sdv_core_core_services_unit_dt_agent_authorities_listener_test",
+    srcs: [
+        "tests/authorities_listener_test.cpp",
+        "src/authorities_listener.cpp",
+        "src/certs.cpp",
+    ],
+    data: [
+        ":dt_agent_ssl_test_pems",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    local_include_dirs: ["src"],
+    shared_libs: [
+        "google.sdv.ca-V1-ndk",
+        "libbinder_ndk",
+        "libcrypto",
+        "libsdv_status",
+        "libsdv_status_cpp",
+    ],
+    static_libs: [
+        "libbase",
+        "liblog",
+        "libgtest",
+    ],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
+
+cc_test {
+    name: "sdv_core_core_services_unit_dt_agent_topic_test",
+    srcs: [
+        "tests/topic_test.cpp",
+        "src/topic.cpp",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    local_include_dirs: ["src"],
+    shared_libs: [
+        "google.sdv.data_tunnel-V2-ndk",
+        "libfmq",
+        "libsdv_dt_core",
+    ],
+    static_libs: [
+        "libbase",
+        "libcutils",
+        "liblog",
+        "libgtest",
+    ],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
+
+cc_test {
+    name: "sdv_core_core_services_dt_agent_remote_agent_test",
+    srcs: [
+        "tests/remote_agent/*.cpp",
+    ],
+    defaults: ["dt_agent_defaults"],
+    local_include_dirs: [
+        "src",
+        "tests",
+    ],
+    static_libs: [
+        "libbase",
+        "libgtest",
+        "libgmock",
+    ],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
+
+cc_test {
+    name: "sdv_core_core_services_dt_agent_topic_manager_test",
+    srcs: [
+        "tests/topic_manager_test.cpp",
+    ],
+    defaults: ["dt_agent_defaults"],
+    local_include_dirs: [
+        "src",
+        "tests",
+    ],
+    static_libs: [
+        "libbase",
+        "libgtest",
+        "libgmock",
+    ],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
+
+cc_test {
+    name: "sdv_core_core_services_dt_agent_connection_grpc_test",
+    srcs: [
+        "tests/connection_grpc/*.cpp",
+        "src/connection_grpc/*.cpp",
+    ],
+    defaults: ["dt_agent_defaults"],
+    local_include_dirs: [
+        "src",
+        "tests",
+    ],
+    static_libs: [
+        "libbase",
+        "libgtest",
+        "libgmock",
+    ],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
