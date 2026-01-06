@@ -32,6 +32,7 @@
 
 #include <future>
 #include <memory>
+#include <queue>
 
 using ::testing::_;
 using ::testing::StrictMock;

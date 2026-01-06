@@ -28,6 +28,7 @@
 #include <deque>
 #include <future>
 #include <optional>
+#include <thread>
 #include <vector>
 
 namespace android::sdv::dt::agent::test {
