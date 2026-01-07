@@ -1,0 +1,72 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package {
+    default_applicable_licenses: ["sdv_license"],
+}
+
+apex {
+    name: "com.sdv.google.test.authz.local_vm_acl_policy_provider",
+    manifest: "apex_manifest.json",
+    key: "com.sdv.google.test.authz.local_vm_acl_policy_provider.key",
+    certificate: ":com.sdv.google.test.authz.local_vm_acl_policy_provider.certificate",
+    // Security contexts to files in the APEX.
+    file_contexts: "file_contexts",
+    native_shared_libs: [
+        // Rust Authz Test service bundle to be included in the apex.
+        "liboem_authz_service_bundle_test",
+    ],
+    prebuilts: [
+        "com.sdv.google.test.authz.local_vm_acl_policy_provider.manifest",
+        "com.sdv.google.test.authz.local_vm_acl_policy_provider.acl_policy",
+    ],
+    // TODO(b/333868045): make it updatable when all SDV dependencies are ready.
+    updatable: false,
+    // This module is installed into /product partition.
+    product_specific: true,
+}
+
+apex_key {
+    name: "com.sdv.google.test.authz.local_vm_acl_policy_provider.key",
+    public_key: "com.sdv.google.test.authz.local_vm_acl_policy_provider.avbpubkey",
+    private_key: "com.sdv.google.test.authz.local_vm_acl_policy_provider.pem",
+}
+
+android_app_certificate {
+    name: "com.sdv.google.test.authz.local_vm_acl_policy_provider.certificate",
+    certificate: "com.sdv.google.test.authz.local_vm_acl_policy_provider",
+}
+
+// SDV manifest file with the metadata information about service bundles stored in the apex.
+prebuilt_etc {
+    name: "com.sdv.google.test.authz.local_vm_acl_policy_provider.manifest",
+    // The source name of the manifest file.
+    src: "sdv_service_bundles_manifest.textproto",
+    filename: "sdv_service_bundles_manifest.textproto",
+    // Disable direct installation of the manifest to one of the partitions.
+    // The manifest will be used only inside of service bundles registry apexes.
+    installable: false,
+}
+
+// File with the ACL policy of service bundle is stored in the apex.
+prebuilt_etc {
+    name: "com.sdv.google.test.authz.local_vm_acl_policy_provider.acl_policy",
+    // The source name of the manifest file.
+    src: "AuthzTestAclPolicy.textproto",
+    filename: "AuthzTestAclPolicy.textproto",
+    sub_dir: "config/access_control",
+    // Disable direct installation of the manifest to one of the partitions.
+    // The manifest will be used only inside of service bundles registry apexes.
+    installable: false,
+}

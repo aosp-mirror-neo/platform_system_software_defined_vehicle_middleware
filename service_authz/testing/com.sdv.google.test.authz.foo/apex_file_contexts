@@ -1,0 +1,4 @@
+# Copyright 2024 Google LLC
+# See <https://source.android.com/docs/security/features/selinux/concepts#security_contexts>
+
+(/.*)?                  u:object_r:system_file:s0

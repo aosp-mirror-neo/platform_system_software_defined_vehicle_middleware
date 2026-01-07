@@ -1,0 +1,48 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+package {
+    default_applicable_licenses: ["sdv_license"],
+}
+
+// Authz testing service bundle libraries defaults.
+rust_defaults {
+    name: "tests_authz_service_bundle@defaults",
+    defaults: [
+        "sdv@rust_defaults",
+        "sdv_tracing@rust_defaults",
+    ],
+    rustlibs: [
+        // Contains all SDV libraries accessed from the user code.
+        "libsdv_rs",
+        // Rust Protobuf library.
+        "libprotobuf",
+        // Rust lightweight logging *facade*.
+        "liblog_rust",
+        // Tokio coroutines.
+        "libtokio",
+        "libtokio_util",
+        // Rust foundations for asynchronous programming.
+        "libfutures",
+        // Idiomatic error handling in Rust.
+        "libanyhow",
+    ],
+    proc_macros: [
+        // Type erasure for async trait methods.
+        "libasync_trait",
+    ],
+    // CUJs service bundles are to be packed into /product apexes.
+    product_specific: true,
+    // SDK version when the library was introduced. Enables apexes with this library to be updatable.
+    min_sdk_version: "35",
+}
