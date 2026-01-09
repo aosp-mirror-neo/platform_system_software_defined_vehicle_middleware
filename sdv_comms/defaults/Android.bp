@@ -1,0 +1,89 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+    default_team: "trendy_team_automotive",
+    default_visibility: [
+        "//device/google/sdv",
+        "//hardware/sdv:__subpackages__",
+        "//system/software_defined_vehicle/middleware:__subpackages__",
+    ],
+}
+
+// Defaults to be used for SDV Comms Internal API.
+rust_defaults {
+    name: "sdv_comms_internal@rust_defaults",
+    defaults: ["sdv@rust_defaults"],
+    system_ext_specific: true,
+    visibility: [
+        "//system/software_defined_vehicle/middleware/sdv_comms:__subpackages__",
+        "//system/software_defined_vehicle/core_services/lifecycle_management/service_bundle_runner",
+    ],
+}
+
+// Defaults to be used for SDV Comms Internal API.
+rust_defaults {
+    name: "sdv_comms_ffi@rust_defaults",
+    defaults: ["sdv@rust_defaults"],
+    system_ext_specific: true,
+    visibility: [
+        "//system/software_defined_vehicle/middleware/sdv_comms:__subpackages__",
+        "//system/software_defined_vehicle/core_services/lifecycle_management/service_bundle_runner",
+        "//system/software_defined_vehicle/core_services/sdv_comms_for_ivi/samples_apex",
+    ],
+    vendor_available: true,
+}
+
+// Defaults to be used for SDV Comms FFI Stubs.
+rust_defaults {
+    name: "sdv_comms_stub@rust_defaults",
+    defaults: [],
+    prefer_rlib: true,
+    installable: false,
+    product_available: true,
+    vendor_available: true,
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+    visibility: [
+        "//system/software_defined_vehicle/middleware/sdv_comms:__subpackages__",
+        "//system/software_defined_vehicle/service_bundles_registry/clientlib",
+        "//system/software_defined_vehicle/samples/sdv_gateway/dt",
+    ],
+}
+
+// Defaults to be used for Comms SDK Rust API.
+rust_defaults {
+    name: "sdv_comms_sdk@rust_defaults",
+    system_ext_specific: true,
+    product_available: true,
+    vendor_available: true,
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
+
+cc_defaults {
+    name: "sdv_comms_sdk@cc_defaults",
+    system_ext_specific: true,
+    product_available: true,
+    vendor_available: true,
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
