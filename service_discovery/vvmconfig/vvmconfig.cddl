@@ -1,0 +1,56 @@
+;
+; Copyright 2024 Google LLC
+;
+
+VvmConfig = [
+  version: 1,
+  ; Public key of the UDS root provisioning authority
+  udsCaPub: COSE_Key,
+  ; Revocation list of intermediate CAs of UDS certificates
+  udsCaRevList: KeyList,
+  policies: DicePolicies,
+  vmConfigs: VmConfigMap,
+]
+
+DicePolicies = [+ DicePolicy]
+
+KeyList = [* COSE_Key]
+
+; Maps a VM instance name to its configuration
+VmConfigMap = {
+  VmInstanceName => VmConfig
+}
+
+VmConfig = [
+  ; IP addresses of this virtual machine.
+  ips: [+ IpAndPort],
+  ; Index of the DICE policy for the Android SDV VM DICE chain.
+  android: PolicyIndex,
+  ; Index of the DICE policy for the Secure World DICE chain used by the Android SDV VM.
+  secureWorld: PolicyIndex,
+]
+
+IpAndPort = [
+    ip: IpAddress,
+    ; If not specicied, the default Service Discovery agent port will be used.
+    ? port: uint
+]
+
+IpAddress = ipv4-address / ipv6-address
+
+; Index of a DicePolicy in the DicePolicies array.
+PolicyIndex = uint
+
+; The VM Name (as defind in the VVM Config). This must comply with VM Name identifier
+; definition in Service Identity docs.
+VmInstanceName = tstr
+
+; INCLUDE DicePolicy FROM
+; hardware/interfaces/security/authgraph/aidl/android/hardware/security/authgraph/DicePolicy.cddl
+
+; INCLUDE COSE_Key FROM
+; https://datatracker.ietf.org/doc/html/rfc8152
+
+; INCLUDE ipv6-address, ipv4-address FROM
+; https://datatracker.ietf.org/doc/html/rfc9164
+
