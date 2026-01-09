@@ -1,0 +1,55 @@
+/*
+ * Copyright (C) 2026 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+syntax = "proto3";
+
+package sdv.vsidl.tests.metadata;
+
+import "sdv/vsidl/v1/annotations.proto";
+
+import "google/protobuf/wrappers.proto";
+import "reference.proto";
+import "dir/childdir.proto";
+import "another.proto";
+
+enum SampleVariants {
+  FOO = 0;
+  BAR = 1;
+}
+
+message SampleMessage {
+  option (.sdv.vsidl.v1.publication) = {
+    instances_enum: "SampleVariants"
+    message_count: 8
+    model: SINGLE_PUB
+  };
+
+  message Nested {
+    uint32 value = 1;
+  }
+
+  uint32 direct = 1;
+  Nested nested = 2;
+  Sibling ref_to_same_file = 3;
+  google.protobuf.BoolValue ref_to_well_known = 4;
+  Neighbor ref_to_diff_file = 5;
+  .sdv.vsidl.tests.metadata.child.Child ref_to_diff_dir = 6;
+  .sdv.vsidl.tests.metadata.another.Another ref_to_diff_catalog = 7;
+}
+
+message Sibling {
+  uint32 value = 1;
+}

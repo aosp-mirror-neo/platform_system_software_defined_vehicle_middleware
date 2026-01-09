@@ -1,0 +1,144 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package {
+    default_applicable_licenses: ["sdv_license"],
+    default_team: "trendy_team_automotive",
+}
+
+rust_defaults {
+    name: "sdv_authz_local_vm_acl_policy_provider_factory@rust_defaults",
+    crate_name: "sdv_authz_local_vm_acl_policy_provider_factory",
+    defaults: [
+        "sdv@rust_defaults",
+        "sdv_authz_acl_provider_specification@rust_defaults",
+        "sdv_tracing@rust_defaults",
+    ],
+    rustlibs: [
+        "libanyhow",
+        "liblog_rust",
+        "libsdv_authz",
+        "libsdv_authz_acl_file_provider",
+    ],
+}
+
+rust_library {
+    name: "libsdv_authz_local_vm_acl_policy_provider_factory",
+    defaults: ["sdv_authz_local_vm_acl_policy_provider_factory@rust_defaults"],
+    srcs: ["src/lib.rs"],
+    vendor_available: true,
+    min_sdk_version: "35",
+}
+
+soong_config_module_type {
+    name: "sdv_authz_acl_provider_specification_rust_defaults",
+    module_type: "rust_defaults",
+    config_namespace: "sdv_authz",
+    variables: [
+        "acl_provider_type",
+    ],
+    properties: [
+        "cfgs",
+        "rustlibs",
+    ],
+}
+
+soong_config_string_variable {
+    name: "acl_provider_type",
+    values: [
+        "sdv_acl_provider",
+        "ivi_acl_provider",
+    ],
+}
+
+sdv_authz_acl_provider_specification_rust_defaults {
+    name: "sdv_authz_acl_provider_specification@rust_defaults",
+    soong_config_variables: {
+        acl_provider_type: {
+            sdv_acl_provider: {
+                cfgs: ["sdv_acl_provider"],
+                rustlibs: ["libsdv_authz_sdv_local_vm_acl_policy_provider"],
+            },
+            ivi_acl_provider: {
+                cfgs: ["ivi_acl_provider"],
+                // Note that product targets that don't specify a provider effectively get
+                // ivi_acl_provider.  This means the build won't break for products like
+                // aosp_cheetah that build SD agent but don't set a value for acl_provider_type.
+            },
+        },
+    },
+}
+
+rust_test {
+    name: "sdv_core_core_services_unit_authz_local_vm_acl_policy_provider_factory_test",
+    srcs: ["src/lib.rs"],
+    defaults: ["sdv_authz_local_vm_acl_policy_provider_factory@rust_defaults"],
+    test_suites: [
+        "automotive-sdv-tests",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    rustlibs: [
+        "libtempfile",
+    ],
+}
+
+prebuilt_etc {
+    name: "ivi_acl_provider_vendor_acl_textproto",
+    sub_dir: "sdv_authz_acls/com.sdv.google.test.authz.local_vm_acl_policy_provider",
+    src: "tests/VendorBundle.textproto",
+    filename: "VendorBundle.textproto",
+    vendor: true,
+}
+
+prebuilt_etc {
+    name: "ivi_acl_provider_product_acl_textproto",
+    sub_dir: "sdv_authz_acls/com.sdv.google.test.authz.local_vm_acl_policy_provider",
+    src: "tests/ProductBundle.textproto",
+    filename: "ProductBundle.textproto",
+    product_specific: true,
+}
+
+prebuilt_etc {
+    name: "ivi_acl_provider_system_acl_textproto",
+    sub_dir: "sdv_authz_acls/com.sdv.google.test.authz.local_vm_acl_policy_provider",
+    src: "tests/SystemBundle.textproto",
+    filename: "SystemBundle.textproto",
+}
+
+prebuilt_etc {
+    name: "ivi_acl_provider_system_ext_acl_textproto",
+    sub_dir: "sdv_authz_acls/com.sdv.google.test.authz.local_vm_acl_policy_provider",
+    src: "tests/SystemExtBundle.textproto",
+    filename: "SystemExtBundle.textproto",
+    system_ext_specific: true,
+}
+
+rust_test {
+    name: "sdv_ivi_core_services_integration_authz_ivi_acl_provider_test",
+    srcs: ["tests/ivi_acl_provider_test.rs"],
+    defaults: ["sdv_authz_local_vm_acl_policy_provider_factory@rust_defaults"],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+    test_options: {
+        unit_test: false,
+    },
+    rustlibs: [
+        "libsdv_authz_local_vm_acl_policy_provider_factory",
+        "libsdv_comms_id",
+    ],
+}

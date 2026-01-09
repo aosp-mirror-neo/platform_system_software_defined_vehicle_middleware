@@ -1,0 +1,73 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package sdv.authz.policy.acl_policy;
+
+// AclPolicy defines the Access control policies for Unit Types and Service
+// Units.
+//
+// Service bundle manifest file may include a path to a policy file that
+// includes an AclPolicy proto.
+
+message AclPolicy {
+  // Required. List of ACLs.
+  //
+  // ACL names should be unique for this AclPolicy message.
+  repeated Acl acls = 1;
+
+  // Optional. List of Access Control policy for Unit Types.
+  //
+  // Unit Type names should be unique for this AclPolicy message.
+  repeated UnitAclMapping unit_types = 2;
+
+  // Optional. List of Access Control policy for Service Units.
+  //
+  // Service Unit names should be unique for this AclPolicy message.
+  repeated UnitAclMapping service_units = 3;
+}
+
+message Acl {
+  // Required. Name of the Access Control List.
+  string name = 1;
+  // Optional % NOTE. List of ACL expressions which control allow access to the
+  // guarded Unit.
+  //
+  // NOTE: At least one expression has to be defined either in `include` or
+  // `never_include` fields.
+  repeated string include = 2;
+  // Optional % NOTE. List of ACL expressions which control deny access to the
+  // guarded Unit.
+  //
+  // NOTE: At least one expression has to be defined either in `include` or
+  // `never_include` fields.
+  repeated string never_include = 3;
+}
+
+// Defines a mapping between Unit (either Unit Type or Service Unit) and its
+// ACLs.
+message UnitAclMapping {
+  // Required.
+  //
+  // In case of a Service Unit, this is the name of a Service Unit as provided
+  // during Service Unit Registration via Service Discovery.
+  string name = 1;
+
+  // Required. List of ACL Names that are guarding the Unit.
+  //
+  // All ACLs that are referred here has to be defined in the parent proto
+  // message. Otherwise accessing the Service Unit is impossible.
+  repeated string acl_names = 2;
+}

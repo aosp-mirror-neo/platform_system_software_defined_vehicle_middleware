@@ -1,0 +1,85 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package {
+    default_applicable_licenses: ["sdv_license"],
+    default_team: "trendy_team_automotive",
+}
+
+cc_defaults {
+    name: "rpcagent_defaults",
+    srcs: ["cpp/RpcAgentServer.cpp"],
+    shared_libs: [
+        "libbinder_ndk",
+        "liblog",
+        "libbase",
+        "libutils",
+    ],
+    vintf_fragments: [":rpc_agent_vintf_fragments"],
+    static_libs: [
+        "google.sdv.rpc-V2-ndk",
+        "google.sdv.service_discovery.discovery-V2-ndk",
+        "google.sdv.service_discovery.common-V2-ndk",
+        "google.sdv.identity-V2-ndk",
+    ],
+    export_static_lib_headers: [
+        "google.sdv.rpc-V2-ndk",
+    ],
+}
+
+// Usage within the platform
+cc_binary {
+    name: "rpcagent",
+    srcs: ["cpp/main.cpp"],
+    defaults: ["rpcagent_defaults"],
+    system_ext_specific: true,
+}
+
+// Restrict usage by the `com.google.sdv.comms` APEX
+cc_binary {
+    name: "rpcagent_vendor",
+    srcs: ["cpp/main.cpp"],
+    defaults: ["rpcagent_defaults"],
+    vendor: true,
+    stem: "rpcagent",
+    apex_available: [
+        "com.google.sdv.comms",
+    ],
+    visibility: ["//system/software_defined_vehicle/sdv_gateway/sdv_comms_for_ivi/apex:__pkg__"],
+    min_sdk_version: "35",
+}
+
+cc_test {
+    name: "sdv_core_core_services_unit_rpc_agent_test",
+    srcs: ["cpp/RpcAgent-test.cpp"],
+    defaults: ["rpcagent_defaults"],
+    static_libs: [
+        "libgmock",
+        "libgtest",
+        "libgtest_main",
+        "libfakeservicemanager",
+    ],
+    shared_libs: [
+        "libbinder",
+        "libutils",
+    ],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    require_root: true,
+}

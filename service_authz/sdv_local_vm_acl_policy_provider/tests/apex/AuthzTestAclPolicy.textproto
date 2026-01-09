@@ -1,0 +1,57 @@
+# Copyright (C) 2026 The Android Open Source Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# proto-file: //system/software_defined_vehicle/core_services/service_authz/proto/sdv/authz/policy/acl_policy.proto
+# proto-message: AclPolicy
+
+# Units Types.
+acls {
+    name: "TirePressurePubs1"
+    include: "vm-cdc:*"
+    include: "vm-telemetry:*"
+    never_include: "vm-ivi:*"
+}
+acls {
+    name: "TirePressurePubs2"
+    include: "com.google.android.sdv.datatunnel.*"
+}
+unit_types {
+    name: "TirePressureTopic1"
+    acl_names: "TirePressurePubs2"
+}
+unit_types {
+    name: "TirePressureTopic2"
+    acl_names: "TirePressurePubs1"
+    acl_names: "TirePressurePubs2"
+}
+
+# Service Units.
+acls {
+    name: "TirePressureSubs1"
+    include: "vm-cdc:*"
+    include: "vm-telemetry:*"
+    never_include: "vm-ivi:*"
+}
+acls {
+    name: "TirePressureSubs2"
+    include: "com.google.android.sdv.datatunnel.*"
+}
+service_units {
+    name: "tire-pressure-publisher-1"
+    acl_names: "TirePressureSubs2"
+}
+service_units {
+    name: "tire-pressure-publisher-2"
+    acl_names: "TirePressureSubs1"
+    acl_names: "TirePressureSubs2"
+}
