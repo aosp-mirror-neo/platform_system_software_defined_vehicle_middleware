@@ -1,0 +1,131 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+package sdv_sd_mesh;
+
+import "sdv_sd_mesh/api/identity/identity.proto";
+import "sdv_sd_mesh/api/service_discovery/discovery.proto";
+import "sdv_sd_mesh/api/service_discovery/metadata.proto";
+
+import "sdv/authz/policy/acl_policy.proto";
+
+service MeshManager {
+  // Subscribes to AddServiceUnitEvent, RemoveServiceUnitEvent, and RemoveByIdentityEvent events.
+  // After successful subscription, the subscriber will receive AddServiceUnitEvents
+  // for each service available at the point of subscribing following by events representing
+  // further updates.
+  rpc SubscribePeerLocalServiceUnits(SubscribePeerLocalServiceUnitsRequest)
+      returns (stream PeerLocalServiceUnitsEvent) {}
+
+  // Requests all local ACLs from a remote peer.
+  rpc GetPeerLocalAcls(GetPeerLocalAclsRequest) returns (GetPeerLocalAclsResponse) {}
+
+  // Pings the remote peer to confirm liveness.
+  rpc Ping(PingRequest) returns (PingResponse) {}
+
+  // Requests the UDS public key of the device this VM is running on.
+  //
+  // Used to compile or update the uds_pubs file of the caller. Either during
+  // factory provisioning or during parts replacement.
+  //
+  // Only available when the SDV boot mode is unlocked.
+  rpc GetUdsPub(GetUdsPubRequest) returns (GetUdsPubResponse) {}
+
+  // Exchange the root certificates of the local and remote service discovery agents.
+  //
+  // The request contains the caller's VM X.509 root certificate.
+  // The response contains the callee's VM X.509 root certificate.
+  //
+  // Those are the root certificates that each agent uses in its respective
+  // ICertificateAuthority binder service.
+  //
+  // Only available when the SDV boot mode is locked.
+  rpc ExchangeRootCerts(ExchangeRootCertsRequest) returns (ExchangeRootCertsResponse) {}
+}
+
+// Request message for SubscribePeerLocalServiceUnits.
+message SubscribePeerLocalServiceUnitsRequest {}
+
+// Event produced on registrations of peer local unit types.
+message PeerLocalServiceUnitsEvent {
+  oneof event {
+    AddServiceUnitEvent add_service_unit = 1;
+    RemoveServiceUnitEvent remove_service_unit = 2;
+    RemoveByIdentityEvent remove_by_identity = 3;
+  }
+}
+
+message AddServiceUnitEvent {
+  discovery.ServiceUnitDefinition unit_definition = 1;
+  metadata.TransportMetadata transport_metadata = 2;
+}
+
+message RemoveServiceUnitEvent {
+  identity.ServiceUnitIdentifier service_unit_identifier = 1;
+}
+
+message RemoveByIdentityEvent {
+  identity.ServiceFqin service_fqin = 1;
+}
+
+// Messages for GetPeerLocalAcls
+message GetPeerLocalAclsRequest {}  // No request parameters needed
+
+// Response for the GetPeerLocalAcls RPC call.
+//
+// Contains ACL policy for Service Bundles on a remote peer.
+message GetPeerLocalAclsResponse {
+  message ServiceBundleAclPolicy {
+    // Required.
+    string package_name = 1;
+    // Required.
+    string service_bundle_name = 2;
+    // Required.
+    sdv.authz.policy.acl_policy.AclPolicy acl_policy = 3;
+  }
+
+  // Required.
+  //
+  // List of Service Bundles which has an ACL policy. Service Bundles without
+  // ACL policy should not be in the list.
+  //
+  // If a remote peer does not include ACL policy for a Service Units owned
+  // and exposed by that remote peer, local Services will not be authorized
+  // to discover and connect remote Service Units.
+  repeated ServiceBundleAclPolicy service_bundle_acl_policies = 1;
+}
+
+// Messages for Ping
+message PingRequest {}
+message PingResponse {}
+
+message GetUdsPubRequest {}
+message GetUdsPubResponse {
+  // The UDS public key of the device.
+  // Encoded as a COSE_Key.
+  // A device will usually have a single UDS public key. But in some deployments
+  // it may have two: one for the android boot path and another for the secure
+  // world boot path.
+  repeated bytes uds_pub = 1;
+}
+
+message ExchangeRootCertsRequest {
+  // The caller's VM X.509 root certificate, encoded as a PEM string.
+  bytes root_cert = 3;
+}
+message ExchangeRootCertsResponse {
+  // The callee's VM X.509 root certificate, encoded as a PEM string.
+  bytes root_cert = 3;
+}

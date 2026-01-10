@@ -1,0 +1,376 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package {
+    default_team: "trendy_team_automotive",
+    default_applicable_licenses: ["sdv_license"],
+}
+
+rust_defaults {
+    name: "sdv_sd_agent@rust_defaults",
+    defaults: [
+        "keymint_use_latest_hal_aidl_rust",
+        "sdv_tracing@rust_defaults",
+    ],
+    rustlibs: [
+        "android.hardware.security.rkp-V3-rust",
+        "google.sdv.authz-V2-rust",
+        "google.sdv.ca-V1-rust",
+        "google.sdv.identity-V2-rust",
+        "google.sdv.init_open_dice-rust",
+        "google.sdv.mesh-status-V1-rust",
+        "google.sdv.mesh.provisioning-V1-rust",
+        "google.sdv.privileged.identity-V2-rust",
+        "google.sdv.privileged.service_discovery-V2-rust",
+        "google.sdv.service_discovery.common-V2-rust",
+        "google.sdv.service_discovery.discovery-V2-rust",
+        "google.sdv.vpm-V1-rust",
+        "libanyhow",
+        "libbinder_rs",
+        "libbinder_tokio_rs",
+        "libciborium",
+        "libcoset",
+        "libcrypto_rpc_rs",
+        "libdata_encoding",
+        "libder",
+        "libdice_chain_verifier",
+        "libdice_policy",
+        "libexplicitkeydice",
+        "libforeign_types_shared",
+        "libfutures",
+        "libfutures_executor",
+        "libfutures_util",
+        "libgrpcio",
+        "libgrpcio_sys",
+        "libhex",
+        "libhwtrust",
+        "libitertools",
+        "libkeystore_attestation",
+        "liblazy_static",
+        "liblibc",
+        "liblog_rust",
+        "libmio",
+        "libmockall",
+        "libonce_cell",
+        "libopenssl",
+        "libprotobuf",
+        "librand",
+        "librustutils",
+        "libsdv_authz",
+        "libsdv_authz_enforcement_flag",
+        "libsdv_authz_local_vm_acl_policy_provider_factory",
+        "libsdv_authz_policy_proto_rust",
+        "libsdv_comms_id",
+        "libsdv_log_rust",
+        "libsdv_sd_mesh_api",
+        "libthiserror",
+        "libtokio",
+        "libtokio_stream",
+        "libtokio_util",
+        "libuds_certs",
+        "libvsock",
+        "libvvmconfig",
+        "libvvmtruststore",
+    ],
+    proc_macros: [
+        "libasync_trait",
+        "libpaste",
+    ],
+}
+
+rust_defaults {
+    name: "sdv_sd_agent_binary_defaults",
+    srcs: ["srcs/main.rs"],
+    defaults: [
+        "sdv_sd_agent@rust_defaults",
+        "sdv_sd@rust_defaults",
+        "sdv@rust_defaults",
+    ],
+    vintf_fragments: [":sdv_sd_agent_vintf_fragments"],
+    prefer_rlib: true,
+}
+
+// For Core, which has a VPM service, and relies on the google.sdv.service_bundles.identity service
+// which is hosted by the lifecycle manager
+// TODO: b/438660558 - either explicitly mark this module to be for Core (e.g. by naming it
+//       sdv_sd_agent_for_core) or have a single variant for both Core and IVI the differences
+//       extracted to additional services that have target specific implementations.
+rust_binary {
+    name: "sdv_sd_agent",
+    defaults: [
+        "sdv_sd_agent_binary_defaults",
+    ],
+    features: [
+        "verified_fqin",
+        "vpm",
+    ],
+    rustlibs: [
+        "google.sdv.service_bundles.identity-rust",
+        "libsdv_aid",
+    ],
+    system_ext_specific: true,
+}
+
+// For IVI, which does not have a VPM service, on A16.
+// TODO: b/462379676 - Should be renamed to sdv_sd_agent_ivi
+rust_binary {
+    name: "sdv_sd_agent_no_vpm",
+    defaults: [
+        "sdv_sd_agent_binary_defaults",
+    ],
+    rustlibs: [
+        "google.sdv.privileged.gatewaynetworking-V2-rust",
+    ],
+    features: [
+        "ivi",
+    ],
+    shared_libs: [
+        "libandroid_net",
+    ],
+    system_ext_specific: true,
+}
+
+// For IVI, which does not have a VPM service, in the vendor partition on A15.
+rust_binary {
+    name: "sdv_sd_agent_vendor",
+    defaults: [
+        "sdv_sd_agent_binary_defaults",
+    ],
+    rustlibs: [
+        "google.sdv.privileged.gatewaynetworking-V2-rust",
+    ],
+    vendor: true,
+    stem: "sdv_sd_agent",
+    apex_available: [
+        "com.google.sdv.comms",
+    ],
+    visibility: ["//system/software_defined_vehicle/sdv_gateway/sdv_comms_for_ivi/apex:__pkg__"],
+    shared_libs: [
+        "libandroid_net",
+    ],
+    features: [
+        "ivi",
+    ],
+    cfgs: ["sdv_sd_agent_for_a15"],
+    min_sdk_version: "35",
+}
+
+rust_bindgen {
+    name: "libsdv_aid",
+    wrapper_src: "rust_bindgen/android_filesystem_config_wrapper.h",
+    crate_name: "sdv_aid",
+    source_stem: "bindings",
+    header_libs: ["libcutils_headers"],
+    bindgen_flags: [
+        "--allowlist-var",
+        "AID_ROOT",
+        "--allowlist-var",
+        "AID_SYSTEM",
+        "--allowlist-var",
+        "AID_SYSTEM_EXT_RESERVED_START",
+        "--allowlist-var",
+        "AID_SYSTEM_EXT_RESERVED_END",
+        "--allowlist-var",
+        "AID_PRODUCT_RESERVED_START",
+        "--allowlist-var",
+        "AID_PRODUCT_RESERVED_END",
+        "--allowlist-var",
+        "AID_OEM_RESERVED_START",
+        "--allowlist-var",
+        "AID_OEM_RESERVED_END",
+    ],
+    system_ext_specific: true,
+    visibility: [":__pkg__"],
+}
+
+rust_test {
+    name: "sdv_core_core_services_unit_sd_agent_test",
+    srcs: ["srcs/main.rs"],
+    crate_name: "sdv_sd_agent",
+    defaults: [
+        "sdv_sd_agent@rust_defaults",
+        "sdv_sd@rust_defaults",
+        "sdv@rust_defaults",
+    ],
+    features: [
+        "verified_fqin",
+    ],
+    rustlibs: [
+        "google.sdv.service_bundles.identity-rust",
+        "libdiced_open_dice_multialg",
+        "libgoogletest_rust",
+        "libkmr_common",
+        "libkmr_wire",
+        "libsample_dice_handover",
+        "libsdv_aid",
+        "libsdv_dice",
+        "libtempfile",
+        "libtest_dice_artifacts_builder",
+        "libtest_uds_certs_generator",
+        "libtokio_test",
+    ],
+    // The test requires root permissions because 'shell' domain is
+    // not allowed to find Binder services.
+    require_root: true,
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+}
+
+// A subset of the sdv_sd_agent_unit_tests which covers the KeyMint requirements for mesh
+// authentication. Ideally, this test would be part of sdv_keymint_test, but libopenssl is not
+// visible for sdv_keymint_test.
+rust_test {
+    name: "sdv_core_core_services_unit_mesh_auth_keymint_requirements_test",
+    srcs: ["srcs/mesh/dice_chains.rs"],
+    defaults: [
+        "keymint_use_latest_hal_aidl_rust",
+        "sdv_sd@rust_defaults",
+        "sdv@rust_defaults",
+    ],
+    rustlibs: [
+        "android.hardware.security.rkp-V3-rust",
+        "google.sdv.init_open_dice-rust",
+        "libanyhow",
+        "libbinder_rs",
+        "libcrypto_rpc_rs",
+        "libcoset",
+        "libder",
+        "libdice_chain_verifier",
+        "libgoogletest_rust",
+        "libhwtrust",
+        "libkeystore_attestation",
+        "liblibc",
+        "liblog_rust",
+        "libopenssl",
+        "librustutils",
+        "libvvmtruststore",
+    ],
+    // Allows unused methods that are not used in this test.
+    flags: ["-A dead_code"],
+    // The test requires root permissions because 'shell' domain is
+    // not allowed to find Binder services.
+    require_root: true,
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+}
+
+rust_library {
+    name: "libtest_agents",
+    crate_name: "test_agents",
+    defaults: [
+        "sdv_sd_agent@rust_defaults",
+    ],
+    srcs: ["tests/test_agents.rs"],
+    rustlibs: [
+    ],
+    visibility: [
+        "//system/software_defined_vehicle/core_services/service_discovery/sdv_sd_agent/tests:__subpackages__",
+    ],
+}
+
+rust_test {
+    name: "sdv_core_core_services_unit_sd_agent_identity_v2_test",
+    srcs: ["tests/identity_test_v2.rs"],
+    defaults: [
+        "sdv_sd@rust_defaults",
+        "sdv@rust_defaults",
+    ],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    // We need root to access IIdentityAgent IPC
+    require_root: true,
+    auto_gen_config: true,
+    compile_multilib: "first",
+    rustlibs: [
+        "google.sdv.identity-V2-rust",
+        "libbinder_rs",
+        "liblog_rust",
+        "libtest_agents",
+        "libnamed_lock",
+        "libsdv_comms_id",
+    ],
+}
+
+rust_test {
+    name: "sdv_core_core_services_unit_sd_agent_add_service_flow_v2_test",
+    srcs: ["tests/add_service_flow_test_v2.rs"],
+    defaults: [
+        "sdv_sd@rust_defaults",
+        "sdv@rust_defaults",
+        "sdv_sd_agent@rust_defaults",
+    ],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    // TODO(398771552): Remove authz disabling exception. This should not be used in the new code.
+    test_config_template: ":sdv_authz_enforcement_flag_disabled_config_template",
+    // We need root to access IIdentityAgent IPC
+    require_root: true,
+    auto_gen_config: true,
+    compile_multilib: "first",
+    rustlibs: [
+        "google.sdv.identity-V2-rust",
+        "libbinder_rs",
+        "liblog_rust",
+        "libtest_agents",
+    ],
+}
+
+rust_test {
+    name: "sdv_core_core_services_unit_sd_agent_service_registration_test",
+    srcs: ["tests/service_unit_registration_test.rs"],
+    defaults: [
+        "sdv_sd@rust_defaults",
+        "sdv@rust_defaults",
+        "sdv_sd_agent@rust_defaults",
+    ],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    // TODO(398771552): Remove authz disabling exception. This should not be used in the new code.
+    test_config_template: ":sdv_authz_enforcement_flag_disabled_config_template",
+    // We need root to access IIdentityAgent IPC
+    require_root: true,
+    auto_gen_config: true,
+    compile_multilib: "first",
+    rustlibs: [
+        "google.sdv.identity-V2-rust",
+        "libbinder_rs",
+        "liblog_rust",
+        "libtest_agents",
+    ],
+}
