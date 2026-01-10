@@ -18,6 +18,15 @@
       "name": "sdv_core_middleware_unit_wire_format_test"
     },
     {
+      "name": "sdv_core_core_services_unit_middleware_generic_comms_test"
+    },
+    {
+      "name": "sdv_core_core_services_unit_middleware_sdv_comms_test"
+    },
+    {
+      "name": "sdv_core_core_services_unit_middleware_local_comms_test"
+    },
+    {
       "name": "sdv_core_core_services_unit_vsidl_proto_reflection_performance_test"
     },
     {

@@ -1,0 +1,70 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+    default_team: "trendy_team_automotive",
+}
+
+rust_defaults {
+    name: "sdvmw_rs_mw_defaults",
+    defaults: [
+        "sdv@rust_defaults",
+        "sdv_tracing_instrument@rust_defaults",
+    ],
+    srcs: [
+        "src/lib.rs",
+    ],
+    rustlibs: [
+        "libfutures",
+        "libprotobuf",
+        "libsdv_status_rs",
+        "libsdv_comms_rs",
+        "libsdv_proto_reflection_rs",
+        "libmockall",
+    ],
+    proc_macros: [
+        "libasync_trait",
+    ],
+    vendor_available: true,
+    product_available: true,
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+}
+
+rust_library {
+    name: "libsdv_mw_rs_comms",
+    crate_name: "sdv_mw_rs_comms",
+    defaults: ["sdvmw_rs_mw_defaults"],
+    min_sdk_version: "35",
+}
+
+rust_test {
+    name: "sdv_core_core_services_unit_middleware_generic_comms_test",
+    defaults: ["sdvmw_rs_mw_defaults"],
+    test_suites: [
+        "automotive-sdv-tests",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    // TODO(398771552): Remove authz disabling exception. This should not be used in the new code.
+    test_config_template: ":sdv_authz_enforcement_flag_disabled_config_template",
+    rustlibs: [
+        "libgoogletest_rust",
+        "libtokio",
+    ],
+    ld_flags: ["-Wl,--no-as-needed"],
+}
