@@ -1,0 +1,270 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+    default_team: "trendy_team_automotive",
+}
+
+rust_defaults {
+    name: "sdv_comms_sdk_libs@rust_defaults",
+    defaults: ["sdv_tracing_instrument@rust_defaults"],
+    rustlibs: [
+        // keep-sorted start
+        "google.sdv.authz-V2-rust",
+        "google.sdv.ca-V1-rust",
+        "google.sdv.identity-V2-rust",
+        "google.sdv.rpc-V2-rust",
+        "google.sdv.service_discovery.common-V2-rust",
+        "google.sdv.service_discovery.discovery-V2-rust",
+        "libanyhow",
+        "libbinder_rs",
+        "libbinder_tokio_rs",
+        "libbytemuck",
+        "libbytes",
+        "libcrypto_rpc_rs",
+        "libfutures",
+        "libhttp",
+        "libhyper_util",
+        "liblibc",
+        "liblog_rust",
+        "libopenssl",
+        "libpin_project",
+        "libsdv_comms_bindgen",
+        "libsdv_comms_common",
+        "libsdv_status_rs",
+        "libstatic_assertions",
+        "libtokio",
+        "libtokio_openssl",
+        "libtokio_stream",
+        "libtonic",
+        "libtower",
+        // keep-sorted end
+    ],
+    proc_macros: [
+        // keep-sorted start
+        "libasync_trait",
+        // keep-sorted end
+    ],
+}
+
+rust_library {
+    name: "libsdv_comms_rs",
+    crate_name: "sdv_comms",
+    defaults: [
+        "sdv@rust_defaults",
+        "sdv_comms_sdk@rust_defaults",
+        "sdv_comms_sdk_libs@rust_defaults",
+    ],
+    srcs: ["rs/lib.rs"],
+    shared_libs: [
+        // keep-sorted start
+        "libsdv_comms_ctx_stub",
+        "libsdv_comms_dt_stub",
+        "libsdv_comms_id_stub",
+        "libsdv_comms_sd_stub",
+        // keep-sorted end
+    ],
+    // See b/362705413: This is needed to avoid a linker issue which excludes the Comms Stack
+    // shared libraries from being listed as NEEDED dependencies in the final compiled entity.
+    ld_flags: ["-Wl,--no-as-needed"],
+    min_sdk_version: "34",
+    visibility: [
+        "//hardware/sdv/interfaces/middleware:__subpackages__",
+        "//system/software_defined_vehicle:__subpackages__",
+        "//vendor:__subpackages__",
+    ],
+}
+
+cc_library {
+    name: "libsdv_comms_cpp",
+    srcs: ["cpp/**/*.cpp"],
+    exclude_srcs: ["cpp/**/*_test.cpp"],
+    defaults: ["sdv@cc_defaults"],
+    export_include_dirs: ["include_cpp"],
+    export_shared_lib_headers: ["libsdv_status"],
+    export_static_lib_headers: ["libsdv_status_cpp"],
+    local_include_dirs: ["cpp"],
+    header_libs: [
+        // keep-sorted start
+        "libsdv_comms_ctx_hdrs",
+        "libsdv_comms_dt_hdrs",
+        "libsdv_comms_id_hdrs",
+        "libsdv_comms_sd_hdrs",
+        "libsdv_status_hdrs",
+        // keep-sorted end
+    ],
+    shared_libs: [
+        // keep-sorted start
+        "libbase",
+        "libsdv_comms_ctx_stub",
+        "libsdv_comms_dt_stub",
+        "libsdv_comms_id_stub",
+        "libsdv_comms_sd_stub",
+        "libsdv_status",
+        // keep-sorted end
+    ],
+    // See b/362705413: This is needed to avoid a linker issue which excludes the Comms Stack
+    // shared libraries from being listed as NEEDED dependencies in the final compiled entity.
+    ldflags: ["-Wl,--no-as-needed"],
+    static_libs: [
+        "libsdv_status_cpp",
+    ],
+    system_ext_specific: true,
+    product_available: true,
+    vendor_available: true,
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+    min_sdk_version: "34",
+}
+
+rust_test {
+    name: "sdv_core_core_services_unit_comms_rs_sdk_test",
+    crate_name: "sdv_comms",
+    defaults: [
+        "sdv@rust_defaults",
+        "sdv_comms_sdk_libs@rust_defaults",
+    ],
+    srcs: ["rs/lib.rs"],
+    rustlibs: [
+        "libgoogletest_rust",
+        "liblazy_static",
+        "libsdv_comms_ctx_impl",
+        "libsdv_comms_dt",
+        "libsdv_comms_id",
+        "libsdv_comms_sd",
+        "libsdv_log_rust",
+    ],
+    ld_flags: ["-Wl,--no-as-needed"],
+    shared_libs: [
+        // keep-sorted start
+        "libsdv_comms_ctx_stub",
+        "libsdv_comms_dt_stub",
+        "libsdv_comms_id_stub",
+        "libsdv_comms_sd_stub",
+        // keep-sorted end
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    // TODO(398771552): Remove authz disabling exception. This should not be used in the new code.
+    test_config_template: ":sdv_authz_enforcement_flag_disabled_config_template",
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+    require_root: true,
+}
+
+cc_defaults {
+    name: "sdv_comms_cpp_sdk_test_defaults",
+    defaults: ["sdv@cc_defaults"],
+    local_include_dirs: ["cpp"],
+    header_libs: [
+        // keep-sorted start
+        "libsdv_comms_ctx_hdrs",
+        "libsdv_comms_id_hdrs",
+        "libsdv_comms_sd_hdrs",
+        "libsdv_status_hdrs",
+        // keep-sorted end
+    ],
+    shared_libs: [
+        // keep-sorted start
+        "libbase",
+        "libbinder",
+        "libcutils",
+        "libsdv_comms_ctx_stub",
+        "libsdv_comms_dt_stub",
+        "libsdv_comms_id_stub",
+        "libsdv_comms_sd_stub",
+        "libsdv_status",
+        "libutils",
+        // keep-sorted end
+    ],
+    static_libs: [
+        "libgtest",
+        "libsdv_comms_cpp",
+        "libsdv_status_cpp",
+    ],
+    require_root: true,
+}
+
+cc_test {
+    name: "sdv_comms_cpp_sdk_tests",
+    srcs: ["cpp/**/*_test.cpp"],
+    defaults: ["sdv_comms_cpp_sdk_test_defaults"],
+    test_options: {
+        unit_test: true,
+    },
+    // TODO(398771552): Remove authz disabling exception. This should not be used in the new code.
+    test_config_template: ":sdv_authz_enforcement_flag_disabled_gtest_config_template",
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
+
+cc_test {
+    name: "sdv_comms_cpp_sdk_identity_test",
+    srcs: ["cpp/identity_test.cpp"],
+    defaults: ["sdv_comms_cpp_sdk_test_defaults"],
+    test_options: {
+        unit_test: true,
+    },
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
+
+cc_test {
+    name: "sdv_comms_cpp_sdk_context_test",
+    srcs: ["cpp/context_test.cpp"],
+    defaults: ["sdv_comms_cpp_sdk_test_defaults"],
+    test_options: {
+        unit_test: true,
+    },
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
+
+cc_test {
+    name: "sdv_comms_cpp_sdk_sd_test",
+    srcs: ["cpp/sd_*_test.cpp"],
+    defaults: ["sdv_comms_cpp_sdk_test_defaults"],
+    test_options: {
+        unit_test: true,
+    },
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
+
+cc_test {
+    name: "sdv_comms_cpp_sdk_dt_test",
+    srcs: ["cpp/dt/*_test.cpp"],
+    defaults: ["sdv_comms_cpp_sdk_test_defaults"],
+    test_options: {
+        unit_test: true,
+    },
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
