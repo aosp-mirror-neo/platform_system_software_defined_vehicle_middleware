@@ -1,0 +1,99 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+    default_team: "trendy_team_automotive",
+}
+
+// Build a separate rust_library rather than depending directly on the `rust_bindgen` target, to
+// work around the fact that `rust_bindgen` targets only produce rlibs and not dylibs, which the
+// compiler is not happy about. This creates a problem when multiple public SDK targets depend on
+// each other (multiple copies of static lib in the final library).
+// This will hopefully be fixed in the build system, at which point we can delete this target and
+// go back to using the `rust_bindgen` directly.
+rust_library {
+    name: "libsdv_comms_bindgen",
+    crate_name: "sdv_comms_bindgen",
+    srcs: [":libsdv_comms_bindgen_private"],
+    defaults: ["sdv@rust_defaults"],
+    lints: "none",
+    clippy_lints: "none",
+    system_ext_specific: true,
+    product_available: true,
+    vendor_available: true,
+    apex_available: [
+        "//apex_available:platform",
+        "//apex_available:anyapex",
+    ],
+    visibility: [
+        ":__subpackages__",
+        "//system/software_defined_vehicle/core_services/lifecycle_management/clientlib/srcs/rust",
+        "//system/software_defined_vehicle/core_services/lifecycle_management",
+        "//system/software_defined_vehicle/core_services/some_ip", // to make it available to dll_api in the binary PDK
+        "//system/software_defined_vehicle/core_services/some_ip/dll_api",
+        "//system/software_defined_vehicle/core_services/some_ip/broker_agent_comms",
+        "//system/software_defined_vehicle/lifecycle_management:__subpackages__",
+        "//system/software_defined_vehicle/middleware/sdv_comms/sdk",
+    ],
+    min_sdk_version: "34",
+}
+
+rust_bindgen {
+    name: "libsdv_comms_bindgen_private",
+    crate_name: "sdv_comms_bindgen",
+    wrapper_src: "bindings.h",
+    header_libs: [
+        "libsdv_comms_ctx_hdrs",
+        "libsdv_comms_dt_hdrs",
+        "libsdv_comms_id_hdrs",
+        "libsdv_comms_sd_hdrs",
+    ],
+    source_stem: "bindings",
+    bindgen_flags: [
+        "--with-derive-default",
+        "--with-derive-eq",
+        "--with-derive-partialeq",
+        "--no-doc-comments",
+    ],
+    defaults: ["sdv@rust_defaults"],
+    shared_libs: ["libsdv_status"],
+    lints: "none",
+    clippy_lints: "none",
+    system_ext_specific: true,
+    product_available: true,
+    vendor_available: true,
+    visibility: [":__pkg__"],
+    apex_available: [
+        "//apex_available:platform",
+        "com.sdv.*",
+    ],
+    min_sdk_version: "34",
+}
+
+rust_test {
+    name: "sdv_comms_bindgen_tests",
+    crate_name: "sdv_comms_bindgen",
+    srcs: [":libsdv_comms_bindgen_private"],
+    defaults: ["sdv@rust_defaults"],
+    lints: "none",
+    clippy_lints: "none",
+    test_options: {
+        unit_test: true,
+    },
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}

@@ -1,0 +1,107 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+    default_team: "trendy_team_automotive",
+    default_visibility: ["//system/software_defined_vehicle/middleware:__subpackages__"],
+}
+
+rust_defaults {
+    name: "sdv_comms_sd@rust_defaults",
+    srcs: ["src/lib.rs"],
+    rustlibs: [
+        "google.sdv.identity-V2-rust",
+        "google.sdv.service_discovery.common-V2-rust",
+        "google.sdv.service_discovery.discovery-V2-rust",
+        "libbytemuck",
+        "liblog_rust",
+        "libsdv_comms_common",
+        "libsdv_comms_ctx_impl",
+        "libsdv_comms_id",
+        "libsdv_status_rs",
+        "libthiserror",
+        "libsdv_comms_id_validator",
+    ],
+    shared_libs: ["libc"],
+    proc_macros: ["libsdv_comms_stack_ffi_macro"],
+}
+
+rust_library {
+    name: "libsdv_comms_sd",
+    crate_name: "sdv_comms_sd",
+    defaults: [
+        "sdv_comms_internal@rust_defaults",
+        "sdv_comms_sd@rust_defaults",
+    ],
+    vendor_available: true,
+    visibility: [
+        "//device/google/sdv",
+    ],
+}
+
+rust_ffi {
+    name: "libsdv_comms_sd_ffi",
+    crate_name: "sdv_comms_sd",
+    stem: "libsdv_comms_sd_ffi",
+    defaults: [
+        "sdv_comms_ffi@rust_defaults",
+        "sdv_comms_sd@rust_defaults",
+    ],
+    cfgs: ["comms_stack_ffi"],
+    visibility: [
+        "//device/google/sdv",
+    ],
+}
+
+rust_ffi {
+    name: "libsdv_comms_sd_stub",
+    crate_name: "sdv_comms_sd",
+    stem: "libsdv_comms_sd_ffi",
+    srcs: ["src/stub.rs"],
+    defaults: ["sdv_comms_stub@rust_defaults"],
+    cfgs: ["comms_stack_stub"],
+    rustlibs: [
+        "libsdv_comms_common",
+        "libsdv_comms_ctx_stub",
+        "libsdv_comms_id_stub",
+        "libsdv_status_rs",
+    ],
+    apex_exclude: true,
+    proc_macros: ["libsdv_comms_stack_ffi_macro"],
+}
+
+rust_test {
+    name: "sdv_core_core_services_unit_comms_sd_test",
+    crate_name: "sdv_comms_sd",
+    defaults: [
+        "sdv@rust_defaults",
+        "sdv_comms_sd@rust_defaults",
+    ],
+    rustlibs: [
+        "google.sdv.identity-V2-rust",
+        "libtokio",
+        "libanyhow",
+    ],
+    require_root: true,
+    test_options: {
+        unit_test: true,
+    },
+    // TODO(398771552): Remove authz disabling exception. This should not be used in the new code.
+    test_config_template: ":sdv_authz_enforcement_flag_disabled_config_template",
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+}
