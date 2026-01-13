@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+    default_team: "trendy_team_automotive",
+}
+
 rust_protobuf {
     name: "libsdv_authz_policy_proto_rust",
     crate_name: "sdv_authz_policy_proto_rust",
@@ -29,4 +34,24 @@ rust_protobuf {
 filegroup {
     name: "sdv_authz_policy_proto_srcs",
     srcs: ["**/*.proto"],
+}
+
+rust_test {
+    name: "sdv_authz_policy_proto_test",
+    defaults: [
+        "sdv@rust_defaults",
+    ],
+    srcs: ["sdv/authz/policy/acl_policy_test.rs"],
+    rustlibs: [
+        "libsdv_authz_policy_proto_rust",
+        "libprotobuf",
+    ],
+    test_suites: [
+        "automotive-sdv-tests",
+        "general-tests",
+    ],
+    test_options: {
+        unit_test: true,
+    },
+    data: ["sdv/authz/policy/testdata/authz_policy_permissions.textproto"],
 }
