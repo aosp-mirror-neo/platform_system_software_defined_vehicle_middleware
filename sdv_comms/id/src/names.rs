@@ -15,6 +15,8 @@
 //! Service Identity Names module provides a collection of types to represent
 //! the Service identity names.
 
+mod channel_name;
+
 mod instance_name;
 
 mod package_name;
@@ -28,6 +30,8 @@ mod service_unit_name;
 mod unit_type_name;
 
 mod vm_name;
+
+pub use channel_name::ChannelName;
 
 pub use instance_name::InstanceName;
 
