@@ -12,19 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::{
+    metadata::ApplicationMetadata::TypedMetadata::TypedMetadata as TypedMetadataAidl,
     UnitType::UnitType,
-    // comment to allow single element in {}
 };
 use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::{
     ServiceUnitDefinition::ServiceUnitDefinition, UnitNameParameters::UnitNameParameters,
 };
+
 use log::warn;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::kv::{InternalUnitNameParameters, ServiceUnitEvent};
 use crate::listeners::ServiceUnitChangeListener;
 use crate::unit_type_utils::deprecate_unit_type_owner;
+use sdv_comms_id::names::ChannelName;
 use tokio::sync::mpsc;
 
 enum ListenerEventKind {
@@ -35,6 +38,7 @@ enum ListenerEventKind {
 #[derive(Default)]
 pub(crate) struct Listeners {
     unit_type_listeners: HashMap<UnitType, Vec<ServiceUnitChangeListener>>,
+    channel_listeners: HashMap<(UnitType, ChannelName), Vec<ServiceUnitChangeListener>>,
     unit_name_listeners: HashMap<InternalUnitNameParameters, Vec<ServiceUnitChangeListener>>,
     local_unit_listeners: Vec<mpsc::UnboundedSender<ServiceUnitEvent>>,
 }
@@ -43,11 +47,39 @@ impl Listeners {
     pub(crate) fn on_service_unit_added(&self, service_unit_definition: &ServiceUnitDefinition) {
         self.notify_by_type(service_unit_definition, ListenerEventKind::Add);
         self.notify_by_name(service_unit_definition, ListenerEventKind::Add);
+        self.notify_by_channel(service_unit_definition, ListenerEventKind::Add);
     }
 
     pub(crate) fn on_service_unit_removed(&self, service_unit_definition: &ServiceUnitDefinition) {
         self.notify_by_type(service_unit_definition, ListenerEventKind::Remove);
         self.notify_by_name(service_unit_definition, ListenerEventKind::Remove);
+        self.notify_by_channel(service_unit_definition, ListenerEventKind::Remove);
+    }
+
+    fn notify_listeners(
+        event: &ListenerEventKind,
+        service_unit_definition: &ServiceUnitDefinition,
+        listeners: &Vec<ServiceUnitChangeListener>,
+    ) {
+        for listener in listeners {
+            let listener = Arc::new(listener.clone());
+            match event {
+                ListenerEventKind::Add => {
+                    if let Err(status) =
+                        listener.on_service_unit_registered(service_unit_definition)
+                    {
+                        warn!("Listener fails at on_service_unit_registered {status}");
+                    }
+                }
+                ListenerEventKind::Remove => {
+                    if let Err(status) =
+                        listener.on_service_unit_unregistered(service_unit_definition)
+                    {
+                        warn!("Listener fails at on_service_unit_unregistered {status}");
+                    }
+                }
+            }
+        }
     }
 
     fn notify_by_type(
@@ -55,25 +87,36 @@ impl Listeners {
         service_unit_definition: &ServiceUnitDefinition,
         event: ListenerEventKind,
     ) {
-        if let Some(listeners) = self.unit_type_listeners.get(&service_unit_definition.unitType) {
-            for listener in listeners {
-                let listener = Arc::new(listener.clone());
-                match event {
-                    ListenerEventKind::Add => {
-                        if let Err(status) =
-                            listener.on_service_unit_registered(service_unit_definition)
-                        {
-                            warn!("Listener fails at on_service_unit_registered {status}");
-                        }
-                    }
-                    ListenerEventKind::Remove => {
-                        if let Err(status) =
-                            listener.on_service_unit_unregistered(service_unit_definition)
-                        {
-                            warn!("Listener fails at on_service_unit_unregistered {status}");
-                        }
-                    }
+        let unit_type: UnitType =
+            deprecate_unit_type_owner(service_unit_definition.unitType.clone());
+
+        // Notify general unit type listeners
+        if let Some(listeners) = self.unit_type_listeners.get(&unit_type) {
+            Self::notify_listeners(&event, service_unit_definition, listeners);
+        }
+    }
+
+    fn notify_by_channel(
+        &self,
+        service_unit_definition: &ServiceUnitDefinition,
+        event: ListenerEventKind,
+    ) {
+        let unit_type: UnitType =
+            deprecate_unit_type_owner(service_unit_definition.unitType.clone());
+        if let TypedMetadataAidl::PublisherUnit(metadata) =
+            &service_unit_definition.appMetadata.typedMetadata
+        {
+            let channel_name = match ChannelName::from_str(&metadata.channel_name) {
+                Ok(name) => name,
+                Err(err) => {
+                    warn!("Invalid channel name: {} due to: {}", metadata.channel_name, err);
+                    return;
                 }
+            };
+
+            let key = (unit_type.clone(), channel_name);
+            if let Some(listeners) = self.channel_listeners.get(&key) {
+                Self::notify_listeners(&event, service_unit_definition, listeners);
             }
         }
     }
@@ -88,25 +131,7 @@ impl Listeners {
             .iter()
             .filter(|(query, _)| query.is_query_match(service_unit_definition))
         {
-            for listener in listeners {
-                let listener = Arc::new(listener.clone());
-                match event {
-                    ListenerEventKind::Add => {
-                        if let Err(status) =
-                            listener.on_service_unit_registered(service_unit_definition)
-                        {
-                            warn!("Listener fails at on_service_unit_registered {status}");
-                        }
-                    }
-                    ListenerEventKind::Remove => {
-                        if let Err(status) =
-                            listener.on_service_unit_unregistered(service_unit_definition)
-                        {
-                            warn!("Listener fails at on_service_unit_unregistered {status}");
-                        }
-                    }
-                }
-            }
+            Self::notify_listeners(&event, service_unit_definition, listeners);
         }
     }
 
@@ -143,6 +168,29 @@ impl Listeners {
         self.unit_type_listeners.entry(unit_type).or_default().retain(|x| *x != listener);
     }
 
+    pub(crate) fn register_listener_by_channel(
+        &mut self,
+        unit_type: &UnitType,
+        channel_name: &ChannelName,
+        listener: ServiceUnitChangeListener,
+    ) {
+        let unit_type = deprecate_unit_type_owner(unit_type.clone());
+        self.channel_listeners.entry((unit_type, channel_name.clone())).or_default().push(listener);
+    }
+
+    pub(crate) fn unregister_listener_by_channel(
+        &mut self,
+        unit_type: &UnitType,
+        channel_name: &ChannelName,
+        listener: ServiceUnitChangeListener,
+    ) {
+        let unit_type: UnitType = deprecate_unit_type_owner(unit_type.clone());
+        self.channel_listeners
+            .entry((unit_type, channel_name.clone()))
+            .or_default()
+            .retain(|x| *x != listener);
+    }
+
     pub(crate) fn register_listener_by_name(
         &mut self,
         unit_name_params: &UnitNameParameters,
@@ -162,5 +210,243 @@ impl Listeners {
             .entry(unit_name_params.clone())
             .or_default()
             .retain(|x| *x != listener);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::*;
+    use crate::kv::ServiceUnitAndTransport;
+    use crate::listeners::service_unit_listeners::ServiceUnitEvent;
+    use google_sdv_identity::aidl::google::sdv::identity::{
+        ServiceFqin::ServiceFqin as AidlServiceFqin,
+        ServiceIdentity::ServiceIdentity as AidlServiceIdentity,
+    };
+    use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::{
+        metadata::{
+            ApplicationMetadata::ApplicationMetadata,
+            ApplicationMetadata::TypedMetadata::TypedMetadata as TypedMetadataAidl,
+            PublisherUnitMetadata::PublisherUnitMetadata,
+        },
+        UnitType::UnitType,
+    };
+    use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::{
+        IServiceUnitChangeListener::{BnServiceUnitChangeListener, IServiceUnitChangeListener},
+        ServiceUnitDefinition::ServiceUnitDefinition,
+        UnitNameParameters::UnitNameParameters,
+    };
+    use sdv_comms_id::names::ChannelName;
+    #[allow(unused_imports)]
+    use std::{
+        collections::HashSet,
+        str::FromStr,
+        sync::{Arc, Mutex},
+    };
+    use tokio::sync::mpsc;
+
+    #[derive(Clone)]
+    struct MockServiceUnitChangeListener {
+        registered: Arc<Mutex<Vec<ServiceUnitDefinition>>>,
+        unregistered: Arc<Mutex<Vec<ServiceUnitDefinition>>>,
+    }
+
+    impl MockServiceUnitChangeListener {
+        fn new() -> Self {
+            Self {
+                registered: Arc::new(Mutex::new(Vec::new())),
+                unregistered: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+
+        fn get_registered(&self) -> Vec<ServiceUnitDefinition> {
+            self.registered.lock().unwrap().clone()
+        }
+
+        fn get_unregistered(&self) -> Vec<ServiceUnitDefinition> {
+            self.unregistered.lock().unwrap().clone()
+        }
+    }
+
+    impl binder::Interface for MockServiceUnitChangeListener {}
+
+    impl IServiceUnitChangeListener for MockServiceUnitChangeListener {
+        fn onServiceUnitRegistered(&self, sud: &ServiceUnitDefinition) -> binder::Result<()> {
+            self.registered.lock().unwrap().push(sud.clone());
+            Ok(())
+        }
+
+        fn onServiceUnitUnregistered(&self, sud: &ServiceUnitDefinition) -> binder::Result<()> {
+            self.unregistered.lock().unwrap().push(sud.clone());
+            Ok(())
+        }
+
+        fn onServiceUnitChanged(&self, _sud: &ServiceUnitDefinition) -> binder::Result<()> {
+            unimplemented!()
+        }
+    }
+
+    fn create_listener() -> (ServiceUnitChangeListener, Arc<MockServiceUnitChangeListener>) {
+        let mock = MockServiceUnitChangeListener::new();
+        let binder_listener = BnServiceUnitChangeListener::new_binder(
+            mock.clone(),
+            binder::BinderFeatures::default(),
+        );
+        let listener = ServiceUnitChangeListener::new(
+            Arc::new(|_: &ServiceUnitDefinition| true),
+            binder_listener,
+        );
+        (listener, mock.into())
+    }
+
+    fn create_sud(unit_name: &str, unit_type: &UnitType) -> ServiceUnitDefinition {
+        ServiceUnitDefinition {
+            identity: AidlServiceIdentity {
+                name: AidlServiceFqin {
+                    sdvVmName: "test_vm".to_string(),
+                    sdvPackageName: unit_type.sdvPackageName.clone(),
+                    serviceBundleName: unit_type.serviceBundleName.clone(),
+                    serviceInstanceName: "instance".to_string(),
+                },
+                ..Default::default()
+            },
+            serviceUnitName: unit_name.to_string(),
+            unitType: unit_type.clone(),
+            ..Default::default()
+        }
+    }
+
+    fn create_publisher_sud(
+        unit_name: &str,
+        unit_type: &UnitType,
+        channel_name: &str,
+    ) -> ServiceUnitDefinition {
+        let mut sud = create_sud(unit_name, unit_type);
+        sud.appMetadata = ApplicationMetadata {
+            typedMetadata: TypedMetadataAidl::PublisherUnit(PublisherUnitMetadata {
+                channel_name: channel_name.to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        sud
+    }
+
+    #[test]
+    fn test_register_unregister_listener_by_type() {
+        let mut listeners = Listeners::default();
+        let (listener, mock) = create_listener();
+        let unit_type = UnitType {
+            sdvPackageName: "com.example".to_string(),
+            serviceBundleName: "TestBundle".to_string(),
+            typeName: "TestType".to_string(),
+        };
+
+        listeners.register_listener_by_type(&unit_type, listener.clone());
+
+        let sud = create_sud("unit1", &unit_type);
+        listeners.on_service_unit_added(&sud);
+        assert_eq!(mock.get_registered(), vec![sud.clone()]);
+        assert!(mock.get_unregistered().is_empty());
+
+        listeners.on_service_unit_removed(&sud);
+        assert_eq!(mock.get_registered(), vec![sud.clone()]);
+        assert_eq!(mock.get_unregistered(), vec![sud.clone()]);
+
+        listeners.unregister_listener_by_type(&unit_type, listener);
+        let sud2 = create_sud("unit2", &unit_type);
+        listeners.on_service_unit_added(&sud2);
+        // No new registered event after unregistering.
+        assert_eq!(mock.get_registered(), vec![sud.clone()]);
+    }
+
+    #[test]
+    fn test_register_unregister_listener_by_channel() {
+        let mut listeners = Listeners::default();
+        let (listener, mock) = create_listener();
+        let unit_type = UnitType {
+            sdvPackageName: "com.example".to_string(),
+            serviceBundleName: "TestBundle".to_string(),
+            typeName: "TestType".to_string(),
+        };
+        let channel_name = ChannelName::from_str("test-channel").unwrap();
+
+        listeners.register_listener_by_channel(&unit_type, &channel_name, listener.clone());
+
+        let sud = create_publisher_sud("unit1", &unit_type, "test-channel");
+        listeners.on_service_unit_added(&sud);
+        println!("registered");
+        assert_eq!(mock.get_registered(), vec![sud.clone()]);
+
+        let sud_wrong_channel = create_publisher_sud("unit2", &unit_type, "wrong-channel");
+        listeners.on_service_unit_added(&sud_wrong_channel);
+        assert_eq!(mock.get_registered(), vec![sud.clone()]); // Not notified for wrong channel.
+
+        let sud_server = create_sud("unit3", &unit_type); // Not a publisher.
+        listeners.on_service_unit_added(&sud_server);
+        assert_eq!(mock.get_registered(), vec![sud.clone()]); // Not notified for non-publisher.
+
+        listeners.unregister_listener_by_channel(&unit_type, &channel_name, listener);
+        listeners.on_service_unit_added(&sud);
+        assert_eq!(mock.get_registered(), vec![sud.clone()]); // Not notified after unregister.
+    }
+
+    #[test]
+    fn test_register_unregister_listener_by_name() {
+        let mut listeners = Listeners::default();
+        let (listener, mock) = create_listener();
+        let unit_type = UnitType {
+            sdvPackageName: "com.example".to_string(),
+            serviceBundleName: "TestBundle".to_string(),
+            typeName: "TestType".to_string(),
+        };
+        let params = UnitNameParameters {
+            sdvVmName: None,
+            sdvPackageName: "com.example".to_string(),
+            serviceBundleName: "TestBundle".to_string(),
+            unitName: Some("unit1".to_string()),
+        };
+
+        listeners.register_listener_by_name(&params, listener.clone());
+
+        let sud1 = create_sud("unit1", &unit_type);
+        listeners.on_service_unit_added(&sud1);
+        assert_eq!(mock.get_registered(), vec![sud1.clone()]);
+
+        let sud2 = create_sud("unit2", &unit_type);
+        listeners.on_service_unit_added(&sud2);
+        assert_eq!(mock.get_registered(), vec![sud1.clone()]); // Not notified for unit2.
+
+        listeners.unregister_listener_by_name(&params, listener);
+        listeners.on_service_unit_added(&sud1);
+        assert_eq!(mock.get_registered(), vec![sud1.clone()]); // Not notified after unregister.
+    }
+
+    #[test]
+    fn test_notify_local_unit_event() {
+        let mut listeners = Listeners::default();
+        let (tx1, mut rx1) = mpsc::unbounded_channel();
+        let (tx2, mut rx2) = mpsc::unbounded_channel();
+
+        listeners.add_local_unit_listener(tx1);
+        listeners.add_local_unit_listener(tx2);
+
+        let sud = create_sud("unit1", &UnitType::default());
+        let event = ServiceUnitEvent::RegisterServiceUnit(ServiceUnitAndTransport::new(
+            sud.clone(),
+            Default::default(),
+        ));
+
+        listeners.notify_local_unit_event(event.clone());
+
+        assert!(
+            matches!(rx1.try_recv(), Ok(e) if matches!(&e, ServiceUnitEvent::RegisterServiceUnit(sut) if sut.get_service_unit_definition() == &sud))
+        );
+        assert!(
+            matches!(rx2.try_recv(), Ok(e) if matches!(&e, ServiceUnitEvent::RegisterServiceUnit(sut) if sut.get_service_unit_definition() == &sud))
+        );
+
+        drop(rx1); // Close one receiver.
+        listeners.notify_local_unit_event(event);
+        assert_eq!(listeners.local_unit_listeners.len(), 1);
     }
 }
