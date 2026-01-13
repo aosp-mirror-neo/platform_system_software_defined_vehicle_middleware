@@ -1,1 +1,1 @@
-include platform/system/software_defined_vehicle/core_services:main:/sdv_comms/OWNERS
+include platform/system/software_defined_vehicle/middleware:main:/sdv_comms/OWNERS
