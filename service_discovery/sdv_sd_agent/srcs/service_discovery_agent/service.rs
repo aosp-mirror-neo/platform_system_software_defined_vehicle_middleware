@@ -154,6 +154,18 @@ impl ServiceDiscoveryAgentService {
         Ok(sud_option)
     }
 
+    /// Creates listener, which checks authorization.
+    fn create_authz_listener(
+        &self,
+        process_identifier: &ProcessIdentifier,
+        listener: &binder::Strong<dyn IServiceUnitChangeListener>,
+    ) -> binder::Result<ServiceUnitChangeListener> {
+        let caller_fqin = self.get_process_fqin(process_identifier)?;
+        let authz_filter = create_authz_filter_for_sud(caller_fqin, self.authz_service.clone());
+
+        Ok(ServiceUnitChangeListener::new(authz_filter, listener.clone()))
+    }
+
     fn register_service_unit_change_listener_by_type(
         &self,
         unit_type: &UnitType,
@@ -161,12 +173,7 @@ impl ServiceDiscoveryAgentService {
         process_identifier: &ProcessIdentifier,
     ) -> binder::Result<()> {
         let unit_type: UnitType = deprecate_unit_type_owner(unit_type.clone());
-
-        let caller_fqin = self.get_process_fqin(process_identifier)?;
-        let authz_filter = create_authz_filter_for_sud(caller_fqin, self.authz_service.clone());
-
-        // Create listener which checks authorization.
-        let authz_listener = ServiceUnitChangeListener::new(authz_filter, listener.clone());
+        let authz_listener = self.create_authz_listener(process_identifier, listener)?;
 
         self.service_registry
             .register_service_unit_change_listener_by_type(&unit_type, authz_listener)
@@ -179,12 +186,7 @@ impl ServiceDiscoveryAgentService {
         process_identifier: &ProcessIdentifier,
     ) -> binder::Result<()> {
         let unit_type: UnitType = deprecate_unit_type_owner(unit_type.clone());
-
-        let caller_fqin = self.get_process_fqin(process_identifier)?;
-        let authz_filter = create_authz_filter_for_sud(caller_fqin, self.authz_service.clone());
-
-        // Create listener which checks authorization.
-        let authz_listener = ServiceUnitChangeListener::new(authz_filter, listener.clone());
+        let authz_listener = self.create_authz_listener(process_identifier, listener)?;
 
         self.service_registry
             .unregister_service_unit_change_listener_by_type(&unit_type, authz_listener)
@@ -196,11 +198,7 @@ impl ServiceDiscoveryAgentService {
         listener: &binder::Strong<dyn IServiceUnitChangeListener>,
         process_identifier: &ProcessIdentifier,
     ) -> binder::Result<()> {
-        let caller_fqin = self.get_process_fqin(process_identifier)?;
-        let authz_filter = create_authz_filter_for_sud(caller_fqin, self.authz_service.clone());
-
-        // Create listener which checks authorization.
-        let authz_listener = ServiceUnitChangeListener::new(authz_filter, listener.clone());
+        let authz_listener = self.create_authz_listener(process_identifier, listener)?;
 
         self.service_registry
             .register_service_unit_change_listener_by_name(unit_name_params, authz_listener)
@@ -212,11 +210,7 @@ impl ServiceDiscoveryAgentService {
         listener: &binder::Strong<dyn IServiceUnitChangeListener>,
         process_identifier: &ProcessIdentifier,
     ) -> binder::Result<()> {
-        let caller_fqin = self.get_process_fqin(process_identifier)?;
-        let authz_filter = create_authz_filter_for_sud(caller_fqin, self.authz_service.clone());
-
-        // Create listener which checks authorization.
-        let authz_listener = ServiceUnitChangeListener::new(authz_filter, listener.clone());
+        let authz_listener = self.create_authz_listener(process_identifier, listener)?;
 
         self.service_registry
             .unregister_service_unit_change_listener_by_name(unit_name_params, authz_listener)
