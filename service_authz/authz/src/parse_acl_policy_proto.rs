@@ -17,6 +17,8 @@
 use crate::AclPolicyModel;
 
 use std::collections::HashMap;
+#[cfg(feature = "permissions")]
+use std::collections::HashSet;
 use std::str::FromStr;
 
 use anyhow::{anyhow, Context};
@@ -25,6 +27,15 @@ use sdv_authz_policy::{Acl, AclName};
 use sdv_authz_policy_proto_rust::acl_policy::{
     Acl as AclProto, AclPolicy as AclPolicyProto, UnitAclMapping as UnitAclMappingProto,
 };
+
+#[cfg(feature = "permissions")]
+use sdv_authz_policy_proto_rust::acl_policy::{
+    CallPermission as CallPermissionProto, PublishPermission as PublishPermissionProto,
+    ServePermission as ServePermissionProto, SubscribePermission as SubscribePermissionProto,
+};
+
+#[cfg(feature = "permissions")]
+use sdv_comms_id::names::ChannelName;
 use sdv_comms_id::names::{ServiceUnitName, UnitTypeName};
 use tracing::instrument;
 
@@ -38,13 +49,117 @@ pub(crate) fn parse_acl_policy_from_proto(
     let service_unit_acls_map = parse_service_units_acls_mapping(&acl_policy_proto, &acls_map)?;
     let unit_type_acls_map = parse_unit_types_acls_mapping(&acl_policy_proto, &acls_map)?;
 
+    #[cfg(feature = "permissions")]
+    {
+        let publish_permissions = parse_publish_permissions(&acl_policy_proto.publish)?;
+        let subscribe_permissions = parse_subscribe_permissions(&acl_policy_proto.subscribe)?;
+        let serve_permissions = parse_serve_permissions(&acl_policy_proto.serve)?;
+        let call_permissions = parse_call_permissions(&acl_policy_proto.call)?;
+
+        Ok(AclPolicyModel::new_with_permissions(
+            service_unit_acls_map,
+            unit_type_acls_map,
+            publish_permissions,
+            subscribe_permissions,
+            serve_permissions,
+            call_permissions,
+        ))
+    }
+
+    #[cfg(not(feature = "permissions"))]
     Ok(AclPolicyModel::new(service_unit_acls_map, unit_type_acls_map))
+}
+
+#[cfg(feature = "permissions")]
+fn parse_publish_permissions(
+    proto_perms: &[PublishPermissionProto],
+) -> Result<HashSet<(UnitTypeName, Option<ChannelName>)>, anyhow::Error> {
+    let mut set = HashSet::new();
+    for perm in proto_perms {
+        let type_name = UnitTypeName::from_str(&perm.publication_type)
+            .context("Failed to parse publication_type in PublishPermission")?;
+        let channel_name = if perm.channel_name.is_empty() {
+            None
+        } else {
+            Some(
+                ChannelName::from_str(&perm.channel_name)
+                    .context("Failed to parse channel_name in PublishPermission")?,
+            )
+        };
+
+        set.insert((type_name, channel_name));
+    }
+    Ok(set)
+}
+
+#[cfg(feature = "permissions")]
+fn parse_subscribe_permissions(
+    proto_perms: &[SubscribePermissionProto],
+) -> Result<HashSet<(UnitTypeName, Option<ChannelName>)>, anyhow::Error> {
+    let mut set = HashSet::new();
+    for perm in proto_perms {
+        let type_name = UnitTypeName::from_str(&perm.publication_type)
+            .context("Failed to parse publication_type in SubscribePermission")?;
+        let channel_name = if perm.channel_name.is_empty() {
+            None
+        } else {
+            Some(
+                ChannelName::from_str(&perm.channel_name)
+                    .context("Failed to parse channel_name in SubscribePermission")?,
+            )
+        };
+
+        set.insert((type_name, channel_name));
+    }
+    Ok(set)
+}
+
+#[cfg(feature = "permissions")]
+fn parse_serve_permissions(
+    proto_perms: &[ServePermissionProto],
+) -> Result<HashSet<(UnitTypeName, Option<ServiceUnitName>)>, anyhow::Error> {
+    let mut set = HashSet::new();
+    for perm in proto_perms {
+        let service_unit = if perm.service_unit_name.is_empty() {
+            None
+        } else {
+            Some(
+                ServiceUnitName::from_str(&perm.service_unit_name)
+                    .context("Failed to parse service_unit_name in ServePermission")?,
+            )
+        };
+        let type_name = UnitTypeName::from_str(&perm.server_type)
+            .context("Failed to parse server_type in ServePermission")?;
+
+        set.insert((type_name, service_unit));
+    }
+    Ok(set)
+}
+
+#[cfg(feature = "permissions")]
+fn parse_call_permissions(
+    proto_perms: &[CallPermissionProto],
+) -> Result<HashSet<(UnitTypeName, Option<ServiceUnitName>)>, anyhow::Error> {
+    let mut set = HashSet::new();
+    for perm in proto_perms {
+        let service_unit = if perm.service_unit_name.is_empty() {
+            None
+        } else {
+            Some(
+                ServiceUnitName::from_str(&perm.service_unit_name)
+                    .context("Failed to parse service_unit_name in CallPermission")?,
+            )
+        };
+        let type_name = UnitTypeName::from_str(&perm.server_type)
+            .context("Failed to parse server_type in CallPermission")?;
+
+        set.insert((type_name, service_unit));
+    }
+    Ok(set)
 }
 
 /// Parses a list of Service Unit entries from AclPolicyProto and returns a map
 /// of Service Unit Name to ACL list.
-///
-/// This function uses the provided `acls_map` to resolve AclName to ACL.
 fn parse_service_units_acls_mapping(
     acl_policy_proto: &AclPolicyProto,
     acls_map: &HashMap<AclName, Acl>,
@@ -79,8 +194,6 @@ fn parse_service_units_acls_mapping(
 
 /// Parses a list of Unit Types entries from AclPolicyProto and returns a map
 /// of Unit Type Name to ACL list.
-///
-/// This function uses the provided `acls_map` to resolve AclName to ACL.
 fn parse_unit_types_acls_mapping(
     acl_policy_proto: &AclPolicyProto,
     acls_map: &HashMap<AclName, Acl>,
@@ -209,6 +322,48 @@ mod tests {
 
         assert!(acl_policy.has_unit_type(&UnitTypeName::from_str("TirePressureTopic1").unwrap()));
         assert!(acl_policy.has_unit_type(&UnitTypeName::from_str("TirePressureTopic2").unwrap()));
+    }
+
+    #[cfg(feature = "permissions")]
+    #[test]
+    fn test_parse_permissions_population() {
+        let proto: AclPolicyProto = text_format::parse_from_str(
+            r#"
+            publish {
+                publication_type: "TopicA"
+                channel_name: "ch1"
+            }
+            publish {
+                publication_type: "TopicA"
+                channel_name: "ch2"
+            }
+            subscribe {
+                publication_type: "TopicB"
+                channel_name: "ch1"
+            }
+            subscribe {
+                publication_type: "TopicC"
+            }
+        "#,
+        )
+        .unwrap();
+
+        let acl_policy = parse_acl_policy_from_proto(proto).unwrap();
+
+        let topic_a = UnitTypeName::from_str("TopicA").unwrap();
+        let topic_b = UnitTypeName::from_str("TopicB").unwrap();
+        let topic_c = UnitTypeName::from_str("TopicC").unwrap();
+        let ch1 = ChannelName::from_str("ch1").unwrap();
+        let ch2 = ChannelName::from_str("ch2").unwrap();
+
+        assert_eq!(acl_policy.publish_permissions.len(), 2);
+        assert!(acl_policy.publish_permissions.contains(&(topic_a.clone(), Some(ch1.clone()))));
+        assert!(acl_policy.publish_permissions.contains(&(topic_a, Some(ch2))));
+        assert_eq!(acl_policy.subscribe_permissions.len(), 2);
+        assert!(acl_policy.subscribe_permissions.contains(&(topic_b, Some(ch1))));
+        assert!(acl_policy.subscribe_permissions.contains(&(topic_c, None)));
+        assert!(acl_policy.serve_permissions.is_empty());
+        assert!(acl_policy.call_permissions.is_empty());
     }
 
     #[test]
