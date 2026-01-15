@@ -34,6 +34,7 @@ use crate::power_state::SimplePowerState;
 
 use crate::mesh::VvmConfig;
 use crypto_rpc::cert::base32_x509_common_name_to_string;
+use std::ops::Mul;
 use std::sync::Arc;
 
 use sdv_authz_local_vm_acl_policy_provider_factory::create_local_vm_acl_policy_provider;
@@ -55,8 +56,11 @@ use grpcio::{
 use async_trait::async_trait;
 use coset::{CborSerializable, CoseError, CoseKey};
 use log::{error, info, warn};
+use mockall::automock;
 use protobuf::MessageField;
+use tokio::select;
 use tokio::sync::{broadcast, watch};
+use tokio::time::sleep;
 use tokio::time::Duration;
 use tracing::instrument;
 
@@ -64,6 +68,11 @@ use tracing::instrument;
 /// the local mesh manager client will connect to that peer's mesh service within that period (in
 /// seconds).
 const MESH_MANAGER_GRACE_PERIOD_SECS: u64 = 10;
+
+/// Minimum time before retrying to start the gRPC server.
+const START_SERVER_RETRY_MIN_DURATION: Duration = Duration::from_secs(1);
+/// Maximum time before retrying to start the gRPC server.
+const START_SERVER_RETRY_MAX_DURATION: Duration = Duration::from_secs(16);
 
 #[derive(Clone)]
 pub(crate) struct LockedMesh {
@@ -255,8 +264,10 @@ impl UnlockedMesh {
     }
 }
 
+#[automock]
 pub(crate) trait Server: Send {}
 
+#[automock]
 pub(crate) trait ServerFactory: Send {
     /// Starts a server instance using the provided environment and secure credentials.
     fn start_secure(
@@ -523,11 +534,6 @@ fn get_root_cert_vm_name(root_cert_pem: &[u8]) -> anyhow::Result<String> {
     base32_x509_common_name_to_string(root_cert.subject_name())
 }
 
-struct ServerAndPort {
-    pub server: Box<dyn Server>,
-    pub port: u16,
-}
-
 pub struct LockedMeshServiceControllerBuilder {
     pub service_registry: Arc<ServiceRegistry>,
     pub vvm_config: Arc<VvmConfig>,
@@ -560,6 +566,8 @@ impl LockedMeshServiceControllerBuilder {
             server_factory,
             env: self.env,
             server_port_tx: self.server_port_tx,
+            retry_min_duration: START_SERVER_RETRY_MIN_DURATION,
+            retry_max_duration: START_SERVER_RETRY_MAX_DURATION,
             mesh_mode: ControllerMeshMode::Locked {
                 sd_cert: self.sd_cert,
                 sd_priv: self.sd_priv,
@@ -598,6 +606,8 @@ pub struct MeshServiceController {
     server_factory: Box<dyn ServerFactory>,
     env: Arc<Environment>,
     server_port_tx: watch::Sender<Option<u16>>,
+    retry_min_duration: Duration,
+    retry_max_duration: Duration,
     mesh_mode: ControllerMeshMode,
 }
 
@@ -615,6 +625,8 @@ impl UnlockedMeshServiceControllerBuilder {
             server_factory,
             env: self.env,
             server_port_tx: self.server_port_tx,
+            retry_min_duration: START_SERVER_RETRY_MIN_DURATION,
+            retry_max_duration: START_SERVER_RETRY_MAX_DURATION,
             mesh_mode: ControllerMeshMode::Unlocked,
         })
     }
@@ -622,74 +634,95 @@ impl UnlockedMeshServiceControllerBuilder {
 
 impl Server for grpcio::Server {}
 
+enum RunState {
+    // The state is used to just hold the ownership of the Service instance, not to access it.
+    // Hence the need for allowing "dead code".
+    #[allow(dead_code)]
+    Started(Box<dyn Server>),
+    Retrying(Duration),
+    Stopped,
+}
+
+impl RunState {
+    /// Maximum amount of time to wait for a power state change event.
+    fn max_wait_time(&self) -> Duration {
+        if let RunState::Retrying(duration) = self {
+            *duration
+        } else {
+            // Wait indefinitely.
+            Duration::MAX
+        }
+    }
+}
+
 impl MeshServiceController {
     pub async fn run(self, mut power_state_rx: broadcast::Receiver<SimplePowerState>) {
-        let mut mesh_server_instance: Option<Box<dyn Server>> = None;
+        let mut mesh_server_state = RunState::Stopped;
 
         // Initially we assume the power is on.
         let mut current_power_state = SimplePowerState::On;
 
         loop {
             // Start or stop the service according to the current power state.
-            if current_power_state == SimplePowerState::On && mesh_server_instance.is_none() {
+            if current_power_state == SimplePowerState::On
+                && !matches!(mesh_server_state, RunState::Started(_))
+            {
                 info!("Power state is On, starting mesh gRPC server.");
-                mesh_server_instance = match self.start_server() {
-                    Some(server_and_port) => {
-                        let _ = self.server_port_tx.send_replace(Some(server_and_port.port));
-                        Some(server_and_port.server)
-                    }
-                    None => None,
-                }
-            } else if current_power_state == SimplePowerState::Off && mesh_server_instance.is_some()
+                mesh_server_state = self.try_start_server(&mesh_server_state);
+            } else if current_power_state == SimplePowerState::Off
+                && !matches!(mesh_server_state, RunState::Stopped)
             {
                 info!("Power state is Off, stopping mesh gRPC server.");
                 // Dropping the server instance will shut it down.
-                mesh_server_instance = None;
+                mesh_server_state = RunState::Stopped;
                 let _ = self.server_port_tx.send_replace(None);
             }
 
-            // Wait for the next power state event.
-            match power_state_rx.recv().await {
-                Ok(power_state) => {
-                    info!("Received new power state: {power_state:?}");
-                    current_power_state = power_state;
-                }
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!("Power state receiver lagged by {n} messages. Some changes were missed.");
-                }
-                Err(broadcast::error::RecvError::Closed) => {
-                    error!("Power state channel closed. Stopping MeshService permanently.");
-                    break;
-                }
+            // Wait for the next power state event or a timeout, which ever comes first.
+            select! {
+                res = power_state_rx.recv() => match res {
+                    Ok(power_state) => {
+                        info!("Received new power state: {power_state:?}");
+                        current_power_state = power_state;
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("Power state receiver lagged by {n} messages. \
+                            Some changes were missed.");
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        error!("Power state channel closed. Stopping MeshService permanently.");
+                        break;
+                    }
+                },
+                _ = sleep(mesh_server_state.max_wait_time()) => (),
+            };
+        }
+    }
+
+    fn try_start_server(&self, current_state: &RunState) -> RunState {
+        match self.start_server() {
+            Ok((instance, port)) => {
+                let _ = self.server_port_tx.send_replace(Some(port));
+                RunState::Started(instance)
+            }
+            Err(err) => {
+                let retry_duration = if let RunState::Retrying(duration) = current_state {
+                    std::cmp::min(self.retry_max_duration, duration.mul(2))
+                } else {
+                    self.retry_min_duration
+                };
+                error!("Failed to start server: {err}, retry in {retry_duration:?}");
+                RunState::Retrying(retry_duration)
             }
         }
     }
 
-    fn start_server(&self) -> Option<ServerAndPort> {
+    fn start_server(&self) -> anyhow::Result<(Box<dyn Server>, u16)> {
         match &self.mesh_mode {
-            ControllerMeshMode::Locked { sd_cert, sd_priv, credentials_checker } => {
-                let maybe_server_port = self.server_factory.start_secure(
-                    self.env.clone(),
-                    credentials_checker,
-                    sd_cert,
-                    sd_priv,
-                );
-                if let Err(err) = maybe_server_port {
-                    error!("Failed to start server: {err}");
-                    return None;
-                }
-                let (server, port) = maybe_server_port.unwrap();
-                Some(ServerAndPort { server, port })
-            }
-            ControllerMeshMode::Unlocked => {
-                let maybe_server_port = self.server_factory.start_unsecure(self.env.clone());
-                if let Err(err) = maybe_server_port {
-                    error!("Failed to start server: {err}");
-                    return None;
-                }
-                let (server, port) = maybe_server_port.unwrap();
-                Some(ServerAndPort { server, port })
-            }
+            ControllerMeshMode::Locked { sd_cert, sd_priv, credentials_checker } => self
+                .server_factory
+                .start_secure(self.env.clone(), credentials_checker, sd_cert, sd_priv),
+            ControllerMeshMode::Unlocked => self.server_factory.start_unsecure(self.env.clone()),
         }
     }
 }
@@ -715,6 +748,7 @@ mod tests {
         receive_command_add_root_cert, receive_command_remove_root_cert,
     };
 
+    use crate::mesh::peer_connection::test_support::wait_for;
     use crate::mesh::uds_pubs::test_support::{create_example_key1, create_example_key2};
     use crate::mesh::vvm_config::{create_test_uds_ca_pub, VmConfig};
     struct FakeGracePeriodSleeper {
@@ -1351,6 +1385,8 @@ mod tests {
                 server_factory,
                 env: env.clone(),
                 server_port_tx,
+                retry_min_duration: Duration::from_millis(10),
+                retry_max_duration: Duration::from_millis(160),
                 mesh_mode: ControllerMeshMode::Locked { sd_cert, sd_priv, credentials_checker },
             }
         };
@@ -1453,6 +1489,8 @@ mod tests {
             server_factory,
             env: env.clone(),
             server_port_tx,
+            retry_min_duration: Duration::from_millis(10),
+            retry_max_duration: Duration::from_millis(160),
             mesh_mode: ControllerMeshMode::Unlocked,
         };
 
@@ -1505,5 +1543,103 @@ mod tests {
 
         // Wait for the controller to finish. It will do so because the power_state channel is closed.
         tokio_runtime.block_on(run_handle).unwrap();
+    }
+
+    #[tokio::test]
+    async fn mesh_service_controller_retries_on_start_failure() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mut mock_factory = MockServerFactory::new();
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let call_count_clone = call_count.clone();
+        mock_factory.expect_start_unsecure().returning(move |_| {
+            let count = call_count_clone.fetch_add(1, Ordering::SeqCst);
+            if count < 2 {
+                Err(anyhow::anyhow!("Failed to start"))
+            } else {
+                Ok((Box::new(MockServer::new()), 12345))
+            }
+        });
+
+        let (server_port_tx, server_port_rx) = watch::channel(None);
+        let (power_state_tx, power_state_rx) = broadcast::channel(16);
+
+        let controller = MeshServiceController {
+            server_factory: Box::new(mock_factory),
+            env: Arc::new(EnvBuilder::new().build()),
+            server_port_tx,
+            // Keep the sleeps short so that the test runs fast.
+            retry_min_duration: Duration::from_millis(10),
+            retry_max_duration: Duration::from_millis(160),
+            mesh_mode: ControllerMeshMode::Unlocked,
+        };
+
+        let run_handle = tokio::spawn(async move {
+            controller.run(power_state_rx).await;
+        });
+
+        // Wait for 3 calls to start_unsecure. The first two fail, the third succeeds.
+        wait_for(move || call_count.load(Ordering::SeqCst) >= 3).await.unwrap();
+
+        // After the successful attempt, the port should be published.
+        wait_for(move || *server_port_rx.borrow() == Some(12345)).await.unwrap();
+
+        drop(power_state_tx);
+        run_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn mesh_service_controller_stops_retrying_on_power_off() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mut mock_factory = MockServerFactory::new();
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let call_count_clone = call_count.clone();
+        mock_factory.expect_start_unsecure().returning(move |_| {
+            call_count_clone.fetch_add(1, Ordering::SeqCst);
+            Err(anyhow::anyhow!("Failed to start"))
+        });
+
+        let (server_port_tx, _server_port_rx) = watch::channel(None);
+        let (power_state_tx, power_state_rx) = broadcast::channel(16);
+
+        let controller = MeshServiceController {
+            server_factory: Box::new(mock_factory),
+            env: Arc::new(EnvBuilder::new().build()),
+            server_port_tx,
+            // Basically don't sleep, so that the test runs fast
+            retry_min_duration: Duration::from_millis(1),
+            retry_max_duration: Duration::from_millis(2),
+            mesh_mode: ControllerMeshMode::Unlocked,
+        };
+
+        let run_handle = tokio::spawn(async move {
+            controller.run(power_state_rx).await;
+        });
+
+        // Wait for the first attempt to start the server.
+        let call_count_clone = call_count.clone();
+        wait_for(move || call_count_clone.load(Ordering::SeqCst) >= 1).await.unwrap();
+
+        // Send power off event.
+        power_state_tx.send(SimplePowerState::Off).unwrap();
+
+        // Give some time to ensure the controller task has read and processed the power state
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(power_state_tx.len(), 0);
+
+        let retries_after_stop = call_count.load(Ordering::SeqCst);
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Check that the number of retries does not grow overtime.
+        // Which means that the controller indeed stopped retrying and is thus
+        // sitting idle.
+        assert_eq!(call_count.load(Ordering::SeqCst), retries_after_stop);
+
+        drop(power_state_tx);
+        run_handle.await.unwrap();
     }
 }
