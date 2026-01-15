@@ -30,7 +30,6 @@ use crate::mesh::aidl_to_proto::ToProto;
 use crate::mesh::credentials_checker::CredentialsChecker;
 use crate::mesh::custom_verifier::make_server_credentials;
 
-use crate::mesh::custom_verifier::ExternalVerifier;
 use crate::power_state::SimplePowerState;
 
 use crate::mesh::VvmConfig;
@@ -283,28 +282,16 @@ impl MeshManagerService {
     }
 
     /// Starts a server instance using the provided environment and secure credentials.
-    ///
-    /// # SAFETY
-    ///
-    /// The caller must ensure, that `external_verifier` outlives the `Server` instance returned.
-    unsafe fn start_secure(
+    fn start_secure(
         self,
         env: Arc<Environment>,
-        external_verifier: &Option<ExternalVerifier>,
+        credentials_checker: &CredentialsChecker,
         sd_cert: &X509,
         sd_private_key: &PKey<Private>,
     ) -> anyhow::Result<(Server, u16)> {
         info!("Starting dice secure mesh server");
-        let server_credentials = {
-            let Some(external_verifier) = external_verifier else {
-                anyhow::bail!(
-                    "'ExternalVerifier' must be set when DICE authentication is enabled."
-                );
-            };
-            // SAFETY: The caller guarantees that `external_verifier` outlives the `Server`
-            // instance returned from `self.start`.
-            unsafe { make_server_credentials(external_verifier, sd_cert, sd_private_key)? }
-        };
+        let server_credentials =
+            make_server_credentials(credentials_checker.clone(), sd_cert, sd_private_key)?;
         self.start(env, server_credentials)
     }
 
@@ -494,9 +481,9 @@ fn get_root_cert_vm_name(root_cert_pem: &[u8]) -> anyhow::Result<String> {
     base32_x509_common_name_to_string(root_cert.subject_name())
 }
 
-pub(crate) struct MeshServiceWrapper {
-    _server: grpcio::Server,
-    port: u16,
+struct ServerAndPort {
+    pub server: grpcio::Server,
+    pub port: u16,
 }
 
 pub struct LockedMeshServiceControllerBuilder {
@@ -529,7 +516,7 @@ impl LockedMeshServiceControllerBuilder {
             sd_cert: self.sd_cert,
             sd_priv: self.sd_priv,
             server_port_tx: self.server_port_tx,
-            external_verifier: Some(ExternalVerifier::new(self.credentials_checker)),
+            credentials_checker: self.credentials_checker,
         })
     }
 }
@@ -554,7 +541,7 @@ pub enum MeshServiceController {
         sd_cert: X509,
         sd_priv: PKey<Private>,
         server_port_tx: watch::Sender<Option<u16>>,
-        external_verifier: Option<ExternalVerifier>,
+        credentials_checker: CredentialsChecker,
     },
     Unlocked {
         service: MeshManagerService,
@@ -583,7 +570,7 @@ impl UnlockedMeshServiceControllerBuilder {
 
 impl MeshServiceController {
     pub async fn run(self, mut power_state_rx: broadcast::Receiver<SimplePowerState>) {
-        let mut mesh_server_instance: Option<MeshServiceWrapper> = None;
+        let mut mesh_server_instance: Option<grpcio::Server> = None;
 
         let server_port_tx = match &self {
             MeshServiceController::Locked { server_port_tx, .. } => server_port_tx,
@@ -597,9 +584,12 @@ impl MeshServiceController {
             // Start or stop the service according to the current power state.
             if current_power_state == SimplePowerState::On && mesh_server_instance.is_none() {
                 info!("Power state is On, starting mesh gRPC server.");
-                mesh_server_instance = self.start_server();
-                if let Some(instance) = &mesh_server_instance {
-                    let _ = server_port_tx.send_replace(Some(instance.port));
+                mesh_server_instance = match self.start_server() {
+                    Some(server_and_port) => {
+                        let _ = server_port_tx.send_replace(Some(server_and_port.port));
+                        Some(server_and_port.server)
+                    }
+                    None => None,
                 }
             } else if current_power_state == SimplePowerState::Off && mesh_server_instance.is_some()
             {
@@ -626,26 +616,28 @@ impl MeshServiceController {
         }
     }
 
-    fn start_server(&self) -> Option<MeshServiceWrapper> {
+    fn start_server(&self) -> Option<ServerAndPort> {
         match self {
             MeshServiceController::Locked {
                 service,
                 env,
                 sd_cert,
                 sd_priv,
-                external_verifier,
+                credentials_checker,
                 ..
             } => {
-                // SAFETY: `external_verifier` is wrapped in MeshServiceWrapper with the server.
-                let maybe_server_port = unsafe {
-                    service.clone().start_secure(env.clone(), external_verifier, sd_cert, sd_priv)
-                };
+                let maybe_server_port = service.clone().start_secure(
+                    env.clone(),
+                    credentials_checker,
+                    sd_cert,
+                    sd_priv,
+                );
                 if let Err(err) = maybe_server_port {
                     error!("Failed to start server: {err}");
                     return None;
                 }
                 let (server, port) = maybe_server_port.unwrap();
-                Some(MeshServiceWrapper { _server: server, port })
+                Some(ServerAndPort { server, port })
             }
             MeshServiceController::Unlocked { service, env, .. } => {
                 let maybe_server_port = service.clone().start_unsecure(env.clone());
@@ -654,7 +646,7 @@ impl MeshServiceController {
                     return None;
                 }
                 let (server, port) = maybe_server_port.unwrap();
-                Some(MeshServiceWrapper { _server: server, port })
+                Some(ServerAndPort { server, port })
             }
         }
     }
@@ -810,7 +802,6 @@ mod tests {
         use crate::mesh::credentials_checker::tests::{
             create_custom_credentials_checker, create_vvmconfig, SdClaimsBuilder,
         };
-        use crate::mesh::custom_verifier::ExternalVerifier;
 
         use sample_dice_handover::create_random_uds;
 
@@ -846,8 +837,6 @@ mod tests {
         let credentials_checker =
             create_custom_credentials_checker(&uds, (*vvm_config).clone(), &auth_csr.cbor).unwrap();
 
-        let external_verifier = Some(ExternalVerifier::new(credentials_checker));
-
         let sd_cert: X509 = SdClaimsBuilder::new(&vvm_config.own_cfg.name, &uds, &auth_csr)
             .with_sd_private_key(&sd_priv)
             .build()
@@ -855,10 +844,8 @@ mod tests {
             .to_x509(&sd_priv)
             .unwrap();
 
-        // SAFETY: `external_verifier` will outlive the `server`.
-        let (_server, bound_port) = unsafe {
-            service.start_secure(env.clone(), &external_verifier, &sd_cert, &sd_priv).unwrap()
-        };
+        let (_server, bound_port) =
+            service.start_secure(env.clone(), &credentials_checker, &sd_cert, &sd_priv).unwrap();
 
         let mut actual_server_addr = vvm_config.own_cfg.addr;
         actual_server_addr.set_port(bound_port);
@@ -1323,7 +1310,7 @@ mod tests {
                 sd_cert,
                 sd_priv,
                 server_port_tx,
-                external_verifier: Some(ExternalVerifier::new(credentials_checker)),
+                credentials_checker,
             }
         };
 
