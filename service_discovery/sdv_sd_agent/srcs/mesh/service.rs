@@ -556,13 +556,15 @@ impl LockedMeshServiceControllerBuilder {
             new_client_notifier: self.mesh_manager_wake_notifier,
         });
 
-        Ok(MeshServiceController::Locked {
+        Ok(MeshServiceController {
             server_factory,
             env: self.env,
-            sd_cert: self.sd_cert,
-            sd_priv: self.sd_priv,
             server_port_tx: self.server_port_tx,
-            credentials_checker: self.credentials_checker,
+            mesh_mode: ControllerMeshMode::Locked {
+                sd_cert: self.sd_cert,
+                sd_priv: self.sd_priv,
+                credentials_checker: self.credentials_checker,
+            },
         })
     }
 }
@@ -576,24 +578,27 @@ pub struct UnlockedMeshServiceControllerBuilder {
     pub server_port_tx: watch::Sender<Option<u16>>,
 }
 
+/// Specifies in which mode the mesh is and carries any extra data that MeshServiceController needs
+/// in that particular mesh mode.
+#[derive(Clone)]
+pub(crate) enum ControllerMeshMode {
+    /// Mesh is locked (secure). We use a CA with root certificates that are generated at runtime
+    /// and exchanged over the secure mesh.
+    Locked { sd_cert: X509, sd_priv: PKey<Private>, credentials_checker: CredentialsChecker },
+
+    /// Mesh is unlocked (insecure). State used for provisioning of the uds_pubs file and for
+    /// development.
+    Unlocked,
+}
+
 /// Controls the lifecycle of the mesh gRPC service, starting and stopping it based on the
 /// system's power state.
 ///
-/// This enum has variants for the `Locked` (secure) and `Unlocked` (insecure) boot modes.
-pub enum MeshServiceController {
-    Locked {
-        server_factory: Box<dyn ServerFactory>,
-        env: Arc<Environment>,
-        sd_cert: X509,
-        sd_priv: PKey<Private>,
-        server_port_tx: watch::Sender<Option<u16>>,
-        credentials_checker: CredentialsChecker,
-    },
-    Unlocked {
-        server_factory: Box<dyn ServerFactory>,
-        env: Arc<Environment>,
-        server_port_tx: watch::Sender<Option<u16>>,
-    },
+pub struct MeshServiceController {
+    server_factory: Box<dyn ServerFactory>,
+    env: Arc<Environment>,
+    server_port_tx: watch::Sender<Option<u16>>,
+    mesh_mode: ControllerMeshMode,
 }
 
 impl UnlockedMeshServiceControllerBuilder {
@@ -606,10 +611,11 @@ impl UnlockedMeshServiceControllerBuilder {
             new_client_notifier: self.mesh_manager_wake_notifier,
         });
 
-        Ok(MeshServiceController::Unlocked {
+        Ok(MeshServiceController {
             server_factory,
             env: self.env,
             server_port_tx: self.server_port_tx,
+            mesh_mode: ControllerMeshMode::Unlocked,
         })
     }
 }
@@ -620,11 +626,6 @@ impl MeshServiceController {
     pub async fn run(self, mut power_state_rx: broadcast::Receiver<SimplePowerState>) {
         let mut mesh_server_instance: Option<Box<dyn Server>> = None;
 
-        let server_port_tx = match &self {
-            MeshServiceController::Locked { server_port_tx, .. } => server_port_tx,
-            MeshServiceController::Unlocked { server_port_tx, .. } => server_port_tx,
-        };
-
         // Initially we assume the power is on.
         let mut current_power_state = SimplePowerState::On;
 
@@ -634,7 +635,7 @@ impl MeshServiceController {
                 info!("Power state is On, starting mesh gRPC server.");
                 mesh_server_instance = match self.start_server() {
                     Some(server_and_port) => {
-                        let _ = server_port_tx.send_replace(Some(server_and_port.port));
+                        let _ = self.server_port_tx.send_replace(Some(server_and_port.port));
                         Some(server_and_port.server)
                     }
                     None => None,
@@ -644,7 +645,7 @@ impl MeshServiceController {
                 info!("Power state is Off, stopping mesh gRPC server.");
                 // Dropping the server instance will shut it down.
                 mesh_server_instance = None;
-                let _ = server_port_tx.send_replace(None);
+                let _ = self.server_port_tx.send_replace(None);
             }
 
             // Wait for the next power state event.
@@ -665,17 +666,14 @@ impl MeshServiceController {
     }
 
     fn start_server(&self) -> Option<ServerAndPort> {
-        match self {
-            MeshServiceController::Locked {
-                server_factory,
-                env,
-                sd_cert,
-                sd_priv,
-                credentials_checker,
-                ..
-            } => {
-                let maybe_server_port =
-                    server_factory.start_secure(env.clone(), credentials_checker, sd_cert, sd_priv);
+        match &self.mesh_mode {
+            ControllerMeshMode::Locked { sd_cert, sd_priv, credentials_checker } => {
+                let maybe_server_port = self.server_factory.start_secure(
+                    self.env.clone(),
+                    credentials_checker,
+                    sd_cert,
+                    sd_priv,
+                );
                 if let Err(err) = maybe_server_port {
                     error!("Failed to start server: {err}");
                     return None;
@@ -683,8 +681,8 @@ impl MeshServiceController {
                 let (server, port) = maybe_server_port.unwrap();
                 Some(ServerAndPort { server, port })
             }
-            MeshServiceController::Unlocked { server_factory, env, .. } => {
-                let maybe_server_port = server_factory.start_unsecure(env.clone());
+            ControllerMeshMode::Unlocked => {
+                let maybe_server_port = self.server_factory.start_unsecure(self.env.clone());
                 if let Err(err) = maybe_server_port {
                     error!("Failed to start server: {err}");
                     return None;
@@ -1349,13 +1347,11 @@ mod tests {
                 )
                 .unwrap();
 
-            MeshServiceController::Locked {
+            MeshServiceController {
                 server_factory,
                 env: env.clone(),
-                sd_cert,
-                sd_priv,
                 server_port_tx,
-                credentials_checker,
+                mesh_mode: ControllerMeshMode::Locked { sd_cert, sd_priv, credentials_checker },
             }
         };
 
@@ -1453,8 +1449,12 @@ mod tests {
 
         let (server_port_tx, mut server_port_rx) = watch::channel(None);
 
-        let controller =
-            MeshServiceController::Unlocked { server_factory, env: env.clone(), server_port_tx };
+        let controller = MeshServiceController {
+            server_factory,
+            env: env.clone(),
+            server_port_tx,
+            mesh_mode: ControllerMeshMode::Unlocked,
+        };
 
         let (power_state_tx, power_state_rx) = broadcast::channel(1);
 
