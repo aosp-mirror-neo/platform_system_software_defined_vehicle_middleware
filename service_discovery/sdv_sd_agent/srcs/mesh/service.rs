@@ -34,6 +34,7 @@ use crate::power_state::SimplePowerState;
 
 use crate::mesh::VvmConfig;
 use crypto_rpc::cert::base32_x509_common_name_to_string;
+use std::ops::Mul;
 use std::sync::Arc;
 
 use sdv_authz_local_vm_acl_policy_provider_factory::create_local_vm_acl_policy_provider;
@@ -48,15 +49,18 @@ use openssl::{
 };
 
 use grpcio::{
-    ChannelBuilder, Environment, RpcContext, RpcStatus, RpcStatusCode, Server, ServerBuilder,
-    ServerCredentials, ServerStreamingSink, UnarySink, WriteFlags,
+    ChannelBuilder, Environment, RpcContext, RpcStatus, RpcStatusCode, ServerCredentials,
+    ServerStreamingSink, UnarySink, WriteFlags,
 };
 
 use async_trait::async_trait;
 use coset::{CborSerializable, CoseError, CoseKey};
 use log::{error, info, warn};
+use mockall::automock;
 use protobuf::MessageField;
+use tokio::select;
 use tokio::sync::{broadcast, watch};
+use tokio::time::sleep;
 use tokio::time::Duration;
 use tracing::instrument;
 
@@ -64,6 +68,11 @@ use tracing::instrument;
 /// the local mesh manager client will connect to that peer's mesh service within that period (in
 /// seconds).
 const MESH_MANAGER_GRACE_PERIOD_SECS: u64 = 10;
+
+/// Minimum time before retrying to start the gRPC server.
+const START_SERVER_RETRY_MIN_DURATION: Duration = Duration::from_secs(1);
+/// Maximum time before retrying to start the gRPC server.
+const START_SERVER_RETRY_MAX_DURATION: Duration = Duration::from_secs(16);
 
 #[derive(Clone)]
 pub(crate) struct LockedMesh {
@@ -255,8 +264,95 @@ impl UnlockedMesh {
     }
 }
 
+#[automock]
+pub(crate) trait Server: Send {}
+
+#[automock]
+pub(crate) trait ServerFactory: Send {
+    /// Starts a server instance using the provided environment and secure credentials.
+    fn start_secure(
+        &self,
+        env: Arc<Environment>,
+        credentials_checker: &CredentialsChecker,
+        sd_cert: &X509,
+        sd_private_key: &PKey<Private>,
+    ) -> anyhow::Result<(Box<dyn Server>, u16)>;
+
+    /// Starts a server instance using the provided environment and insecure credentials.
+    fn start_unsecure(&self, env: Arc<Environment>) -> anyhow::Result<(Box<dyn Server>, u16)>;
+}
+
+struct ServerFactoryImpl {
+    local_vm_acl_policy_provider: Arc<dyn SingleVmAclPolicyProvider>,
+    service_registry: Arc<ServiceRegistry>,
+    vvm_config: Arc<VvmConfig>,
+    mesh_mode: MeshMode,
+    new_client_notifier: broadcast::Sender<()>,
+}
+
+impl ServerFactory for ServerFactoryImpl {
+    /// Starts a server instance using the provided environment and secure credentials.
+    fn start_secure(
+        &self,
+        env: Arc<Environment>,
+        credentials_checker: &CredentialsChecker,
+        sd_cert: &X509,
+        sd_private_key: &PKey<Private>,
+    ) -> anyhow::Result<(Box<dyn Server>, u16)> {
+        info!("Starting DICE secure mesh server");
+        let server_credentials =
+            make_server_credentials(credentials_checker.clone(), sd_cert, sd_private_key)?;
+        let (server, port) = self.start(env, server_credentials)?;
+
+        Ok((Box::new(server), port))
+    }
+
+    /// Starts a server instance using the provided environment and insecure credentials.
+    fn start_unsecure(&self, env: Arc<Environment>) -> anyhow::Result<(Box<dyn Server>, u16)> {
+        info!("Starting unsecure mesh server");
+        let (server, port) = self.start(env, ServerCredentials::insecure())?;
+
+        Ok((Box::new(server), port))
+    }
+}
+
+impl ServerFactoryImpl {
+    /// Starts a grpcio server instance with the given environment and credentials.
+    fn start(
+        &self,
+        env: Arc<Environment>,
+        server_credentials: ServerCredentials,
+    ) -> anyhow::Result<(grpcio::Server, u16)> {
+        let socket_addr_str = self.vvm_config.own_cfg.addr.to_string();
+
+        let mesh_manager_service = MeshManagerService::new(
+            self.local_vm_acl_policy_provider.clone(),
+            self.service_registry.clone(),
+            self.vvm_config.clone(),
+            self.mesh_mode.clone(),
+            self.new_client_notifier.clone(),
+        );
+
+        let grpc_service = create_mesh_manager(mesh_manager_service);
+
+        let ch_builder = ChannelBuilder::new(env.clone());
+
+        let mut grpc_server = grpcio::ServerBuilder::new(env.clone())
+            .register_service(grpc_service)
+            .channel_args(ch_builder.build_args())
+            .build()?;
+
+        let bound_port =
+            grpc_server.add_listening_port(socket_addr_str.clone(), server_credentials)?;
+        grpc_server.start();
+
+        info!("Mesh server listening on {socket_addr_str}");
+        Ok((grpc_server, bound_port))
+    }
+}
+
 #[derive(Clone)]
-pub(crate) struct MeshManagerService {
+struct MeshManagerService {
     local_vm_acl_policy_provider: Arc<dyn SingleVmAclPolicyProvider>,
     service_registry: Arc<ServiceRegistry>,
     vvm_config: Arc<VvmConfig>,
@@ -279,49 +375,6 @@ impl MeshManagerService {
             mesh_mode,
             new_client_notifier,
         }
-    }
-
-    /// Starts a server instance using the provided environment and secure credentials.
-    fn start_secure(
-        self,
-        env: Arc<Environment>,
-        credentials_checker: &CredentialsChecker,
-        sd_cert: &X509,
-        sd_private_key: &PKey<Private>,
-    ) -> anyhow::Result<(Server, u16)> {
-        info!("Starting dice secure mesh server");
-        let server_credentials =
-            make_server_credentials(credentials_checker.clone(), sd_cert, sd_private_key)?;
-        self.start(env, server_credentials)
-    }
-
-    /// Starts a server instance using the provided environment and insecure credentials.
-    fn start_unsecure(self, env: Arc<Environment>) -> anyhow::Result<(Server, u16)> {
-        info!("Starting unsecure mesh server");
-        self.start(env, ServerCredentials::insecure())
-    }
-
-    /// Starts a server instance with the given environment and credentials.
-    fn start(
-        self,
-        env: Arc<Environment>,
-        server_credentials: ServerCredentials,
-    ) -> anyhow::Result<(Server, u16)> {
-        let socket_addr_str = self.vvm_config.own_cfg.addr.to_string();
-        let service = create_mesh_manager(self);
-
-        let ch_builder = ChannelBuilder::new(env.clone());
-
-        let mut server = ServerBuilder::new(env.clone())
-            .register_service(service)
-            .channel_args(ch_builder.build_args())
-            .build()?;
-
-        let bound_port = server.add_listening_port(socket_addr_str.clone(), server_credentials)?;
-        server.start();
-
-        info!("Mesh server listening on {socket_addr_str}");
-        Ok((server, bound_port))
     }
 
     fn notify_new_client(&mut self) {
@@ -481,11 +534,6 @@ fn get_root_cert_vm_name(root_cert_pem: &[u8]) -> anyhow::Result<String> {
     base32_x509_common_name_to_string(root_cert.subject_name())
 }
 
-struct ServerAndPort {
-    pub server: grpcio::Server,
-    pub port: u16,
-}
-
 pub struct LockedMeshServiceControllerBuilder {
     pub service_registry: Arc<ServiceRegistry>,
     pub vvm_config: Arc<VvmConfig>,
@@ -502,21 +550,29 @@ pub struct LockedMeshServiceControllerBuilder {
 
 impl LockedMeshServiceControllerBuilder {
     pub fn build(self) -> anyhow::Result<MeshServiceController> {
-        let service = MeshManagerService::new(
-            create_local_vm_acl_policy_provider()?,
-            self.service_registry,
-            self.vvm_config,
-            MeshMode::new_locked(self.root_cert_pem, self.ca_command_sender, self.tokio_runtime),
-            self.mesh_manager_wake_notifier,
-        );
+        let server_factory = Box::new(ServerFactoryImpl {
+            local_vm_acl_policy_provider: create_local_vm_acl_policy_provider()?,
+            service_registry: self.service_registry,
+            vvm_config: self.vvm_config,
+            mesh_mode: MeshMode::new_locked(
+                self.root_cert_pem,
+                self.ca_command_sender,
+                self.tokio_runtime,
+            ),
+            new_client_notifier: self.mesh_manager_wake_notifier,
+        });
 
-        Ok(MeshServiceController::Locked {
-            service,
+        Ok(MeshServiceController {
+            server_factory,
             env: self.env,
-            sd_cert: self.sd_cert,
-            sd_priv: self.sd_priv,
             server_port_tx: self.server_port_tx,
-            credentials_checker: self.credentials_checker,
+            retry_min_duration: START_SERVER_RETRY_MIN_DURATION,
+            retry_max_duration: START_SERVER_RETRY_MAX_DURATION,
+            mesh_mode: ControllerMeshMode::Locked {
+                sd_cert: self.sd_cert,
+                sd_priv: self.sd_priv,
+                credentials_checker: self.credentials_checker,
+            },
         })
     }
 }
@@ -530,124 +586,143 @@ pub struct UnlockedMeshServiceControllerBuilder {
     pub server_port_tx: watch::Sender<Option<u16>>,
 }
 
+/// Specifies in which mode the mesh is and carries any extra data that MeshServiceController needs
+/// in that particular mesh mode.
+#[derive(Clone)]
+pub(crate) enum ControllerMeshMode {
+    /// Mesh is locked (secure). We use a CA with root certificates that are generated at runtime
+    /// and exchanged over the secure mesh.
+    Locked { sd_cert: X509, sd_priv: PKey<Private>, credentials_checker: CredentialsChecker },
+
+    /// Mesh is unlocked (insecure). State used for provisioning of the uds_pubs file and for
+    /// development.
+    Unlocked,
+}
+
 /// Controls the lifecycle of the mesh gRPC service, starting and stopping it based on the
 /// system's power state.
 ///
-/// This enum has variants for the `Locked` (secure) and `Unlocked` (insecure) boot modes.
-pub enum MeshServiceController {
-    Locked {
-        service: MeshManagerService,
-        env: Arc<Environment>,
-        sd_cert: X509,
-        sd_priv: PKey<Private>,
-        server_port_tx: watch::Sender<Option<u16>>,
-        credentials_checker: CredentialsChecker,
-    },
-    Unlocked {
-        service: MeshManagerService,
-        env: Arc<Environment>,
-        server_port_tx: watch::Sender<Option<u16>>,
-    },
+pub struct MeshServiceController {
+    server_factory: Box<dyn ServerFactory>,
+    env: Arc<Environment>,
+    server_port_tx: watch::Sender<Option<u16>>,
+    retry_min_duration: Duration,
+    retry_max_duration: Duration,
+    mesh_mode: ControllerMeshMode,
 }
 
 impl UnlockedMeshServiceControllerBuilder {
     pub fn build(self) -> anyhow::Result<MeshServiceController> {
-        let service = MeshManagerService::new(
-            create_local_vm_acl_policy_provider()?,
-            self.service_registry,
-            self.vvm_config,
-            MeshMode::new_unlocked(self.local_vm_uds_pubs)?,
-            self.mesh_manager_wake_notifier,
-        );
+        let server_factory = Box::new(ServerFactoryImpl {
+            local_vm_acl_policy_provider: create_local_vm_acl_policy_provider()?,
+            service_registry: self.service_registry,
+            vvm_config: self.vvm_config,
+            mesh_mode: MeshMode::new_unlocked(self.local_vm_uds_pubs)?,
+            new_client_notifier: self.mesh_manager_wake_notifier,
+        });
 
-        Ok(MeshServiceController::Unlocked {
-            service,
+        Ok(MeshServiceController {
+            server_factory,
             env: self.env,
             server_port_tx: self.server_port_tx,
+            retry_min_duration: START_SERVER_RETRY_MIN_DURATION,
+            retry_max_duration: START_SERVER_RETRY_MAX_DURATION,
+            mesh_mode: ControllerMeshMode::Unlocked,
         })
+    }
+}
+
+impl Server for grpcio::Server {}
+
+enum RunState {
+    // The state is used to just hold the ownership of the Service instance, not to access it.
+    // Hence the need for allowing "dead code".
+    #[allow(dead_code)]
+    Started(Box<dyn Server>),
+    Retrying(Duration),
+    Stopped,
+}
+
+impl RunState {
+    /// Maximum amount of time to wait for a power state change event.
+    fn max_wait_time(&self) -> Duration {
+        if let RunState::Retrying(duration) = self {
+            *duration
+        } else {
+            // Wait indefinitely.
+            Duration::MAX
+        }
     }
 }
 
 impl MeshServiceController {
     pub async fn run(self, mut power_state_rx: broadcast::Receiver<SimplePowerState>) {
-        let mut mesh_server_instance: Option<grpcio::Server> = None;
-
-        let server_port_tx = match &self {
-            MeshServiceController::Locked { server_port_tx, .. } => server_port_tx,
-            MeshServiceController::Unlocked { server_port_tx, .. } => server_port_tx,
-        };
+        let mut mesh_server_state = RunState::Stopped;
 
         // Initially we assume the power is on.
         let mut current_power_state = SimplePowerState::On;
 
         loop {
             // Start or stop the service according to the current power state.
-            if current_power_state == SimplePowerState::On && mesh_server_instance.is_none() {
+            if current_power_state == SimplePowerState::On
+                && !matches!(mesh_server_state, RunState::Started(_))
+            {
                 info!("Power state is On, starting mesh gRPC server.");
-                mesh_server_instance = match self.start_server() {
-                    Some(server_and_port) => {
-                        let _ = server_port_tx.send_replace(Some(server_and_port.port));
-                        Some(server_and_port.server)
-                    }
-                    None => None,
-                }
-            } else if current_power_state == SimplePowerState::Off && mesh_server_instance.is_some()
+                mesh_server_state = self.try_start_server(&mesh_server_state);
+            } else if current_power_state == SimplePowerState::Off
+                && !matches!(mesh_server_state, RunState::Stopped)
             {
                 info!("Power state is Off, stopping mesh gRPC server.");
                 // Dropping the server instance will shut it down.
-                mesh_server_instance = None;
-                let _ = server_port_tx.send_replace(None);
+                mesh_server_state = RunState::Stopped;
+                let _ = self.server_port_tx.send_replace(None);
             }
 
-            // Wait for the next power state event.
-            match power_state_rx.recv().await {
-                Ok(power_state) => {
-                    info!("Received new power state: {power_state:?}");
-                    current_power_state = power_state;
-                }
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!("Power state receiver lagged by {n} messages. Some changes were missed.");
-                }
-                Err(broadcast::error::RecvError::Closed) => {
-                    error!("Power state channel closed. Stopping MeshService permanently.");
-                    break;
-                }
+            // Wait for the next power state event or a timeout, which ever comes first.
+            select! {
+                res = power_state_rx.recv() => match res {
+                    Ok(power_state) => {
+                        info!("Received new power state: {power_state:?}");
+                        current_power_state = power_state;
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("Power state receiver lagged by {n} messages. \
+                            Some changes were missed.");
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        error!("Power state channel closed. Stopping MeshService permanently.");
+                        break;
+                    }
+                },
+                _ = sleep(mesh_server_state.max_wait_time()) => (),
+            };
+        }
+    }
+
+    fn try_start_server(&self, current_state: &RunState) -> RunState {
+        match self.start_server() {
+            Ok((instance, port)) => {
+                let _ = self.server_port_tx.send_replace(Some(port));
+                RunState::Started(instance)
+            }
+            Err(err) => {
+                let retry_duration = if let RunState::Retrying(duration) = current_state {
+                    std::cmp::min(self.retry_max_duration, duration.mul(2))
+                } else {
+                    self.retry_min_duration
+                };
+                error!("Failed to start server: {err}, retry in {retry_duration:?}");
+                RunState::Retrying(retry_duration)
             }
         }
     }
 
-    fn start_server(&self) -> Option<ServerAndPort> {
-        match self {
-            MeshServiceController::Locked {
-                service,
-                env,
-                sd_cert,
-                sd_priv,
-                credentials_checker,
-                ..
-            } => {
-                let maybe_server_port = service.clone().start_secure(
-                    env.clone(),
-                    credentials_checker,
-                    sd_cert,
-                    sd_priv,
-                );
-                if let Err(err) = maybe_server_port {
-                    error!("Failed to start server: {err}");
-                    return None;
-                }
-                let (server, port) = maybe_server_port.unwrap();
-                Some(ServerAndPort { server, port })
-            }
-            MeshServiceController::Unlocked { service, env, .. } => {
-                let maybe_server_port = service.clone().start_unsecure(env.clone());
-                if let Err(err) = maybe_server_port {
-                    error!("Failed to start server: {err}");
-                    return None;
-                }
-                let (server, port) = maybe_server_port.unwrap();
-                Some(ServerAndPort { server, port })
-            }
+    fn start_server(&self) -> anyhow::Result<(Box<dyn Server>, u16)> {
+        match &self.mesh_mode {
+            ControllerMeshMode::Locked { sd_cert, sd_priv, credentials_checker } => self
+                .server_factory
+                .start_secure(self.env.clone(), credentials_checker, sd_cert, sd_priv),
+            ControllerMeshMode::Unlocked => self.server_factory.start_unsecure(self.env.clone()),
         }
     }
 }
@@ -673,6 +748,7 @@ mod tests {
         receive_command_add_root_cert, receive_command_remove_root_cert,
     };
 
+    use crate::mesh::peer_connection::test_support::wait_for;
     use crate::mesh::uds_pubs::test_support::{create_example_key1, create_example_key2};
     use crate::mesh::vvm_config::{create_test_uds_ca_pub, VmConfig};
     struct FakeGracePeriodSleeper {
@@ -733,17 +809,17 @@ mod tests {
 
         let vvm_config = Arc::new(prepare_test_vm_config().unwrap());
 
-        let service = MeshManagerService::new(
-            Arc::new(TestSingleVmAclPolicyProvider::new()),
-            Arc::new(ServiceRegistry::default()),
-            vvm_config.clone(),
-            MeshMode::Locked(locked_mesh.clone()),
+        let server_factory = ServerFactoryImpl {
+            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            service_registry: Arc::new(ServiceRegistry::default()),
+            vvm_config: vvm_config.clone(),
+            mesh_mode: MeshMode::Locked(locked_mesh.clone()),
             new_client_notifier,
-        );
+        };
 
         let env = Arc::new(EnvBuilder::new().build());
         let (_server, bound_port) =
-            service.start(env.clone(), ServerCredentials::insecure()).unwrap();
+            server_factory.start(env.clone(), ServerCredentials::insecure()).unwrap();
 
         let mut actual_server_addr = vvm_config.own_cfg.addr;
         actual_server_addr.set_port(bound_port);
@@ -822,13 +898,13 @@ mod tests {
             tokio_runtime.clone(),
         );
 
-        let service = MeshManagerService::new(
-            Arc::new(TestSingleVmAclPolicyProvider::new()),
-            Arc::new(ServiceRegistry::default()),
-            vvm_config.clone(),
+        let server_factory = ServerFactoryImpl {
+            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            service_registry: Arc::new(ServiceRegistry::default()),
+            vvm_config: vvm_config.clone(),
             mesh_mode,
             new_client_notifier,
-        );
+        };
 
         // Server's identity ("bar")
         let uds = create_random_uds();
@@ -844,8 +920,9 @@ mod tests {
             .to_x509(&sd_priv)
             .unwrap();
 
-        let (_server, bound_port) =
-            service.start_secure(env.clone(), &credentials_checker, &sd_cert, &sd_priv).unwrap();
+        let (_server, bound_port) = server_factory
+            .start_secure(env.clone(), &credentials_checker, &sd_cert, &sd_priv)
+            .unwrap();
 
         let mut actual_server_addr = vvm_config.own_cfg.addr;
         actual_server_addr.set_port(bound_port);
@@ -898,17 +975,17 @@ mod tests {
 
         let (new_client_notifier, _) = broadcast::channel(1);
 
-        let service = MeshManagerService::new(
-            Arc::new(TestSingleVmAclPolicyProvider::new()),
-            Arc::new(ServiceRegistry::default()),
-            vvm_config.clone(),
+        let server_factory = ServerFactoryImpl {
+            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            service_registry: Arc::new(ServiceRegistry::default()),
+            vvm_config: vvm_config.clone(),
             mesh_mode,
             new_client_notifier,
-        );
+        };
 
         let env = Arc::new(EnvBuilder::new().build());
         let (_server, bound_port) =
-            service.start(env.clone(), ServerCredentials::insecure()).unwrap();
+            server_factory.start(env.clone(), ServerCredentials::insecure()).unwrap();
 
         let mut actual_server_addr = vvm_config.own_cfg.addr;
         actual_server_addr.set_port(bound_port);
@@ -954,17 +1031,17 @@ mod tests {
 
         let vvm_config = Arc::new(prepare_test_vm_config().unwrap());
 
-        let service = MeshManagerService::new(
-            Arc::new(TestSingleVmAclPolicyProvider::new()),
-            Arc::new(ServiceRegistry::default()),
-            vvm_config.clone(),
-            MeshMode::Locked(locked_mesh),
+        let server_factory = ServerFactoryImpl {
+            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            service_registry: Arc::new(ServiceRegistry::default()),
+            vvm_config: vvm_config.clone(),
+            mesh_mode: MeshMode::Locked(locked_mesh),
             new_client_notifier,
-        );
+        };
 
         let env = Arc::new(EnvBuilder::new().build());
         let (_server, bound_port) =
-            service.start(env.clone(), ServerCredentials::insecure()).unwrap();
+            server_factory.start(env.clone(), ServerCredentials::insecure()).unwrap();
 
         let mut actual_server_addr = vvm_config.own_cfg.addr;
         actual_server_addr.set_port(bound_port);
@@ -1008,21 +1085,21 @@ mod tests {
             123,
         );
 
-        let service = MeshManagerService::new(
-            Arc::new(TestSingleVmAclPolicyProvider::new()),
-            service_registry.clone(),
-            vvm_config.clone(),
-            MeshMode::new_locked(
+        let server_factory = ServerFactoryImpl {
+            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            service_registry: service_registry.clone(),
+            vvm_config: vvm_config.clone(),
+            mesh_mode: MeshMode::new_locked(
                 vec![1, 2, 3],                            // root_cert
                 tokio::sync::mpsc::unbounded_channel().0, // ca_command_sender
                 tokio_runtime.clone(),
             ),
             new_client_notifier,
-        );
+        };
 
         let env = Arc::new(EnvBuilder::new().build());
         let (_server, bound_port) =
-            service.start(env.clone(), ServerCredentials::insecure()).unwrap();
+            server_factory.start(env.clone(), ServerCredentials::insecure()).unwrap();
 
         let mut actual_server_addr = vvm_config.own_cfg.addr;
         actual_server_addr.set_port(bound_port);
@@ -1100,17 +1177,17 @@ mod tests {
         acl_policy_provider.add_policy(package_name.clone(), service_name.clone(), acl_policy);
         let acl_policy_provider = Arc::new(acl_policy_provider);
 
-        let service = MeshManagerService::new(
-            acl_policy_provider.clone(),
-            Arc::new(ServiceRegistry::default()),
-            vvm_config.clone(),
+        let server_factory = ServerFactoryImpl {
+            local_vm_acl_policy_provider: acl_policy_provider.clone(),
+            service_registry: Arc::new(ServiceRegistry::default()),
+            vvm_config: vvm_config.clone(),
             mesh_mode,
             new_client_notifier,
-        );
+        };
 
         let env = Arc::new(EnvBuilder::new().build());
         let (_server, bound_port) =
-            service.start(env.clone(), ServerCredentials::insecure()).unwrap();
+            server_factory.start(env.clone(), ServerCredentials::insecure()).unwrap();
 
         let mut actual_server_addr = vvm_config.own_cfg.addr;
         actual_server_addr.set_port(bound_port);
@@ -1208,21 +1285,21 @@ mod tests {
             );
         }
 
-        let service = MeshManagerService::new(
-            Arc::new(TestSingleVmAclPolicyProvider::new()),
-            service_registry.clone(),
-            vvm_config.clone(),
-            MeshMode::new_locked(
+        let server_factory = ServerFactoryImpl {
+            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            service_registry,
+            vvm_config: vvm_config.clone(),
+            mesh_mode: MeshMode::new_locked(
                 vec![1, 2, 3],                            // root_cert
                 tokio::sync::mpsc::unbounded_channel().0, // ca_command_sender
                 tokio_runtime.clone(),
             ),
             new_client_notifier,
-        );
+        };
 
         let env = Arc::new(EnvBuilder::new().build());
         let (_server, bound_port) =
-            service.start(env.clone(), ServerCredentials::insecure()).unwrap();
+            server_factory.start(env.clone(), ServerCredentials::insecure()).unwrap();
 
         let mut actual_server_addr = vvm_config.own_cfg.addr;
         actual_server_addr.set_port(bound_port);
@@ -1273,13 +1350,13 @@ mod tests {
             tokio_runtime.clone(),
         );
 
-        let service = MeshManagerService::new(
-            Arc::new(TestSingleVmAclPolicyProvider::new()),
-            Arc::new(ServiceRegistry::default()),
-            vvm_config.clone(),
+        let server_factory = Box::new(ServerFactoryImpl {
+            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            service_registry: Arc::new(ServiceRegistry::default()),
+            vvm_config: vvm_config.clone(),
             mesh_mode,
             new_client_notifier,
-        );
+        });
 
         // Server's identity ("bar")
         let uds = create_random_uds();
@@ -1304,13 +1381,13 @@ mod tests {
                 )
                 .unwrap();
 
-            MeshServiceController::Locked {
-                service,
+            MeshServiceController {
+                server_factory,
                 env: env.clone(),
-                sd_cert,
-                sd_priv,
                 server_port_tx,
-                credentials_checker,
+                retry_min_duration: Duration::from_millis(10),
+                retry_max_duration: Duration::from_millis(160),
+                mesh_mode: ControllerMeshMode::Locked { sd_cert, sd_priv, credentials_checker },
             }
         };
 
@@ -1398,18 +1475,24 @@ mod tests {
 
         let mesh_mode = MeshMode::new_unlocked(local_uds_keys.clone()).unwrap();
 
-        let service = MeshManagerService::new(
-            Arc::new(TestSingleVmAclPolicyProvider::new()),
-            Arc::new(ServiceRegistry::default()),
-            vvm_config.clone(),
+        let server_factory = Box::new(ServerFactoryImpl {
+            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            service_registry: Arc::new(ServiceRegistry::default()),
+            vvm_config: vvm_config.clone(),
             mesh_mode,
             new_client_notifier,
-        );
+        });
 
         let (server_port_tx, mut server_port_rx) = watch::channel(None);
 
-        let controller =
-            MeshServiceController::Unlocked { service, env: env.clone(), server_port_tx };
+        let controller = MeshServiceController {
+            server_factory,
+            env: env.clone(),
+            server_port_tx,
+            retry_min_duration: Duration::from_millis(10),
+            retry_max_duration: Duration::from_millis(160),
+            mesh_mode: ControllerMeshMode::Unlocked,
+        };
 
         let (power_state_tx, power_state_rx) = broadcast::channel(1);
 
@@ -1460,5 +1543,103 @@ mod tests {
 
         // Wait for the controller to finish. It will do so because the power_state channel is closed.
         tokio_runtime.block_on(run_handle).unwrap();
+    }
+
+    #[tokio::test]
+    async fn mesh_service_controller_retries_on_start_failure() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mut mock_factory = MockServerFactory::new();
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let call_count_clone = call_count.clone();
+        mock_factory.expect_start_unsecure().returning(move |_| {
+            let count = call_count_clone.fetch_add(1, Ordering::SeqCst);
+            if count < 2 {
+                Err(anyhow::anyhow!("Failed to start"))
+            } else {
+                Ok((Box::new(MockServer::new()), 12345))
+            }
+        });
+
+        let (server_port_tx, server_port_rx) = watch::channel(None);
+        let (power_state_tx, power_state_rx) = broadcast::channel(16);
+
+        let controller = MeshServiceController {
+            server_factory: Box::new(mock_factory),
+            env: Arc::new(EnvBuilder::new().build()),
+            server_port_tx,
+            // Keep the sleeps short so that the test runs fast.
+            retry_min_duration: Duration::from_millis(10),
+            retry_max_duration: Duration::from_millis(160),
+            mesh_mode: ControllerMeshMode::Unlocked,
+        };
+
+        let run_handle = tokio::spawn(async move {
+            controller.run(power_state_rx).await;
+        });
+
+        // Wait for 3 calls to start_unsecure. The first two fail, the third succeeds.
+        wait_for(move || call_count.load(Ordering::SeqCst) >= 3).await.unwrap();
+
+        // After the successful attempt, the port should be published.
+        wait_for(move || *server_port_rx.borrow() == Some(12345)).await.unwrap();
+
+        drop(power_state_tx);
+        run_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn mesh_service_controller_stops_retrying_on_power_off() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mut mock_factory = MockServerFactory::new();
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let call_count_clone = call_count.clone();
+        mock_factory.expect_start_unsecure().returning(move |_| {
+            call_count_clone.fetch_add(1, Ordering::SeqCst);
+            Err(anyhow::anyhow!("Failed to start"))
+        });
+
+        let (server_port_tx, _server_port_rx) = watch::channel(None);
+        let (power_state_tx, power_state_rx) = broadcast::channel(16);
+
+        let controller = MeshServiceController {
+            server_factory: Box::new(mock_factory),
+            env: Arc::new(EnvBuilder::new().build()),
+            server_port_tx,
+            // Basically don't sleep, so that the test runs fast
+            retry_min_duration: Duration::from_millis(1),
+            retry_max_duration: Duration::from_millis(2),
+            mesh_mode: ControllerMeshMode::Unlocked,
+        };
+
+        let run_handle = tokio::spawn(async move {
+            controller.run(power_state_rx).await;
+        });
+
+        // Wait for the first attempt to start the server.
+        let call_count_clone = call_count.clone();
+        wait_for(move || call_count_clone.load(Ordering::SeqCst) >= 1).await.unwrap();
+
+        // Send power off event.
+        power_state_tx.send(SimplePowerState::Off).unwrap();
+
+        // Give some time to ensure the controller task has read and processed the power state
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(power_state_tx.len(), 0);
+
+        let retries_after_stop = call_count.load(Ordering::SeqCst);
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Check that the number of retries does not grow overtime.
+        // Which means that the controller indeed stopped retrying and is thus
+        // sitting idle.
+        assert_eq!(call_count.load(Ordering::SeqCst), retries_after_stop);
+
+        drop(power_state_tx);
+        run_handle.await.unwrap();
     }
 }
