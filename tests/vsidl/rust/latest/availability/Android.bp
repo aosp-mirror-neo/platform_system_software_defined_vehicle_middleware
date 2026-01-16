@@ -18,10 +18,10 @@ package {
 }
 
 rust_test {
-    name: "sdv_core_core_services_unit_vsidl_availability_e2e_test",
+    name: "sdv_core_middleware_unit_vsidl_availability_e2e_test",
     defaults: [
-        "sdv_core_core_services_unit_vsidl_pubsub_e2e_defaults",
-        "sdv_core_core_services_unit_vsidl_multipub_e2e_defaults",
+        "sdv_core_middleware_unit_vsidl_pubsub_e2e_defaults",
+        "sdv_core_middleware_unit_vsidl_multipub_e2e_defaults",
     ],
     srcs: ["availability_test.rs"],
     rustlibs: [
@@ -30,8 +30,8 @@ rust_test {
 }
 
 rust_test {
-    name: "sdv_core_core_services_unit_vsidl_availability_rpc_e2e_test",
-    defaults: ["sdv_core_core_services_unit_vsidl_e2e_defaults"],
+    name: "sdv_core_middleware_unit_vsidl_availability_rpc_e2e_test",
+    defaults: ["sdv_core_middleware_unit_vsidl_e2e_defaults"],
     srcs: ["availability_rpc_test.rs"],
     rustlibs: [
         "libsdv_mw_rs_sdv_vsidl_rpc_test_tire_status_consumer",

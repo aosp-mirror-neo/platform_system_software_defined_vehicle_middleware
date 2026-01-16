@@ -13,7 +13,7 @@
 // limitations under the License.
 
 rust_defaults {
-    name: "sdv_core_core_services_unit_vsidl_e2e_defaults",
+    name: "sdv_core_middleware_unit_vsidl_e2e_defaults",
     defaults: ["sdv@rust_defaults"],
     test_suites: [
         "automotive-sdv-tests",

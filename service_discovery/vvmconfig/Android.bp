@@ -42,7 +42,7 @@ rust_library {
 }
 
 rust_test_host {
-    name: "sdv_core_core_services_unit_libvvmconfig_test",
+    name: "sdv_core_middleware_unit_libvvmconfig_test",
     defaults: ["vvmconfig@rust_defaults"],
     test_suites: [
         "automotive-sdv-tests",

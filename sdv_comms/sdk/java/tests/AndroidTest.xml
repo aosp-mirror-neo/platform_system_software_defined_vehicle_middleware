@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License. -->
 <configuration description="Config for libsdv_comms_java tests">
     <target_preparer class="com.android.tradefed.targetprep.suite.SuiteApkInstaller">
-        <option name="test-file-name" value="sdv_core_core_services_unit_comms_java_sdk_test.apk"/>
+        <option name="test-file-name" value="sdv_core_middleware_unit_comms_java_sdk_test.apk"/>
     </target_preparer>
     <target_preparer class="com.android.tradefed.targetprep.RootTargetPreparer" />
 

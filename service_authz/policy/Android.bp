@@ -41,7 +41,7 @@ rust_library {
 }
 
 rust_test {
-    name: "sdv_core_core_services_unit_authz_policy_test",
+    name: "sdv_core_middleware_unit_authz_policy_test",
     defaults: ["sdv_authz_policy@rust_defaults"],
     test_options: {
         unit_test: true,
