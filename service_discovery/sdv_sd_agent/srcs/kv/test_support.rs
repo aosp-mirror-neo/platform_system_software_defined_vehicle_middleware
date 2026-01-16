@@ -14,7 +14,13 @@
 
 use crate::kv::ServiceRegistry;
 use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::{
-    metadata::{ApplicationMetadata::ApplicationMetadata, TransportMetadata::TransportMetadata},
+    metadata::{
+        ApplicationMetadata::{
+            r#ApplicationMetadata, r#TypedMetadata::TypedMetadata as TypedMetadataAidl,
+        },
+        PublisherUnitMetadata::PublisherUnitMetadata,
+        TransportMetadata::TransportMetadata,
+    },
     AccessControl::AccessControl,
     UnitType::UnitType,
 };
@@ -30,6 +36,24 @@ pub(crate) fn register_service_unit_for_test(
     unit_type: &UnitType,
     process_identifier: &ProcessIdentifier,
     sid: i64,
+) -> ServiceIdentityV2 {
+    register_service_unit_for_test_channel(
+        service_registry,
+        vm_name,
+        unit_type,
+        process_identifier,
+        sid,
+        None,
+    )
+}
+
+pub(crate) fn register_service_unit_for_test_channel(
+    service_registry: &ServiceRegistry,
+    vm_name: &str,
+    unit_type: &UnitType,
+    process_identifier: &ProcessIdentifier,
+    sid: i64,
+    channel_name: Option<String>,
 ) -> ServiceIdentityV2 {
     let service_identity = ServiceIdentityV2 {
         sid,
@@ -47,7 +71,13 @@ pub(crate) fn register_service_unit_for_test(
         .unwrap();
 
     let acl = AccessControl { ..Default::default() };
-    let app_metadata = ApplicationMetadata { ..Default::default() };
+    let mut app_metadata = ApplicationMetadata { ..Default::default() };
+    if let Some(channel_name) = channel_name {
+        app_metadata.typedMetadata = TypedMetadataAidl::PublisherUnit(PublisherUnitMetadata {
+            channel_name,
+            ..Default::default()
+        });
+    }
 
     // Because the identity is known we should be able to register a service.
     let token = service_registry

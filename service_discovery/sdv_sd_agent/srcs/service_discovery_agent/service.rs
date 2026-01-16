@@ -27,6 +27,7 @@ use google_sdv_privileged_service_discovery::aidl::google::sdv::privileged::serv
 use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::UnitType::UnitType;
 
 use sdv_authz::AuthzService;
+use sdv_comms_id::names::ChannelName;
 use sdv_comms_id::ServiceFqin;
 
 use crate::authz::create_authz_filter_for_sud;
@@ -34,13 +35,13 @@ use crate::kv::process_identifier::get_calling_process_identifier;
 use crate::listeners::ServiceUnitChangeListener;
 use crate::unit_type_utils::deprecate_unit_type_owner;
 use crate::ServiceRegistry;
-use std::ffi::CStr;
-use std::io::{Error as IoError, Write};
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use binder::{ExceptionCode, Status};
 use log::{error, warn};
+use std::ffi::CStr;
+use std::io::{Error as IoError, Write};
+use std::str::FromStr;
+use std::sync::Arc;
 use tracing::instrument;
 
 pub(crate) struct ServiceDiscoveryAgentService {
@@ -190,6 +191,50 @@ impl ServiceDiscoveryAgentService {
 
         self.service_registry
             .unregister_service_unit_change_listener_by_type(&unit_type, authz_listener)
+    }
+
+    fn parse_channel_name(channel_name: &str) -> Result<ChannelName, binder::Status> {
+        ChannelName::from_str(channel_name).map_err(|err| {
+            let msg = format!("Invalid channel name {channel_name}: {err:?}");
+            error!("{msg}");
+            binder::Status::new_exception_str(binder::ExceptionCode::ILLEGAL_ARGUMENT, Some(msg))
+        })
+    }
+
+    fn register_service_unit_change_listener_by_channel(
+        &self,
+        unit_type: &UnitType,
+        channel_name: &str,
+        listener: &binder::Strong<dyn IServiceUnitChangeListener>,
+        process_identifier: &ProcessIdentifier,
+    ) -> binder::Result<()> {
+        let unit_type: UnitType = deprecate_unit_type_owner(unit_type.clone());
+        let authz_listener = self.create_authz_listener(process_identifier, listener)?;
+        let channel = Self::parse_channel_name(channel_name)?;
+
+        self.service_registry.register_service_unit_change_listener_by_channel(
+            &unit_type,
+            &channel,
+            authz_listener,
+        )
+    }
+
+    fn unregister_service_unit_change_listener_by_channel(
+        &self,
+        unit_type: &UnitType,
+        channel_name: &str,
+        listener: &binder::Strong<dyn IServiceUnitChangeListener>,
+        process_identifier: &ProcessIdentifier,
+    ) -> binder::Result<()> {
+        let unit_type: UnitType = deprecate_unit_type_owner(unit_type.clone());
+        let authz_listener = self.create_authz_listener(process_identifier, listener)?;
+        let channel = Self::parse_channel_name(channel_name)?;
+
+        self.service_registry.unregister_service_unit_change_listener_by_channel(
+            &unit_type,
+            &channel,
+            authz_listener,
+        )
     }
 
     fn register_service_unit_change_listener_by_name(
@@ -417,11 +462,16 @@ impl IServiceDiscoveryAgentAsyncServer for ServiceDiscoveryAgentService {
     )]
     async fn registerServiceUnitChangeListenerByChannel(
         &self,
-        _unit_type: &UnitType,
-        _channel_name: &str,
-        _listener: &binder::Strong<dyn IServiceUnitChangeListener>,
+        unit_type: &UnitType,
+        channel_name: &str,
+        listener: &binder::Strong<dyn IServiceUnitChangeListener>,
     ) -> binder::Result<()> {
-        unimplemented!()
+        self.register_service_unit_change_listener_by_channel(
+            unit_type,
+            channel_name,
+            listener,
+            &get_calling_process_identifier(),
+        )
     }
 
     #[instrument(
@@ -430,11 +480,16 @@ impl IServiceDiscoveryAgentAsyncServer for ServiceDiscoveryAgentService {
     )]
     async fn unregisterServiceUnitChangeListenerByChannel(
         &self,
-        _unit_type: &UnitType,
-        _channel_name: &str,
-        _listener: &binder::Strong<dyn IServiceUnitChangeListener>,
+        unit_type: &UnitType,
+        channel_name: &str,
+        listener: &binder::Strong<dyn IServiceUnitChangeListener>,
     ) -> binder::Result<()> {
-        unimplemented!()
+        self.unregister_service_unit_change_listener_by_channel(
+            unit_type,
+            channel_name,
+            listener,
+            &get_calling_process_identifier(),
+        )
     }
 
     #[instrument(name = "sd::IServiceDiscoveryAgent::fetchPublishersByChannelName", skip_all)]

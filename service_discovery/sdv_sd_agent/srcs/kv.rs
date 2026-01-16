@@ -25,6 +25,7 @@ use binder::binder_impl::Binder;
 use binder::{Interface, SpIBinder};
 
 use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::{
+    metadata::ApplicationMetadata::TypedMetadata::TypedMetadata as TypedMetadataAidl,
     AccessControl::AccessControl, RegistrationToken::RegistrationToken as RegistrationTokenV2,
     UnitType::UnitType,
 };
@@ -44,13 +45,15 @@ use google_sdv_identity::aidl::google::sdv::identity::{
 };
 
 use log::{debug, error, info, warn};
+use sdv_comms_id::names::ChannelName;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::sync::mpsc;
 
 use self::identity_registry::IdentityRegistry;
 pub(crate) use self::identity_registry::Sid;
-use self::service_unit_registry::{ServiceUnitAndTransport, ServiceUnitRegistry};
+pub(crate) use self::service_unit_registry::ServiceUnitAndTransport;
+use self::service_unit_registry::ServiceUnitRegistry;
 use crate::kv::death_watcher::DeathWatcher;
 use crate::listeners::Listeners;
 use crate::listeners::ServiceUnitChangeListener;
@@ -583,6 +586,66 @@ impl ServiceRegistry {
         Ok(())
     }
 
+    pub(crate) fn register_service_unit_change_listener_by_channel(
+        &self,
+        unit_type: &UnitType,
+        channel_name: &ChannelName,
+        listener: ServiceUnitChangeListener,
+    ) -> binder::Result<()> {
+        let unit_type = deprecate_unit_type_owner(unit_type.clone());
+
+        let service_defns = {
+            let mut storage: MutexGuard<RegistryStorage> = self.storage.lock().unwrap();
+            storage.listeners.register_listener_by_channel(
+                &unit_type,
+                channel_name,
+                listener.clone(),
+            );
+
+            let service_defns = storage
+                .service_unit_registry
+                .iter()
+                .filter_map(|(_, _, sdi)| {
+                    let sud = sdi.get_service_unit_definition();
+                    if sud.unitType == unit_type {
+                        if let TypedMetadataAidl::PublisherUnit(metadata) =
+                            &sud.appMetadata.typedMetadata
+                        {
+                            if metadata.channel_name != channel_name.as_ref() {
+                                return None;
+                            }
+                            return Some(sud.clone());
+                        }
+                    }
+                    None
+                })
+                .collect::<Vec<ServiceUnitDefinition>>();
+            service_defns
+        }; // make sure storage MutexGuard is kept as little as possible
+
+        for service_defn in service_defns {
+            if let Err(e) = listener.on_service_unit_registered(&service_defn) {
+                warn!("ServiceUnitChangeListener::onServiceUnitRegistered() failed; {e:?}");
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn unregister_service_unit_change_listener_by_channel(
+        &self,
+        unit_type: &UnitType,
+        channel_name: &ChannelName,
+        listener: ServiceUnitChangeListener,
+    ) -> binder::Result<()> {
+        let unit_type = deprecate_unit_type_owner(unit_type.clone());
+
+        let mut storage = self.storage.lock().unwrap();
+        storage.listeners.unregister_listener_by_channel(&unit_type, channel_name, listener);
+
+        Ok(())
+    }
+
     pub(crate) fn register_service_unit_change_listener_by_name(
         &self,
         unit_name_params: &UnitNameParameters,
@@ -636,10 +699,14 @@ mod tests {
     use crate::kv::death_watcher::{self, MockDeathWatcher};
     use crate::kv::service_unit_registry::ServiceUnitAndTransport;
 
-    use super::test_support::{get_default_test_unit_type, register_service_unit_for_test};
+    use super::test_support::{
+        get_default_test_unit_type, register_service_unit_for_test,
+        register_service_unit_for_test_channel,
+    };
     use super::ServiceRegistry;
 
     use googletest::prelude::*;
+    use std::str::FromStr;
     use std::sync::{Arc, Mutex};
 
     #[test]
@@ -1519,6 +1586,138 @@ mod tests {
         assert!(service_registry
             .unregister_service_unit_change_listener_by_name(
                 &unit_name_parameters,
+                binder_status_listener
+            )
+            .is_ok());
+    }
+
+    #[test]
+    fn register_unregister_listener_by_channel_succeeds() {
+        let service_registry = ServiceRegistry::default();
+        let unit_type = get_listener_test_default_unit_type();
+        let caller_pid = ProcessIdentifier { pid: 42, uid: 1001 };
+        let channel_name = ChannelName::from_str("channel").unwrap();
+
+        let identity = register_service_unit_for_test_channel(
+            &service_registry,
+            "some_vm_name",
+            &unit_type,
+            &caller_pid,
+            123,
+            Some(channel_name.to_string()),
+        );
+
+        let listener = FakeServiceUnitChangeListener::new();
+        let binder_status_listener = listener.wrap_with_authz();
+
+        // Register the listener.
+        assert!(service_registry
+            .register_service_unit_change_listener_by_channel(
+                &unit_type,
+                &channel_name,
+                binder_status_listener.clone()
+            )
+            .is_ok());
+
+        // Listener should be notified about the existing service unit.
+        assert_that!(listener.get_num_on_service_unit_registered(), eq(1));
+        assert_that!(listener.get_num_on_service_unit_unregistered(), eq(0));
+
+        // Remove the service unit.
+        let service_unit_id = ServiceUnitIdentifier {
+            sid: identity.sid.into(),
+            name: "service_unit_name".to_string(), // matches with register_service_unit_for_test
+        };
+        service_registry.remove_remote_service_unit(&service_unit_id);
+        assert_that!(listener.get_num_on_service_unit_unregistered(), eq(1));
+
+        // Unregister the listener.
+        assert!(service_registry
+            .unregister_service_unit_change_listener_by_channel(
+                &unit_type,
+                &channel_name,
+                binder_status_listener
+            )
+            .is_ok());
+    }
+
+    #[test]
+    fn listener_by_channel_not_notified_for_wrong_channel() {
+        let service_registry = ServiceRegistry::default();
+        let unit_type = get_listener_test_default_unit_type();
+        let caller_pid = ProcessIdentifier { pid: 42, uid: 1001 };
+        let channel_name = ChannelName::from_str("channel").unwrap();
+        let wrong_channel_name = ChannelName::from_str("wrong-channel").unwrap();
+
+        register_service_unit_for_test_channel(
+            &service_registry,
+            "some_vm_name",
+            &unit_type,
+            &caller_pid,
+            123,
+            Some(channel_name.to_string()),
+        );
+
+        let listener = FakeServiceUnitChangeListener::new();
+        let binder_status_listener = listener.wrap_with_authz();
+
+        // Register the listener for the correct channel name.
+        assert!(service_registry
+            .register_service_unit_change_listener_by_channel(
+                &unit_type,
+                &wrong_channel_name,
+                binder_status_listener.clone()
+            )
+            .is_ok());
+
+        // Listener should not be notified because the channel name doesn't match.
+        assert_that!(listener.get_num_on_service_unit_registered(), eq(0));
+
+        // Unregister the listener.
+        assert!(service_registry
+            .unregister_service_unit_change_listener_by_channel(
+                &unit_type,
+                &wrong_channel_name,
+                binder_status_listener
+            )
+            .is_ok());
+    }
+
+    #[test]
+    fn listener_by_channel_not_notified_for_no_publication_metadata() {
+        let service_registry = ServiceRegistry::default();
+        let unit_type = get_listener_test_default_unit_type();
+        let caller_pid = ProcessIdentifier { pid: 42, uid: 1001 };
+        let channel_name = ChannelName::from_str("channel").unwrap();
+
+        register_service_unit_for_test(
+            &service_registry,
+            "some_vm_name",
+            &unit_type,
+            &caller_pid,
+            123,
+        );
+
+        let listener = FakeServiceUnitChangeListener::new();
+        let binder_status_listener = listener.wrap_with_authz();
+
+        // Register the listener for the correct channel name.
+        assert!(service_registry
+            .register_service_unit_change_listener_by_channel(
+                &unit_type,
+                &channel_name,
+                binder_status_listener.clone()
+            )
+            .is_ok());
+
+        // Listener should not be notified because the channel name doesn't match.
+        assert_that!(listener.get_num_on_service_unit_registered(), eq(0));
+
+        // Unregister the listener.
+        assert!(service_registry
+            .unregister_service_unit_change_listener_by_channel(
+                &unit_type,
+                &channel_name,
                 binder_status_listener
             )
             .is_ok());

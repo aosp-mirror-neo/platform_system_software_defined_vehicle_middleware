@@ -26,8 +26,7 @@ pub use sdv_sd_mesh_api::sdv_sd_mesh::{
 use sdv_sd_mesh_api::sdv_sd_mesh_grpc::MeshManagerClient;
 
 use crate::mesh::{
-    credentials_checker::CredentialsChecker,
-    custom_verifier::{make_channel_credentials, ExternalVerifier},
+    credentials_checker::CredentialsChecker, custom_verifier::make_channel_credentials,
 };
 use async_trait::async_trait;
 use futures::Stream;
@@ -156,7 +155,7 @@ pub(crate) trait MeshConnector: Sync + Send {
 pub(crate) struct SecureMeshConnector {
     sd_cert: X509,
     sd_private_key: PKey<Private>,
-    external_verifier: ExternalVerifier,
+    credentials_checker: CredentialsChecker,
 }
 
 impl SecureMeshConnector {
@@ -165,11 +164,10 @@ impl SecureMeshConnector {
         sd_cert: &X509,
         sd_private_key: &PKey<Private>,
     ) -> anyhow::Result<Self> {
-        let external_verifier = ExternalVerifier::new(credentials_checker);
         Ok(Self {
             sd_cert: sd_cert.clone(),
             sd_private_key: sd_private_key.clone(),
-            external_verifier,
+            credentials_checker,
         })
     }
 }
@@ -182,10 +180,11 @@ impl MeshConnector for SecureMeshConnector {
         socket_addr: &SocketAddr,
         vm_name: &str,
     ) -> anyhow::Result<Box<dyn MeshManagerAsyncClient>> {
-        let credentials =
-            // SAFETY: `external_verifier` outlives the `ChannelCredentials` object returned by
-            // `make_channel_credentials`, which is consumed by `ChannelBuilder::connect` call.
-            unsafe { make_channel_credentials(&self.external_verifier, &self.sd_cert, &self.sd_private_key)? };
+        let credentials = make_channel_credentials(
+            self.credentials_checker.clone(),
+            &self.sd_cert,
+            &self.sd_private_key,
+        )?;
 
         let channel = {
             let builder = ChannelBuilder::new(env)

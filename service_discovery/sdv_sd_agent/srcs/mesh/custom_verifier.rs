@@ -20,17 +20,17 @@ use crate::mesh::{
 use anyhow::{anyhow, bail, Context};
 use grpcio::{ChannelCredentials, ServerCredentials};
 use grpcio_sys::grpc_status_code;
-use log::{error, info};
+use log::{debug, error, info};
 use openssl::{
     pkey::{PKey, Private},
     x509::X509,
 };
 use std::{
-    borrow::BorrowMut,
     ffi::{CStr, CString},
-    marker::PhantomData,
+    marker::PhantomPinned,
     mem::ManuallyDrop,
     os::raw::{c_char, c_int, c_void},
+    pin::Pin,
     ptr::NonNull,
     sync::Mutex,
 };
@@ -39,7 +39,8 @@ use std::{
 ///
 /// # Safety
 ///
-/// - `user_data` must point to a `CredentialsChecker` object in valid state, that is not dropped and accessed during the execution of this function.
+/// - `user_data` must point to an `ExternalVerifier` object created with ExternalVerifier::new
+///   that is not dropped or modified during the execution of this function.
 /// - `sync_status` must either be null or non-null and valid for writes, must not be accessed during the execution of this function
 /// - `request` must either be null or non-null and valid during the execution of this function
 /// - `request.target_name` must be non-null nul-terminated C string.
@@ -93,10 +94,10 @@ pub unsafe extern "C" fn custom_verifier(
         }
     };
 
-    // SAFETY: `user_data` points to a `CredentialsChecker` instance owned by `ExternalVerifier`,
-    // set in its `new`. It's also null-checked right before this call.
-    let credentials_checker: &CredentialsChecker =
-        unsafe { &*(user_data as *mut CredentialsChecker) };
+    // SAFETY: `user_data` points to a `ExternalVerifier` instance owned by the Rust side
+    // (ie, the client side of the FFI) and is set set in its `new`.
+    // It's also null-checked above.
+    let external_verifier: &ExternalVerifier = unsafe { &*(user_data as *mut ExternalVerifier) };
 
     if request.peer_info.peer_cert.is_null() {
         error!("peer_cert not found");
@@ -105,13 +106,14 @@ pub unsafe extern "C" fn custom_verifier(
 
     // SAFETY:
     // - `request->peer_info.peer_cert` is a nul-terminated C string.
-    match X509::from_pem(unsafe { CStr::from_ptr(request.peer_info.peer_cert) }.to_bytes())
+    let peer_cert_cstr = unsafe { CStr::from_ptr(request.peer_info.peer_cert) };
+    match X509::from_pem(peer_cert_cstr.to_bytes())
         .map_err(|err| anyhow!(err))
         .and_then(|peer_leaf_cert| SdCertificateClaims::from_x509(&peer_leaf_cert))
         .and_then(|sd_cert_claims| {
             check_claims_match_target(sd_cert_claims, target_name.as_deref())
         })
-        .and_then(|sd_cert_claims| credentials_checker.check(&sd_cert_claims))
+        .and_then(|sd_cert_claims| external_verifier.credentials_checker.check(&sd_cert_claims))
     {
         // SAFETY: `sync_status` is null-checked at the beginning of this function. As `sync_status` is non-null, the caller promises it to point to a valid-for-write object.
         Ok(()) => unsafe { *sync_status = grpc_status_code::GRPC_STATUS_OK },
@@ -119,6 +121,35 @@ pub unsafe extern "C" fn custom_verifier(
     }
 
     1 // performing the check synchronously
+}
+
+/// Called from the other side of the FFI by grpcio's C++ implementation to notify
+/// the FFI client side (us, the Rust code) that grpcio no longer needs the external verifier
+/// given to it and it must thus be destroyed to avoid a memory leak.
+///
+/// SAFETY: If `user_data` is non-null, it must point to the raw address of a
+/// Pin<Box<ExternalVerifier>> that was created with ExternalVerifier::new() but whose memory is no
+/// longer managed by Rust. Ie, it was Pin::into_inner_unchecked() and Box::into_raw(). As this
+/// function is now the sole user of this `user_data` memory, it's safe to reclaim and drop it.
+pub unsafe extern "C" fn destruct_external_verifier(user_data: *mut c_void) {
+    if user_data.is_null() {
+        return;
+    }
+
+    debug!("Dropping ExternalVerifier with address {:p}", user_data);
+
+    // SAFETY: user_data is null-checked and was set to *mut ExternalVerifier in
+    // ExternalVerifier::new().
+    // This pointer value is ExternalVerifier::inner::user_data.
+    // It's called from grpcio C++ implementation the following way:
+    // ```
+    //    if (external_verifier_->destruct != nullptr) {
+    //      external_verifier_->destruct(external_verifier_->user_data);
+    //    }
+    //  ```
+    unsafe {
+        let _ = Pin::new_unchecked(Box::from_raw(user_data as *mut ExternalVerifier));
+    }
 }
 
 /// Extracts request.target_name to an Option<String>
@@ -167,53 +198,52 @@ fn check_claims_match_target(
 /// Usage:
 ///
 /// ```
-/// let user_data: CredentialsChecker = todo!();
-/// let external_verifier = ExternalVerifier::new(user_data);
-/// let tls_options = TlsOptions::new(&external_verifier);
+/// let credentials_checker: CredentialsChecker = todo!();
+/// let external_verifier = ExternalVerifier::new(credentials_checker);
+/// let tls_options = TlsOptions::new(external_verifier);
 /// ```
 
-pub(crate) struct ExternalVerifier {
-    _user_data: Box<CredentialsChecker>,
+struct ExternalVerifier {
+    credentials_checker: CredentialsChecker,
     inner: Mutex<Box<grpcio_sys::grpc_tls_certificate_verifier_external>>,
+    _pin: PhantomPinned,
 }
 
 impl ExternalVerifier {
-    pub fn new(user_data: CredentialsChecker) -> Self {
-        let mut user_data = Box::new(user_data);
+    pub fn new(credentials_checker: CredentialsChecker) -> Pin<Box<Self>> {
         let inner = Mutex::new(Box::new(grpcio_sys::grpc_tls_certificate_verifier_external {
-            user_data: user_data.borrow_mut() as *mut CredentialsChecker as *mut c_void,
+            //user_data will be set below as a self pointer.
+            user_data: std::ptr::null_mut(),
             verify: Some(custom_verifier),
             cancel: None,
-            destruct: None,
+            destruct: Some(destruct_external_verifier),
         }));
-        Self { _user_data: user_data, inner }
+
+        let mut external_verifier =
+            Box::pin(Self { credentials_checker, inner, _pin: PhantomPinned });
+
+        // SAFETY: the raw address is used only to fill the user_data struct field
+        let self_address: *mut c_void = unsafe {
+            let mut_ref = external_verifier.as_mut().get_unchecked_mut();
+            mut_ref as *mut ExternalVerifier as *mut c_void
+        };
+
+        // This will be the pointer passed to the `verify` and `destruct` C callbacks above.
+        external_verifier.inner.lock().unwrap().user_data = self_address;
+
+        debug!("Created ExternalVerifier with address {:p}", self_address);
+        external_verifier
     }
 }
 
-// SAFETY: `ExternalVerifier` is safe for being moved between threads.
-unsafe impl Send for ExternalVerifier {}
-
-// SAFETY: `ExternalVerifier` is not `Sync` due to the indirect `*mut c_void` member. The interior
-// mutability is used to satisfy the FFI interface, which requires mutable raw pointer. After
-// crossing the FFI boundary twice, that mutable raw pointer is passed to `custom_verifier` as
-// `user_data`, which is casted to a (non-mutable) `&CredentialsChecker`. In summary,
-// `ExternalVerifier` is immutable, which makes it `Sync`, aka thread-safe.
-//
-// If `custom_verifier` wants to mutate `user_data`, it has to use synchornization mechanisms
-// internally to remain `Sync`.
-unsafe impl Sync for ExternalVerifier {}
-
 // Wraps a raw pointer to `grpc_tls_certificate_verifier` object.
-struct InternalVerifier<'a> {
+struct InternalVerifier {
     inner: NonNull<grpcio_sys::grpc_tls_certificate_verifier>,
-    _external_verifier: PhantomData<&'a ExternalVerifier>,
 }
 
-impl<'a> InternalVerifier<'a> {
-    // `external_verifier` must outlive `self`.
-    fn new(external_verifier: &'a ExternalVerifier) -> anyhow::Result<Self> {
-        // SAFETY: `external_verifier` is promissed to outlive `self`. The pointer returned from
-        // `grpc_tls_certificate_verifier_external_create` is null-checked.
+impl InternalVerifier {
+    fn new(external_verifier: Pin<Box<ExternalVerifier>>) -> anyhow::Result<Self> {
+        // SAFETY: The passed external_verifier is guaranteed to be non-null by Box<>
         let Some(internal_verifier) = NonNull::new(unsafe {
             grpcio_sys::grpc_tls_certificate_verifier_external_create(
                 external_verifier.inner.lock().unwrap().as_mut(),
@@ -221,11 +251,17 @@ impl<'a> InternalVerifier<'a> {
         }) else {
             bail!("Failed creating internal verifier.");
         };
-        Ok(Self { inner: internal_verifier, _external_verifier: PhantomData })
+        // Make Rust stop managing the memory of external_verifier.
+        // SAFETY: We will take it back and drop it once the C++ code on the other side of the
+        //         FFI calls our destruct_external_verifier() callback.
+        let boxed_external_verifier: Box<ExternalVerifier> =
+            unsafe { Pin::into_inner_unchecked(external_verifier) };
+        let _raw_external_verifier = Box::into_raw(boxed_external_verifier);
+        Ok(Self { inner: internal_verifier })
     }
 }
 
-impl Drop for InternalVerifier<'_> {
+impl Drop for InternalVerifier {
     fn drop(&mut self) {
         // SAFETY: `self.inner` was null-checked in `Self::new`.
         unsafe {
@@ -235,13 +271,12 @@ impl Drop for InternalVerifier<'_> {
 }
 
 // Wraps a raw pointer to `grpc_tls_credentials_options` object.
-struct TlsOptions<'a> {
+struct TlsOptions {
     inner: NonNull<grpcio_sys::grpc_tls_credentials_options>,
-    _external_verifier: PhantomData<&'a ExternalVerifier>,
 }
 
-impl<'a> TlsOptions<'a> {
-    fn new(external_verifier: &'a ExternalVerifier) -> anyhow::Result<Self> {
+impl TlsOptions {
+    fn new(external_verifier: Pin<Box<ExternalVerifier>>) -> anyhow::Result<Self> {
         let Some(tls_options) =
             // SAFETY: There are no safety requirements set by `grpc_tls_credentials_options_create`
             // and the pointer returned by it is null-checked by `NonNull::new`.
@@ -257,7 +292,7 @@ impl<'a> TlsOptions<'a> {
                 InternalVerifier::new(external_verifier)?.inner.as_ptr(),
             );
         }
-        Ok(Self { inner: tls_options, _external_verifier: PhantomData })
+        Ok(Self { inner: tls_options })
     }
 
     // Takes the ownership of the `grpc_tls_credentials_options` object. The caller is responsible
@@ -312,7 +347,7 @@ impl<'a> TlsOptions<'a> {
     }
 }
 
-impl Drop for TlsOptions<'_> {
+impl Drop for TlsOptions {
     fn drop(&mut self) {
         // SAFETY: `self.inner` was null-checked in `Self::new`.
         unsafe {
@@ -417,18 +452,15 @@ struct TransparentChannelCredentials {
 }
 
 /// Creates `grpcio::ChannelCredentials` instance with a custom verifier based on
-/// `external_verifier`.
-///
-/// # SAFETY
-///
-/// `external_verifier` must outlive the `ChannelCredentials` object returned.
-pub(crate) unsafe fn make_channel_credentials(
-    external_verifier: &ExternalVerifier,
+/// `credentials_checker`.
+pub(crate) fn make_channel_credentials(
+    credentials_checker: CredentialsChecker,
     certificate: &X509,
     pkey: &PKey<Private>,
 ) -> anyhow::Result<ChannelCredentials> {
     let certificate_provider =
         TlsCertificateProvider::new(TlsIdentityPairs::new(pkey, certificate)?)?;
+    let external_verifier = ExternalVerifier::new(credentials_checker);
     let mut tls_options = TlsOptions::new(external_verifier)?;
 
     // Skip GRPC's server certificate verification, as we are using a custom verifier.
@@ -471,20 +503,16 @@ struct TransparentServerCredentials {
 }
 
 /// Creates `grpcio::ServerCredentials` instance with a custom verifier based on
-/// `external_verifier`.
-///
-/// # SAFETY
-///
-/// `external_verifier` must outlive the `ServerCredentials` object returned.
-pub(crate) unsafe fn make_server_credentials(
-    external_verifier: &ExternalVerifier,
+/// `credentials_checker`.
+pub(crate) fn make_server_credentials(
+    credentials_checker: CredentialsChecker,
     certificate: &X509,
     pkey: &PKey<Private>,
 ) -> anyhow::Result<ServerCredentials> {
+    let mut tls_options = TlsOptions::new(ExternalVerifier::new(credentials_checker))?;
+
     let certificate_provider =
         TlsCertificateProvider::new(TlsIdentityPairs::new(pkey, certificate)?)?;
-    let mut tls_options = TlsOptions::new(external_verifier)?;
-
     tls_options.set_certificate_provider(certificate_provider)?;
     tls_options.set_client_cert_request_type();
 
@@ -635,26 +663,24 @@ mod tests {
 
     #[test]
     fn test_tls_options() -> anyhow::Result<()> {
-        let user_data = create_credentials_checker()?;
-        let external_verifier = ExternalVerifier::new(user_data);
-        let tls_options = TlsOptions::new(&external_verifier);
+        let credentials_checker = create_credentials_checker()?;
+        let external_verifier = ExternalVerifier::new(credentials_checker);
+        let tls_options = TlsOptions::new(external_verifier);
         assert!(tls_options.is_ok());
         Ok(())
     }
 
     #[test]
     fn test_tls_options_consumed() -> anyhow::Result<()> {
-        let user_data = create_credentials_checker()?;
-        let external_verifier = ExternalVerifier::new(user_data);
-        let tls_options = TlsOptions::new(&external_verifier)?;
+        let credentials_checker = create_credentials_checker()?;
+        let external_verifier = ExternalVerifier::new(credentials_checker);
+        let tls_options = TlsOptions::new(external_verifier)?;
         let _inner = tls_options.into_inner();
         Ok(())
     }
 
     #[test]
     fn test_make_channel_credentials() -> anyhow::Result<()> {
-        let user_data = create_credentials_checker()?;
-        let external_verifier = ExternalVerifier::new(user_data);
         let subject_private_key = build_ec_private_key()?.try_into()?;
         let sd_claims = SdCertificateClaims {
             android_sdv: vec![43u8; 20 * 1024],
@@ -667,10 +693,11 @@ mod tests {
         };
         let sd_cert = sd_claims.to_x509(&subject_private_key)?;
 
-        // SAFETY: `external_verifier` does outlive `channel_credentials`.
-        let mut channel_credentials = unsafe {
-            make_channel_credentials(&external_verifier, &sd_cert, &subject_private_key)?
-        };
+        let mut channel_credentials = make_channel_credentials(
+            create_credentials_checker()?,
+            &sd_cert,
+            &subject_private_key,
+        )?;
         assert!(!channel_credentials.as_mut_ptr().is_null());
 
         Ok(())
@@ -688,8 +715,6 @@ mod tests {
 
     #[test]
     fn test_make_server_credentials() -> anyhow::Result<()> {
-        let user_data = create_credentials_checker()?;
-        let external_verifier = ExternalVerifier::new(user_data);
         let subject_private_key = build_ec_private_key()?.try_into()?;
         let sd_claims = SdCertificateClaims {
             android_sdv: vec![43u8; 20 * 1024],
@@ -703,8 +728,7 @@ mod tests {
         let sd_cert = sd_claims.to_x509(&subject_private_key)?;
 
         let mut server_credentials =
-            // SAFETY: `external_verifier` does outlive `server_credentials`.
-            unsafe { make_server_credentials(&external_verifier, &sd_cert, &subject_private_key)? };
+            make_server_credentials(create_credentials_checker()?, &sd_cert, &subject_private_key)?;
         assert!(!server_credentials.as_mut_ptr().is_null());
 
         Ok(())
