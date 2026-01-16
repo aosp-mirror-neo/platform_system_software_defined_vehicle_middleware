@@ -114,13 +114,16 @@ impl SubscriberStream {
         let min_interval_u32 = min_interval.as_millis().try_into().unwrap_or(u32::MAX);
 
         // SAFETY: subscriber.0 is a valid pointer to [ASDV_SubscriptionHandle].
-        unsafe {
+        let status = unsafe {
             sdv_comms_bindgen::ASDV_SetNotificationHandler(
                 subscriber.0.as_ptr(),
                 vtable,
                 min_interval_u32,
             )
         };
+        // Propagate error if setting the handler failed
+        SdvResult::from(SdvStatus::new(SdvStatusCode::from(status)))?;
+
         let metadata = subscriber.get_publisher_unit_metadata();
         Ok(SubscriberStream { subscriber, receiver, metadata })
     }
@@ -164,13 +167,70 @@ impl SubscriberStream {
         let min_interval_u32 = min_interval.as_millis().try_into().unwrap_or(u32::MAX);
 
         // SAFETY: subscriber.0 is a valid pointer to [ASDV_SubscriptionHandle].
-        unsafe {
+        let status = unsafe {
             sdv_comms_bindgen::ASDV_SetNotificationHandler(
                 subscriber.0.as_ptr(),
                 vtable,
                 min_interval_u32,
             )
         };
+        // Propagate error if setting the handler failed
+        SdvResult::from(SdvStatus::new(SdvStatusCode::from(status)))?;
+
+        let metadata = subscriber.get_publisher_unit_metadata();
+        Ok(SubscriberStream { subscriber, receiver, metadata })
+    }
+
+    /// Non blocking.
+    /// Subscribes to all publications of a specified channel and wires them into a single
+    /// DataTunnel subscription. The subscription is made dynamically to all current and future
+    /// publications of the specified channel. Creating more than one Subscriber
+    /// instance for the same channel will create independent objects with separate
+    /// subscription related resources.
+    ///
+    /// Parameters:
+    ///    [IN] context: Reference to the local SDV Comm Stack Context object
+    ///    [IN] unit_type: Unit Type of the publications to subscribe
+    ///    [IN] channel_name: string of the channel name to subscribe
+    ///    [IN] min_interval: Specifies the minimal interval between nearing
+    ///                       callbacks for internal notifications implementation.
+    ///                       Using Duration::ZERO disables minimal interval.
+    ///                       See SubscriberStream description for details.
+    ///    [IN] options: see SubscriberOptions for details
+    ///
+    /// Return value:
+    ///   Returns a Future of SdvResult that contains SdvStatus of the
+    ///   method call and, if method succeeded, a new Subscriber instance.
+    pub async fn create_for_channel(
+        context: ContextRef,
+        unit_type: &UnitType,
+        channel_name: &str,
+        min_interval: Duration,
+        options: SubscriberOptions,
+    ) -> SdvResult<SubscriberStream> {
+        let subscriber =
+            Subscriber::create_for_channel(context, unit_type, channel_name, options).await?;
+
+        type SetNotificationsCb = CallbackWrapper<ASDV_NotificationType>;
+        let (cb, receiver) = SetNotificationsCb::new_async();
+        let vtable = ASDV_CallbackVTable_SetNotificationHandler {
+            func: Some(SetNotificationsCb::trampoline_func),
+            clear: Some(SetNotificationsCb::trampoline_clear),
+            cb_data: cb.into_void_ptr(),
+        };
+
+        let min_interval_u32 = min_interval.as_millis().try_into().unwrap_or(u32::MAX);
+
+        // SAFETY: subscriber.0 is a valid pointer to [ASDV_SubscriptionHandle].
+        let status = unsafe {
+            sdv_comms_bindgen::ASDV_SetNotificationHandler(
+                subscriber.0.as_ptr(),
+                vtable,
+                min_interval_u32,
+            )
+        };
+        // Propagate error if setting the handler failed
+        SdvResult::from(SdvStatus::new(SdvStatusCode::from(status)))?;
 
         let metadata = subscriber.get_publisher_unit_metadata();
         Ok(SubscriberStream { subscriber, receiver, metadata })
