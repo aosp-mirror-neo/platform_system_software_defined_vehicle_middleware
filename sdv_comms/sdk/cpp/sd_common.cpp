@@ -257,6 +257,29 @@ uint32_t PublisherUnitMetadata::GetMessageCount() const {
     return message_count;
 }
 
+sdv::SdvStatus PublisherUnitMetadata::SetChannel(const std::string &channel) {
+  if (!IsValid()) {
+    return SdvStatus(SdvStatusCode::kInvalidArgument);
+  }
+  auto status = ASDV_PublisherUnitMetadata_setChannel(handle_, channel.c_str());
+  return SdvStatus(static_cast<SdvStatusCode>(status));
+}
+
+std::string PublisherUnitMetadata::GetChannel() const {
+  if (!IsValid()) {
+    return "";
+  }
+  char buf[128];
+  size_t buf_size = 0;
+  auto status = ASDV_PublisherUnitMetadata_getChannel(handle_, buf, &buf_size);
+  if (status != ASDV_STATUS_OK) {
+    LOG(ERROR) << "ASDV_PublisherUnitMetadata_getChannel failed with status "
+               << status;
+    return "";
+  }
+  return std::string(buf);
+}
+
 bool PublisherUnitMetadata::operator==(const PublisherUnitMetadata& o) const {
     // Equal if both are empty.
     if (!o.handle_ && !handle_) {

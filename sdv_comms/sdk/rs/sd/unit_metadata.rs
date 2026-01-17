@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use sdv_comms_bindgen::{ASDV_PublisherUnitMetadata, ASDV_ServerUnitMetadata};
+use sdv_comms_bindgen::{
+    ASDV_PublisherUnitMetadata, ASDV_ServerUnitMetadata,
+    ASDV_CHANNEL_NAME_MAX_SIZE_BYTES_INCLUDING_NUL,
+};
 use sdv_status_rs::SdvStatusCode;
 
 /// Defines the metadata used for Service Unit registration.
@@ -199,6 +202,17 @@ impl PublisherUnitMetadata {
         SdvStatusCode::from(status).expect("ServerUnitMetadata::set_message_count() failed");
     }
 
+    /// Sets the channel field of this [PublisherUnitMetadata].
+    pub fn set_channel(&mut self, channel: &str) {
+        let channel_cstr = std::ffi::CString::new(channel).expect("Failed to create CString");
+        // SAFETY: `self.0` is guaranteed to be a valid pointer to a NUL-terminated string.
+        let status = unsafe {
+            sdv_comms_bindgen::ASDV_PublisherUnitMetadata_setChannel(self.0, channel_cstr.as_ptr())
+        };
+
+        SdvStatusCode::from(status).expect("PublisherUnitMetadata::set_channel() failed");
+    }
+
     /// Returns the version field of this [PublisherUnitMetadata].
     pub fn get_version(&self) -> u32 {
         let mut version: u32 = 0;
@@ -242,6 +256,31 @@ impl PublisherUnitMetadata {
         SdvStatusCode::from(status).expect("ServerUnitMetadata::get_message_count() failed");
 
         message_count
+    }
+
+    /// Returns the channel field of this [PublisherUnitMetadata].
+    pub fn get_channel(&self) -> String {
+        let mut buf_size = ASDV_CHANNEL_NAME_MAX_SIZE_BYTES_INCLUDING_NUL as usize;
+        let mut buf = vec![0u8; buf_size];
+
+        // SAFETY: `self.0` is guaranteed to be a valid pointer.
+        // The `ASDV_PublisherUnitMetadata_getChannel` function is called with a buffer of size
+        // ASDV_CHANNEL_NAME_MAX_SIZE_BYTES_INCLUDING_NUL.
+        // This is safe under the assumption that the underlying C implementation will not write
+        // more than ASDV_CHANNEL_NAME_MAX_SIZE_BYTES_INCLUDING_NUL bytes (including the null terminator)
+        // into the provided buffer.
+        let status = unsafe {
+            sdv_comms_bindgen::ASDV_PublisherUnitMetadata_getChannel(
+                self.0,
+                buf.as_mut_ptr() as *mut std::os::raw::c_char,
+                &mut buf_size,
+            )
+        };
+
+        SdvStatusCode::from(status).expect("PublisherUnitMetadata::get_channel() failed");
+
+        buf.truncate(buf_size - 1);
+        String::from_utf8(buf).expect("Channel string is not valid UTF-8")
     }
 }
 
@@ -402,6 +441,34 @@ mod publisher_metadata_tests {
         args1.set_version(40);
         args2.set_version(40);
 
+        args1.set_channel("test-channel");
+        args2.set_channel("test-channel");
+
         assert_that!(args1, eq(&args2));
+    }
+
+    #[test]
+    fn test_get_set_channel() {
+        let mut args = PublisherUnitMetadata::default();
+
+        args.set_channel("test-channel");
+
+        assert_that!(args.get_channel(), eq("test-channel"));
+    }
+
+    #[test]
+    #[should_panic(expected = "Failed to create CString")]
+    fn test_set_channel_invalid_str() {
+        let mut args = PublisherUnitMetadata::default();
+
+        args.set_channel("test\0channel");
+    }
+
+    #[test]
+    #[should_panic(expected = "PublisherUnitMetadata::set_channel() failed")]
+    fn test_set_channel_invalid() {
+        let mut args = PublisherUnitMetadata::default();
+
+        args.set_channel("invalidchannel\x07name");
     }
 }
