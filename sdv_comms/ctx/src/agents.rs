@@ -20,6 +20,7 @@ use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery
 use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::IServiceRegistrationAgent::{BpServiceRegistrationAgent, IServiceRegistrationAgent};
 use paste::paste;
 use sdv_status_rs::{derive, SdvResult, SdvStatus, SdvStatusCode};
+use tokio::task::JoinSet;
 
 macro_rules! get_agent_binder_name {
     ($service_name:ident) => {
@@ -163,6 +164,67 @@ pub fn wait_for_agents() -> SdvResult<()> {
             format!("Binder Error waiting for agent interface: {}", descriptor)
         ))?;
     };
+
+    Ok(())
+}
+
+/// Ensures that the Comms Stack Agents are started, or start them if any
+/// is configured as a dynamic service and isn't yet started.
+///
+/// This has the same effect as `wait_for_agents`, except that this
+/// method uses the Tokio runtime to wait for these agents asynchronously
+/// rather than sequentially.
+pub async fn wait_for_agents_async() -> SdvResult<()> {
+    let mut join_set = JoinSet::new();
+    join_set.spawn(async {
+        let descriptor = get_agent_binder_name!(ServiceRegistrationAgent);
+        let _ = binder_tokio::wait_for_interface::<dyn IServiceRegistrationAgent>(&descriptor)
+            .await
+            .map_err(derive!(
+                SdvStatusCode::Internal,
+                format!("Binder Error waiting for agent interface: {}", descriptor)
+            ))?;
+        Ok(())
+    });
+
+    join_set.spawn(async {
+        let descriptor = get_agent_binder_name!(ServiceDiscoveryAgent);
+        let _ = binder_tokio::wait_for_interface::<dyn IServiceDiscoveryAgent>(&descriptor)
+            .await
+            .map_err(derive!(
+            SdvStatusCode::Internal,
+            format!("Binder Error waiting for agent interface: {}", descriptor)
+        ))?;
+        Ok(())
+    });
+
+    join_set.spawn(async {
+        let descriptor = get_agent_binder_name!(DataTunnelAgent);
+        let _ = binder_tokio::wait_for_interface::<dyn IDataTunnelAgent>(&descriptor)
+            .await
+            .map_err(derive!(
+                SdvStatusCode::Internal,
+                format!("Binder Error waiting for agent interface: {}", descriptor)
+            ))?;
+        Ok(())
+    });
+
+    join_set.spawn(async {
+        let descriptor = get_agent_binder_name!(RpcAgent);
+        let _ = binder_tokio::wait_for_interface::<dyn IRpcAgent>(&descriptor).await.map_err(
+            derive!(
+                SdvStatusCode::Internal,
+                format!("Binder Error waiting for agent interface: {}", descriptor)
+            ),
+        )?;
+        Ok(())
+    });
+
+    let task_results = join_set.join_all().await;
+    for task_result in task_results {
+        task_result
+            .map_err(|e: SdvStatus| Err(SdvStatus::with_cause(SdvStatusCode::Internal, e)))?;
+    }
 
     Ok(())
 }
