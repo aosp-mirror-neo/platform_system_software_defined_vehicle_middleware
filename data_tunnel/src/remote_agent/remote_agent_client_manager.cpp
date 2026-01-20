@@ -127,6 +127,16 @@ void RemoteAgentClientManager::Shutdown() {
     transport_support_agent_.reset();
     connection_manager_ = nullptr;
     RequestTerminateAllClients(guard);
+    auto pending_subscriptions = std::exchange(pending_subscription_requests_, {});
+    guard.unlock();
+
+    // Unregister topics for any pending subs that were never handed off to a
+    // RemoteAgentClient
+    for (const auto& [vm_name, pending_topics] : pending_subscriptions) {
+        for (const auto& pending_topic : pending_topics) {
+            topic_manager_.UnregisterRemoteTopic(pending_topic);
+        }
+    }
 }
 
 RemoteAgentClient::LastMessageResultFuture RemoteAgentClientManager::FetchLastMessage(
