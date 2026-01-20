@@ -145,7 +145,7 @@ std::array<uint8_t, 32> Sha256(const ByteContainer& bytes) {
 }
 
 // Mostly cribbed from
-// core_services/samples/sdv_gateway/grpc_tls_credentials/grpc_tls_credentials_manager.cpp
+// samples/sdv_gateway/grpc_tls_credentials/grpc_tls_credentials_manager.cpp
 template <typename ByteContainer>
 std::string Base32DnsSecEncode(const ByteContainer& bytes) {
     // The alphabet is the same as one used in Rust.
