@@ -15,7 +15,7 @@
 //! Entry point to the Authz crate.
 
 use crate::multi_vm_authz_guard::MultiVmAuthzGuard;
-use crate::{AclPolicyProvider, AuthzGuard};
+use crate::{AclPolicyProvider, AuthzGuard, AuthzResult};
 
 use std::collections::BTreeMap;
 use std::str::FromStr;
@@ -26,25 +26,69 @@ use tracing::instrument;
 
 use std::sync::Arc;
 
-/// Authz is a single entry point to the Authz crate.
+/// AuthzViaAcls is an entry point for ACL-based authorization checks.
 ///
-/// The Authz component relies on ACL policies to function, which are stored
-/// within APEXes in the SDV platform. To access these policies, users of Authz
+/// The AuthzViaAcls component relies on ACL policies to function, which are stored
+/// within APEXes in the SDV platform. To access these policies, users of AuthzViaAcls
 /// must provide an ACL policy provider.
-pub struct Authz {
+pub struct AuthzViaAcls {
     provider: Arc<dyn AclPolicyProvider>,
 }
 
-impl Authz {
-    /// Create new Authz instance.
+impl AuthzViaAcls {
+    /// Create new AuthzViaAcls instance.
     pub fn new(provider: Arc<dyn AclPolicyProvider>) -> Self {
         Self { provider }
+    }
+
+    /// Returns Subject FQIN authorization result for the Object Service Unit.
+    pub fn check_authorization_for_service_unit(
+        &self,
+        subject_fqin: &ServiceFqin,
+        object_fqin: &ServiceFqin,
+        object_service_unit_name: &ServiceUnitName,
+    ) -> AuthzResult {
+        let authz_guard_result =
+            self.create_service_unit_authz_guard(object_service_unit_name, object_fqin);
+
+        let authz_guard = match authz_guard_result {
+            Ok(authz_guard) => authz_guard,
+            Err(err) => {
+                return AuthzResult::ExplicitlyDenied(format!(
+                    "failed to create AuthzGuard: {err:?}"
+                ))
+            }
+        };
+
+        authz_guard.is_accessible_to_fqin(subject_fqin)
+    }
+
+    /// Returns Subject FQIN authorization result for the Object Unit Type.
+    pub fn check_authorization_for_unit_type(
+        &self,
+        subject_fqin: &ServiceFqin,
+        object_package_name: &PackageName,
+        object_unit_type_name: &UnitTypeName,
+    ) -> AuthzResult {
+        let authz_guard_result =
+            self.create_unit_type_authz_guard(object_package_name, object_unit_type_name);
+
+        let authz_guard = match authz_guard_result {
+            Ok(authz_guard) => authz_guard,
+            Err(err) => {
+                return AuthzResult::ExplicitlyDenied(format!(
+                    "failed to create AuthzGuard: {err:?}"
+                ))
+            }
+        };
+
+        authz_guard.is_accessible_to_fqin(subject_fqin)
     }
 
     /// Creates a Service Unit AuthzGuard which controls the access to
     /// the Service Unit with a given FQIN.
     #[instrument(name = "authz_perf::service::create_service_unit_authz_guard", skip_all)]
-    pub fn create_service_unit_authz_guard(
+    fn create_service_unit_authz_guard(
         &self,
         service_unit_name: &ServiceUnitName,
         object_fqin: &ServiceFqin,
@@ -65,7 +109,7 @@ impl Authz {
     /// Creates a Unit Type AuthzGuard which controls the access the Unit Type
     /// with a given package name, service bundle name and unit type name.
     #[instrument(name = "authz_perf::service::create_unit_type_authz_guard", skip_all)]
-    pub fn create_unit_type_authz_guard(
+    fn create_unit_type_authz_guard(
         &self,
         package_name: &PackageName,
         unit_type_name: &UnitTypeName,
@@ -150,7 +194,6 @@ mod tests {
     use super::*;
 
     use crate::AclPolicyModel;
-    use crate::AuthzResult;
 
     use std::{collections::HashMap, str::FromStr, sync::Arc};
 
@@ -237,25 +280,29 @@ mod tests {
             .unwrap(),
         );
 
-        let authz = Authz::new(Arc::new(test_provider));
+        let authz_via_acls = AuthzViaAcls::new(Arc::new(test_provider));
 
-        let authz_guard = {
-            let service_unit_name = ServiceUnitName::from_str("tire-pressure-publisher").unwrap();
-            let object_fqin =
-                ServiceFqin::from_str("vm:com.google.sdv.WindowManager/main").unwrap();
-            authz.create_service_unit_authz_guard(&service_unit_name, &object_fqin).unwrap()
-        };
+        let service_unit_name = ServiceUnitName::from_str("tire-pressure-publisher").unwrap();
+        let object_fqin = ServiceFqin::from_str("vm:com.google.sdv.WindowManager/main").unwrap();
 
         let subject_fqin =
             ServiceFqin::from_str("vm-telemetry:com.oem.TunnelService/main").unwrap();
-        let authz_result = authz_guard.is_accessible_to_fqin(&subject_fqin);
+        let authz_result = authz_via_acls.check_authorization_for_service_unit(
+            &subject_fqin,
+            &object_fqin,
+            &service_unit_name,
+        );
         assert!(
             matches!(authz_result, AuthzResult::Permitted(_)),
             "Unexpected authz result: {authz_result:?}"
         );
 
         let subject_fqin = ServiceFqin::from_str("vm-ivi:com.oem.TunnelService/main").unwrap();
-        let authz_result = authz_guard.is_accessible_to_fqin(&subject_fqin);
+        let authz_result = authz_via_acls.check_authorization_for_service_unit(
+            &subject_fqin,
+            &object_fqin,
+            &service_unit_name,
+        );
         assert!(
             matches!(authz_result, AuthzResult::ExplicitlyDenied(_)),
             "Unexpected authz result: {authz_result:?}"
@@ -289,23 +336,29 @@ mod tests {
             .unwrap(),
         );
 
-        let authz = Authz::new(Arc::new(test_provider));
+        let authz_via_acls = AuthzViaAcls::new(Arc::new(test_provider));
 
         let non_existent_service_unit_name =
             ServiceUnitName::from_str("temperature-publisher").unwrap();
         let object_fqin = ServiceFqin::from_str("vm:com.google.sdv.WindowManager/main").unwrap();
 
-        let result =
-            authz.create_service_unit_authz_guard(&non_existent_service_unit_name, &object_fqin);
-        assert!(result.is_err(), "Unexpected result: {result:?}");
+        let result = authz_via_acls.check_authorization_for_service_unit(
+            &ServiceFqin::from_str("vm:com.a.B/c").unwrap(),
+            &object_fqin,
+            &non_existent_service_unit_name,
+        );
+        assert!(
+            matches!(result, AuthzResult::ExplicitlyDenied(_)),
+            "Unexpected result: {result:?}"
+        );
     }
 
     #[test]
     fn test_create_unit_type_authz_guard_no_available_vms() {
         let test_provider = TestAclPolicyProvider::new();
-        let authz = Authz::new(Arc::new(test_provider));
+        let authz_via_acls = AuthzViaAcls::new(Arc::new(test_provider));
 
-        let err = authz
+        let err = authz_via_acls
             .create_unit_type_authz_guard(
                 &PackageName::from_str("com.google.sdv").unwrap(),
                 &UnitTypeName::from_str("TirePressureTopic").unwrap(),
@@ -327,9 +380,9 @@ mod tests {
             AclPolicyModel::new(HashMap::new(), HashMap::new()),
         );
 
-        let authz = Authz::new(Arc::new(test_provider));
+        let authz_via_acls = AuthzViaAcls::new(Arc::new(test_provider));
 
-        let err = authz
+        let err = authz_via_acls
             .create_unit_type_authz_guard(
                 &PackageName::from_str("com.google.other").unwrap(),
                 &UnitTypeName::from_str("TirePressureTopic").unwrap(),
@@ -351,9 +404,9 @@ mod tests {
             AclPolicyModel::new(HashMap::new(), HashMap::new()),
         );
 
-        let authz = Authz::new(Arc::new(test_provider));
+        let authz_via_acls = AuthzViaAcls::new(Arc::new(test_provider));
 
-        let err = authz
+        let err = authz_via_acls
             .create_unit_type_authz_guard(
                 &PackageName::from_str("com.google.sdv").unwrap(),
                 &UnitTypeName::from_str("TirePressureTopic").unwrap(),
@@ -411,9 +464,9 @@ mod tests {
             .unwrap(),
         );
 
-        let authz = Authz::new(Arc::new(test_provider));
+        let authz_via_acls = AuthzViaAcls::new(Arc::new(test_provider));
 
-        let unit_type_authz_guard = authz
+        let unit_type_authz_guard = authz_via_acls
             .create_unit_type_authz_guard(
                 &PackageName::from_str("com.google.sdv").unwrap(),
                 &UnitTypeName::from_str("TirePressureTopic").unwrap(),
