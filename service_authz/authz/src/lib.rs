@@ -16,20 +16,22 @@
 
 mod acl_policy_model;
 mod acl_policy_provider;
-mod authz;
 mod authz_enforcement_flag;
 mod authz_guard;
 mod authz_result;
 mod authz_service;
+mod authz_via_acls;
+#[cfg(feature = "permissions")]
+mod authz_via_permissions;
 mod multi_vm_authz_guard;
 mod parse_acl_policy_proto;
 mod single_vm_acl_policy_provider;
 
 pub use acl_policy_model::AclPolicyModel;
 pub use acl_policy_provider::AclPolicyProvider;
-pub use authz::Authz;
 pub use authz_enforcement_flag::AuthzEnforcementFlag;
-pub use authz_guard::AuthzGuard;
-pub use authz_result::AuthzResult;
 pub use authz_service::AuthzService;
 pub use single_vm_acl_policy_provider::SingleVmAclPolicyProvider;
+
+use authz_guard::AuthzGuard;
+use authz_result::AuthzResult;

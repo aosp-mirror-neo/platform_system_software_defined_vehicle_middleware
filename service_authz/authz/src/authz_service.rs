@@ -14,8 +14,10 @@
 
 //! Authz Service.
 
-use crate::{AclPolicyProvider, Authz, AuthzEnforcementFlag, AuthzResult};
-
+use crate::authz_via_acls::AuthzViaAcls;
+#[cfg(feature = "permissions")]
+use crate::authz_via_permissions::AuthzViaPermissions;
+use crate::{AclPolicyProvider, AuthzEnforcementFlag, AuthzResult};
 use sdv_comms_id::names::{PackageName, ServiceUnitName, UnitTypeName};
 use sdv_comms_id::ServiceFqin;
 
@@ -26,7 +28,9 @@ use std::sync::Arc;
 
 /// Authz Service.
 pub struct AuthzService {
-    authz: Authz,
+    authz_via_acls: AuthzViaAcls,
+    #[cfg(feature = "permissions")]
+    authz_via_permissions: AuthzViaPermissions,
     authz_enforcement_flag: Arc<dyn AuthzEnforcementFlag>,
 }
 
@@ -36,9 +40,16 @@ impl AuthzService {
         acl_policy_provider: Arc<dyn AclPolicyProvider>,
         authz_enforcement_flag: Arc<dyn AuthzEnforcementFlag>,
     ) -> Self {
-        let authz = Authz::new(acl_policy_provider);
+        let authz_via_acls = AuthzViaAcls::new(acl_policy_provider.clone());
+        #[cfg(feature = "permissions")]
+        let authz_via_permissions = AuthzViaPermissions::new(acl_policy_provider);
 
-        AuthzService { authz, authz_enforcement_flag }
+        AuthzService {
+            authz_via_acls,
+            #[cfg(feature = "permissions")]
+            authz_via_permissions,
+            authz_enforcement_flag,
+        }
     }
 
     /// Returns whether Subject FQIN is authorized for the Object Service Unit.
@@ -51,13 +62,38 @@ impl AuthzService {
     ) -> bool {
         let object_log_identifier = format!("{object_fqin}#{object_service_unit_name}");
 
-        let authz_result = self.get_authorization_for_service_unit(
+        let acl_result = self.authz_via_acls.check_authorization_for_service_unit(
             subject_fqin,
             object_fqin,
             object_service_unit_name,
         );
+        if let AuthzResult::Permitted(_) = acl_result {
+            debug!("Permitted by ACLs: {subject_fqin} to access {object_log_identifier}");
+            return self.handle_authz_result(subject_fqin, object_log_identifier, acl_result);
+        }
 
-        self.handle_authz_result(subject_fqin, object_log_identifier, authz_result)
+        #[cfg(feature = "permissions")]
+        {
+            let permissions_result =
+                self.authz_via_permissions.check_authorization_for_service_unit(
+                    subject_fqin,
+                    object_fqin,
+                    object_service_unit_name,
+                );
+            if let AuthzResult::Permitted(_) = permissions_result {
+                debug!(
+                    "Permitted by permissions: {subject_fqin} to access {object_log_identifier}"
+                );
+                return self.handle_authz_result(
+                    subject_fqin,
+                    object_log_identifier,
+                    permissions_result,
+                );
+            }
+        }
+
+        // Neither permitted, so we'll use the ACL result for logging denial.
+        self.handle_authz_result(subject_fqin, object_log_identifier, acl_result)
     }
 
     /// Returns whether Subject FQIN is authorized for the Object Unit Type.
@@ -70,13 +106,37 @@ impl AuthzService {
     ) -> bool {
         let object_log_identifier = format!("{object_package_name}.{object_unit_type_name}");
 
-        let authz_result = self.get_authorization_for_unit_type(
+        let acl_result = self.authz_via_acls.check_authorization_for_unit_type(
             subject_fqin,
             object_package_name,
             object_unit_type_name,
         );
+        if let AuthzResult::Permitted(_) = acl_result {
+            debug!("Permitted by ACLs: {subject_fqin} to access {object_log_identifier}");
+            return self.handle_authz_result(subject_fqin, object_log_identifier, acl_result);
+        }
 
-        self.handle_authz_result(subject_fqin, object_log_identifier, authz_result)
+        #[cfg(feature = "permissions")]
+        {
+            let permissions_result = self.authz_via_permissions.check_authorization_for_unit_type(
+                subject_fqin,
+                object_package_name,
+                object_unit_type_name,
+            );
+            if let AuthzResult::Permitted(_) = permissions_result {
+                debug!(
+                    "Permitted by permissions: {subject_fqin} to access {object_log_identifier}"
+                );
+                return self.handle_authz_result(
+                    subject_fqin,
+                    object_log_identifier,
+                    permissions_result,
+                );
+            }
+        }
+
+        // Neither permitted. Return ACL result for logging.
+        self.handle_authz_result(subject_fqin, object_log_identifier, acl_result)
     }
 
     fn handle_authz_result(
@@ -108,50 +168,6 @@ impl AuthzService {
             "Authz violation. {object_log_identifier} denies access to {subject_fqin}, audit message: {audit_msg}"
         );
         false
-    }
-
-    /// Returns Subject FQIN authorization result for the Object Service Unit.
-    fn get_authorization_for_service_unit(
-        &self,
-        subject_fqin: &ServiceFqin,
-        object_fqin: &ServiceFqin,
-        object_service_unit_name: &ServiceUnitName,
-    ) -> AuthzResult {
-        let authz_guard_result =
-            self.authz.create_service_unit_authz_guard(object_service_unit_name, object_fqin);
-
-        let authz_guard = match authz_guard_result {
-            Ok(authz_guard) => authz_guard,
-            Err(err) => {
-                return AuthzResult::ExplicitlyDenied(format!(
-                    "failed to create AuthzGuard: {err:?}"
-                ))
-            }
-        };
-
-        authz_guard.is_accessible_to_fqin(subject_fqin)
-    }
-
-    /// Returns Subject FQIN authorization result for the Object Unit Type.
-    fn get_authorization_for_unit_type(
-        &self,
-        subject_fqin: &ServiceFqin,
-        object_package_name: &PackageName,
-        object_unit_type_name: &UnitTypeName,
-    ) -> AuthzResult {
-        let authz_guard_result =
-            self.authz.create_unit_type_authz_guard(object_package_name, object_unit_type_name);
-
-        let authz_guard = match authz_guard_result {
-            Ok(authz_guard) => authz_guard,
-            Err(err) => {
-                return AuthzResult::ExplicitlyDenied(format!(
-                    "failed to create AuthzGuard: {err:?}"
-                ))
-            }
-        };
-
-        authz_guard.is_accessible_to_fqin(subject_fqin)
     }
 }
 
@@ -258,19 +274,18 @@ mod tests {
         )
         .unwrap();
 
-        let mut test_provider = TestAclPolicyProvider::new();
-        test_provider.set_alc_policy(
+        let mut test_acl_provider = TestAclPolicyProvider::new();
+        test_acl_provider.set_alc_policy(
             object_fqin.vm_name().clone(),
             object_fqin.package_name().clone(),
             Some(object_fqin.service_name().clone()),
             acl_policy_model,
         );
 
-        let authz = Authz::new(Arc::new(test_provider));
-        let authz_enforcement_flag =
-            Arc::new(TestAuthzEnforcementFlag::new(is_enforcement_flag_enabled));
-
-        AuthzService { authz, authz_enforcement_flag }
+        AuthzService::new(
+            Arc::new(test_acl_provider),
+            Arc::new(TestAuthzEnforcementFlag::new(is_enforcement_flag_enabled)),
+        )
     }
 
     fn setup_test(
