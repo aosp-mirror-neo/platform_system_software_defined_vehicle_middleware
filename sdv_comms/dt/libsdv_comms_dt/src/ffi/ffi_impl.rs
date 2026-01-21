@@ -20,11 +20,13 @@ use sdv_comms_common::callback::ffi::OnceCallback;
 use sdv_comms_common::try_status;
 use sdv_comms_ctx::ffi::ASDV_Context;
 use sdv_comms_id::ffi::ASDV_UnitIdentifier;
+use sdv_comms_id::names::ChannelName;
 use sdv_comms_id::UnitIdentifier;
 use sdv_comms_sd::discovery::UnitType;
 use sdv_comms_sd::ffi::{ASDV_PublisherUnitMetadata, ASDV_UnitRegistrationArgs, ASDV_UnitType};
 use sdv_status_rs::{sdv_status_t, SdvStatus, SdvStatusCode};
 use std::slice;
+use std::str::FromStr;
 
 use crate::core::history_internal::HistoryInternal;
 use crate::core::instant_reader_internal;
@@ -206,6 +208,51 @@ pub fn subscribe_to_unit_type(
             let res = SubscriberInternal::subscribe_to_unit_type(
                 context,
                 &unit_type,
+                subscription_flags,
+            )
+            .await;
+            callback.invoke(res.map(|subscriber| Box::new(ASDV_SubscriptionHandle { subscriber })));
+        }));
+
+        Ok(())
+    }
+}
+
+/// FFI implementation for `ASDV_SubscribeToChannel`
+/// Subscribes to all the publications with the specified unit type and channel name using provided
+/// ASDV_UnitType and channel_name *.
+/// Returns the newly created subscription as a pointer to ASDV_SubscriptionHandle via callback.
+///
+/// SAFETY:
+///   `context` is a pointer to a valid Context object
+///   `unit_identifier` is a pointer to a valid ASDV_UnitIdentifier object
+///   `channel_name` is a pointer to a valid NUL-terminated string
+///   `callback` is a pointer to a valid OnceCallback<Box<ASDV_SubscriptionHandle>> object
+pub unsafe fn subscribe_to_channel(
+    context: &'static ASDV_Context,
+    unit_type: &ASDV_UnitType,
+    channel_name: *const std::ffi::c_char,
+    subscription_flags: u64,
+    callback: OnceCallback<Box<ffi_types::ASDV_SubscriptionHandle>>,
+) -> sdv_status_t {
+    try_status! {
+        let context = ASDV_Context::peel_ref(context);
+        let unit_type: UnitType = unit_type.try_into()?;
+        // SAFETY: `channel_name` is a pointer to a valid NUL-terminated string
+        let channel_name = unsafe { std::ffi::CStr::from_ptr(channel_name) }
+            .to_str()
+            .map_err(|e| {
+                SdvStatus::with_message(SdvStatusCode::InvalidArgument, format!("Invalid channel name: {e}"))
+            })?;
+        let channel_name = ChannelName::from_str(channel_name).map_err(|e| {
+            SdvStatus::with_message(SdvStatusCode::InvalidArgument, format!("Invalid channel name: {e}"))
+        })?;
+
+        context.get_executor().spawn(Box::pin(async move {
+            let res = SubscriberInternal::subscribe_to_channel(
+                context,
+                &unit_type,
+                &channel_name,
                 subscription_flags,
             )
             .await;
