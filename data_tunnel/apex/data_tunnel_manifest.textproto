@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# proto-file: //system/software_defined_vehicle/core_services/service_bundles_registry/proto/sdv_service_bundles_manifest.proto
+# proto-file:
+# //system/software_defined_vehicle/service_bundles_registry/proto/sdv_service_bundles_manifest.proto
 # proto-message: SdvServiceBundleManifestEntry
 
 # This manifest does not define any SDV service bundle.
