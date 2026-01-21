@@ -69,6 +69,9 @@
       "name": "sdv_core_middleware_unit_comms_sd_test"
     },
     {
+      "name": "sdv_core_middleware_unit_communication_agent_test"
+    },
+    {
       "name": "sdv_core_middleware_unit_dt_agent_authorities_listener_test"
     },
     {
