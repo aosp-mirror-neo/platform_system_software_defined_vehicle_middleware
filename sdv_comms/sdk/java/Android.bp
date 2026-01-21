@@ -25,7 +25,7 @@ java_library {
 }
 
 android_test {
-    name: "sdv_core_core_services_unit_comms_java_sdk_test",
+    name: "sdv_core_middleware_unit_comms_java_sdk_test",
     defaults: ["libsdv_comms_java@java_defaults"],
     srcs: ["tests/**/*.java"],
     static_libs: [

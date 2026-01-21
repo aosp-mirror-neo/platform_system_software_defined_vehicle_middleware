@@ -53,7 +53,7 @@ rust_library {
 }
 
 rust_test {
-    name: "sdv_core_core_services_unit_libcrypto_rpc_test",
+    name: "sdv_core_middleware_unit_libcrypto_rpc_test",
     defaults: ["crypto_rpc@rust_defaults"],
     srcs: [
         "src/lib.rs",

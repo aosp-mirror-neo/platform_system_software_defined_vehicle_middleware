@@ -22,7 +22,7 @@ package {
 // NOTIFY_AS_NATIVE=<Test device serial #> atest <test target>
 //
 // For example,
-//   NOTIFY_AS_NATIVE=0.0.0.0:6520 atest sdv_core_core_services_unit_comms_rs_sdk_test
+//   NOTIFY_AS_NATIVE=0.0.0.0:6520 atest sdv_core_middleware_unit_comms_rs_sdk_test
 //
 // WARNING: this filegroup should not be added to other targets anymore.
 //          Instead provide proper ACLs for your targets.
@@ -36,7 +36,7 @@ filegroup {
 // NOTIFY_AS_NATIVE=<Test device serial #> atest <test target>
 //
 // For example,
-//   NOTIFY_AS_NATIVE=0.0.0.0:6520 atest sdv_core_core_services_unit_comms_rs_sdk_test
+//   NOTIFY_AS_NATIVE=0.0.0.0:6520 atest sdv_core_middleware_unit_comms_rs_sdk_test
 //
 // WARNING: this filegroup should not be added to other targets anymore.
 //          Instead provide proper ACLs for your targets.
@@ -50,7 +50,7 @@ filegroup {
 // NOTIFY_AS_NATIVE=<Test device serial #> atest <test target>
 //
 // For example,
-//   NOTIFY_AS_NATIVE=0.0.0.0:6520 atest sdv_core_core_services_unit_comms_rs_sdk_test
+//   NOTIFY_AS_NATIVE=0.0.0.0:6520 atest sdv_core_middleware_unit_comms_rs_sdk_test
 //
 // WARNING: this filegroup should not be added to other targets anymore.
 //          Instead provide proper ACLs for your targets.

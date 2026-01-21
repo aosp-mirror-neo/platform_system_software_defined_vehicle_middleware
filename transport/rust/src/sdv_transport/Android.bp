@@ -56,7 +56,7 @@ rust_library {
 }
 
 rust_test {
-    name: "sdv_core_core_services_unit_middleware_sdv_comms_test",
+    name: "sdv_core_middleware_unit_middleware_sdv_comms_test",
     defaults: [
         "sdv_mw_sdv_comms_defaults",
         "sdv_tracing@rust_defaults",

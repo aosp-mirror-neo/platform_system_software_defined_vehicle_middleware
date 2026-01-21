@@ -203,7 +203,7 @@ rust_ffi {
 }
 
 rust_test {
-    name: "sdv_core_core_services_unit_comms_dt_fmq_wrapper_test",
+    name: "sdv_core_middleware_unit_comms_dt_fmq_wrapper_test",
     srcs: ["fmq_wrapper/fmq_wrapper.rs"],
     rustlibs: [
         "android.hardware.common.fmq-V1-rust",
@@ -228,7 +228,7 @@ rust_test {
 }
 
 rust_test {
-    name: "sdv_core_core_services_unit_comms_dt_test",
+    name: "sdv_core_middleware_unit_comms_dt_test",
     defaults: [
         "sdv_comms_internal@rust_defaults",
         "sdv_comms_dt@rust_defaults",

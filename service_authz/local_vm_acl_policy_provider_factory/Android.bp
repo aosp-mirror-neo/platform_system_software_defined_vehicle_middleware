@@ -81,7 +81,7 @@ sdv_authz_acl_provider_specification_rust_defaults {
 }
 
 rust_test {
-    name: "sdv_core_core_services_unit_authz_local_vm_acl_policy_provider_factory_test",
+    name: "sdv_core_middleware_unit_authz_local_vm_acl_policy_provider_factory_test",
     srcs: ["src/lib.rs"],
     defaults: ["sdv_authz_local_vm_acl_policy_provider_factory@rust_defaults"],
     test_suites: [

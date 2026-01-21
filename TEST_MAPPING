@@ -15,61 +15,224 @@
 {
   "sdv_core_services_presubmit": [
     {
+      "name": "sdv_comms_cpp_sdk_tests"
+    },
+    {
+      "name": "sdv_core_middleware_dt_agent_connection_grpc_test"
+    },
+    {
+      "name": "sdv_core_middleware_dt_agent_remote_agent_test"
+    },
+    {
+      "name": "sdv_core_middleware_dt_agent_topic_manager_test"
+    },
+    {
+      "name": "sdv_core_middleware_libsdv_dt_core_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_authz_acl_file_provider_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_authz_local_vm_acl_policy_provider_factory_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_authz_policy_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_authz_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_comms_common_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_comms_dt_fmq_wrapper_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_comms_dt_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_comms_id_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_comms_id_validator_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_comms_java_sdk_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_comms_rs_sdk_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_comms_sd_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_dt_agent_authorities_listener_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_dt_agent_certs_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_dt_agent_connection_manager_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_dt_agent_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_dt_agent_topic_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_dt_proto_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_libcrypto_rpc_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_libuds_certs_tests"
+    },
+    {
+      "name": "sdv_core_middleware_unit_libvvmconfig_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_libvvmtruststore_tests"
+    },
+    {
+      "name": "sdv_core_middleware_unit_middleware_generic_comms_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_middleware_local_comms_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_middleware_sdv_comms_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_rpc_agent_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_sd_agent_add_service_flow_v2_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_sd_agent_identity_v2_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_sd_agent_service_registration_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_sd_agent_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_sdv_local_vm_acl_policy_provider"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_availability_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_availability_rpc_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_availability_rpc_stable_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_availability_stable_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_multipub_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_multipub_stable_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_proto_metadata_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_proto_metadata_stable_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_proto_reflection_performance_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_pubsub_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_pubsub_stable_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_rpc_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_rpc_stable_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_sendsync_e2e_test"
+    },
+    {
+      "name": "sdv_core_middleware_unit_vsidl_sendsync_stable_e2e_test"
+    },
+    {
       "name": "sdv_core_middleware_unit_wire_format_test"
+    }
+  ],
+  "sdv_core_services_integration_tests_presubmit": [
+    {
+      "name": "sdv_mt_core_services_integration_authz_enforcement_flag_default_test"
     },
     {
-      "name": "sdv_core_core_services_unit_middleware_generic_comms_test"
+      "name": "sdv_mt_core_services_integration_authz_enforcement_flag_enabled_test"
     },
     {
-      "name": "sdv_core_core_services_unit_middleware_sdv_comms_test"
+      "name": "sdv_core_middleware_integration_authz_local_vm_acl_policy_provider_test"
     },
     {
-      "name": "sdv_core_core_services_unit_middleware_local_comms_test"
+      "name": "sdv_core_middleware_unit_authz_local_vm_acl_policy_provider_factory_test"
+    }
+  ],
+  "sdv_ivi_commstack_presubmit": [
+    {
+      "name": "sdv_core_middleware_dt_agent_remote_agent_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_proto_reflection_performance_test"
+      "name": "sdv_core_middleware_unit_dt_agent_authorities_listener_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_availability_e2e_test"
+      "name": "sdv_core_middleware_unit_dt_agent_certs_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_availability_rpc_e2e_test"
+      "name": "sdv_core_middleware_unit_dt_agent_connection_manager_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_multipub_e2e_test"
+      "name": "sdv_core_middleware_unit_dt_agent_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_proto_metadata_e2e_test"
+      "name": "sdv_core_middleware_unit_dt_agent_topic_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_pubsub_e2e_test"
+      "name": "sdv_core_middleware_unit_libcrypto_rpc_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_rpc_e2e_test"
+      "name": "sdv_core_middleware_unit_libuds_certs_tests"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_sendsync_e2e_test"
+      "name": "sdv_core_middleware_unit_libvvmconfig_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_availability_stable_e2e_test"
+      "name": "sdv_core_middleware_unit_libvvmtruststore_tests"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_availability_rpc_stable_e2e_test"
+      "name": "sdv_core_middleware_unit_mesh_auth_keymint_requirements_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_multipub_stable_e2e_test"
+      "name": "sdv_core_middleware_unit_rpc_agent_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_proto_metadata_stable_e2e_test"
+      "name": "sdv_core_middleware_unit_sd_agent_add_service_flow_v2_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_pubsub_stable_e2e_test"
+      "name": "sdv_core_middleware_unit_sd_agent_identity_v2_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_rpc_stable_e2e_test"
+      "name": "sdv_core_middleware_unit_sd_agent_service_registration_test"
     },
     {
-      "name": "sdv_core_core_services_unit_vsidl_sendsync_stable_e2e_test"
+      "name": "sdv_core_middleware_unit_sd_agent_test"
     }
   ]
 }

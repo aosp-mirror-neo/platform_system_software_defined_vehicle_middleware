@@ -21,7 +21,7 @@ pub use internal::initialise;
 pub use internal::ContextImpl;
 
 mod agents;
-pub use agents::wait_for_agents;
+pub use agents::{wait_for_agents, wait_for_agents_async};
 mod executor;
 
 /// Module for Context FFI types and bindings.

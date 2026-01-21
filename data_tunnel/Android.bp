@@ -101,7 +101,7 @@ cc_defaults {
 }
 
 cc_test {
-    name: "sdv_core_core_services_unit_dt_proto_test",
+    name: "sdv_core_middleware_unit_dt_proto_test",
     srcs: ["tests/dt_proto_test.cpp"],
     defaults: ["dt_test_defaults"],
     test_suites: [
@@ -114,7 +114,7 @@ cc_test {
 }
 
 cc_test {
-    name: "sdv_core_core_services_unit_dt_agent_test",
+    name: "sdv_core_middleware_unit_dt_agent_test",
     srcs: [
         "tests/dt_agent_test.cpp",
     ],
@@ -167,7 +167,7 @@ cc_binary_host {
 }
 
 cc_test {
-    name: "sdv_core_core_services_unit_dt_agent_connection_manager_test",
+    name: "sdv_core_middleware_unit_dt_agent_connection_manager_test",
     srcs: [
         "tests/dt_agent_connection_manager_test.cpp",
         "src/certs.cpp",
@@ -204,7 +204,7 @@ cc_test {
 }
 
 cc_test {
-    name: "sdv_core_core_services_unit_dt_agent_certs_test",
+    name: "sdv_core_middleware_unit_dt_agent_certs_test",
     srcs: [
         "tests/certs_test.cpp",
         "src/certs.cpp",
@@ -231,7 +231,7 @@ cc_test {
 }
 
 cc_test {
-    name: "sdv_core_core_services_unit_dt_agent_authorities_listener_test",
+    name: "sdv_core_middleware_unit_dt_agent_authorities_listener_test",
     srcs: [
         "tests/authorities_listener_test.cpp",
         "src/authorities_listener.cpp",
@@ -263,7 +263,7 @@ cc_test {
 }
 
 cc_test {
-    name: "sdv_core_core_services_unit_dt_agent_topic_test",
+    name: "sdv_core_middleware_unit_dt_agent_topic_test",
     srcs: [
         "tests/topic_test.cpp",
         "src/topic.cpp",
@@ -290,7 +290,7 @@ cc_test {
 }
 
 cc_test {
-    name: "sdv_core_core_services_dt_agent_remote_agent_test",
+    name: "sdv_core_middleware_dt_agent_remote_agent_test",
     srcs: [
         "tests/remote_agent/*.cpp",
     ],
@@ -311,7 +311,7 @@ cc_test {
 }
 
 cc_test {
-    name: "sdv_core_core_services_dt_agent_topic_manager_test",
+    name: "sdv_core_middleware_dt_agent_topic_manager_test",
     srcs: [
         "tests/topic_manager_test.cpp",
     ],
@@ -332,7 +332,7 @@ cc_test {
 }
 
 cc_test {
-    name: "sdv_core_core_services_dt_agent_connection_grpc_test",
+    name: "sdv_core_middleware_dt_agent_connection_grpc_test",
     srcs: [
         "tests/connection_grpc/*.cpp",
         "src/connection_grpc/*.cpp",

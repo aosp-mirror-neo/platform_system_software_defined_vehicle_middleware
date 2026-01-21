@@ -18,8 +18,8 @@ package {
 }
 
 rust_defaults {
-    name: "sdv_core_core_services_unit_vsidl_pubsub_e2e_defaults",
-    defaults: ["sdv_core_core_services_unit_vsidl_e2e_defaults"],
+    name: "sdv_core_middleware_unit_vsidl_pubsub_e2e_defaults",
+    defaults: ["sdv_core_middleware_unit_vsidl_e2e_defaults"],
     rustlibs: [
         "libsdv_mw_rs_sdv_vsidl_pubsub_test_publishing_bundle",
         "libsdv_mw_rs_sdv_vsidl_pubsub_test_subscribing_bundle",
@@ -34,7 +34,7 @@ rust_defaults {
 }
 
 rust_test {
-    name: "sdv_core_core_services_unit_vsidl_pubsub_e2e_test",
-    defaults: ["sdv_core_core_services_unit_vsidl_pubsub_e2e_defaults"],
+    name: "sdv_core_middleware_unit_vsidl_pubsub_e2e_test",
+    defaults: ["sdv_core_middleware_unit_vsidl_pubsub_e2e_defaults"],
     srcs: ["pubsub_test.rs"],
 }

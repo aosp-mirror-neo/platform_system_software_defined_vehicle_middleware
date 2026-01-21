@@ -25,6 +25,7 @@ rust_defaults {
         "google.sdv.rpc-V2-rust",
         "google.sdv.service_discovery.discovery-V2-rust",
         "libbinder_rs",
+        "libbinder_tokio_rs",
         "libbytemuck",
         "libfutures_executor",
         "libtokio",

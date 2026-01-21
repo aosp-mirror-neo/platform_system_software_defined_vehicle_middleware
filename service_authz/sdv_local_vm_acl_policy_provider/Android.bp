@@ -48,7 +48,7 @@ rust_library {
 }
 
 rust_test {
-    name: "sdv_core_core_services_integration_authz_local_vm_acl_policy_provider_test",
+    name: "sdv_core_middleware_integration_authz_local_vm_acl_policy_provider_test",
     srcs: ["tests/sdv_local_vm_acl_policy_provider_test.rs"],
     defaults: ["sdv_authz_sdv_local_vm_acl_policy_provider@rust_defaults"],
     test_suites: [
@@ -70,7 +70,7 @@ rust_test {
 }
 
 rust_test {
-    name: "sdv_core_core_services_unit_sdv_local_vm_acl_policy_provider",
+    name: "sdv_core_middleware_unit_sdv_local_vm_acl_policy_provider",
     defaults: ["sdv_authz_sdv_local_vm_acl_policy_provider@rust_defaults"],
     srcs: ["src/lib.rs"],
     test_options: {

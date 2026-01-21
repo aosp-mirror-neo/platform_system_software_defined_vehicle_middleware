@@ -32,5 +32,5 @@ Functional e2e tests of middleware through `vsidlc`-generated code using SDV Com
     ```bash
     cvd create
     export NOTIFY_AS_NATIVE=0.0.0.0:6520
-    atest sdv_core_core_services_unit_vsidl*e2e_test
+    atest sdv_core_middleware_unit_vsidl*e2e_test
     ```
