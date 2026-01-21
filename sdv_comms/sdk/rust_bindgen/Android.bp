@@ -41,9 +41,9 @@ rust_library {
         ":__subpackages__",
         "//system/software_defined_vehicle/core_services/lifecycle_management/clientlib/srcs/rust",
         "//system/software_defined_vehicle/core_services/lifecycle_management",
-        "//system/software_defined_vehicle/core_services/some_ip", // to make it available to dll_api in the binary PDK
-        "//system/software_defined_vehicle/core_services/some_ip/dll_api",
-        "//system/software_defined_vehicle/core_services/some_ip/broker_agent_comms",
+        "//system/software_defined_vehicle/some_ip", // to make it available to dll_api in the binary PDK
+        "//system/software_defined_vehicle/some_ip/dll_api",
+        "//system/software_defined_vehicle/some_ip/broker_agent_comms",
         "//system/software_defined_vehicle/lifecycle_management:__subpackages__",
         "//system/software_defined_vehicle/middleware/sdv_comms/sdk",
     ],
