@@ -180,11 +180,11 @@ mod tests {
 
     // Check that the server can't obtain the FD if it present a token that is not
     // known to service discovery. At the moment the token is checked in
-    // http://ac/system/software_defined_vehicle/core_services/service_discovery/sdv_sd_agent/srcs/kv.rs?l=471
+    // system/software_defined_vehicle/middleware/service_discovery/sdv_sd_agent/srcs/kv.rs
     #[tokio::test]
     async fn test_wrong_registration_token() {
         // Build the token is a way similar to
-        // http://ac/system/software_defined_vehicle/core_services/service_discovery/sdv_sd_agent/srcs/kv.rs?l=445
+        // system/software_defined_vehicle/middleware/service_discovery/sdv_sd_agent/srcs/kv.rs
         let service_identity = ServiceIdentity {
             name: ServiceFqinAidl {
                 sdvVmName: "vmname".to_string(),
