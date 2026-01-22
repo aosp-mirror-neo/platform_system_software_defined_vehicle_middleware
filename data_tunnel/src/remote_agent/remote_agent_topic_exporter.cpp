@@ -47,6 +47,12 @@ RemoteAgentTopicExporter::~RemoteAgentTopicExporter() {
     }
     readiness_cv_.notify_all();
 
+    // Explicitly join all processing threads before any other member destruction so that they don't
+    // try to access members that have been destroyed.
+    for (auto& t : processing_threads_) {
+        t.join();
+    }
+
     // We need to explicitly clear exported_topics_ before the destructor exits and member
     // destruction starts, to ensure that topic notification callbacks are unregistered and we
     // won't get events that try to access data that has been destroyed.
@@ -54,8 +60,6 @@ RemoteAgentTopicExporter::~RemoteAgentTopicExporter() {
         std::unique_lock topics_guard(exported_topics_lock_);
         exported_topics_.clear();
     }
-
-    // Implicit join on all processing_threads_.
 }
 
 RemoteAgentTopicExporter::ExportedTopic::ExportedTopic(Topic& topic, Topic::Reader reader,
@@ -189,6 +193,41 @@ void RemoteAgentTopicExporter::MaybeSendSubscribeResult(ExportedTopic& exported_
     payload.result_ = Payload_SubscribeResult::Result_Ok;
     payload.message_size_ = metadata.message_size;
     payload.message_count_ = metadata.message_count;
+    payload.has_last_message_ = 0;
+
+    // Try to include an initial message if there is one available.
+    if (exported_topic.reader.AvailableToRead() >= metadata.message_size) {
+        payload.last_message_content_.Resize(metadata.message_size, false);
+
+        // Since reader would have just been created and its read pointer set one message behind the
+        // write pointer, risk of an overflow is minimal.  But retry a few times in a loop anyways.
+        static constexpr int kMaxAttempts = 3;
+        for (int attempt_count = kMaxAttempts; attempt_count > 0; attempt_count--) {
+            if (exported_topic.reader.Read(payload.last_message_content_.Ptr(),
+                                           metadata.message_size)) {
+                payload.has_last_message_ = 1;
+                break;
+            } else if (attempt_count > 0) {
+                ALOGW("RemoteAgentTopicExporter(%s): Overflow while reading last message for "
+                      "SubscribeResult for topic %s!  %d attempts remaining.  Consider increasing "
+                      "message_count.",
+                      vm_name_.c_str(), exported_topic.topic.GetMetadata().name.c_str(),
+                      attempt_count);
+            } else {
+                ALOGE("RemoteAgentTopicExporter(%s): Complete failure to read last message for "
+                      "SubscribeResult for topic %s due to repeated overflows!  Consider "
+                      "increasing message_count.",
+                      vm_name_.c_str(), exported_topic.topic.GetMetadata().name.c_str());
+            }
+        }
+    }
+
+    // Parcel size can be bigger than what we computed based on TopicRawData, so make sure the
+    // buffer is big enough.
+    auto parcel_size = Parcel::ParcelSize(payload);
+    if (parcel_size > send_buffer.Size()) {
+        send_buffer.Resize(parcel_size, /*copy_data=*/false);
+    }
     if (!SendPayload(connection_, payload, parcel_id_counter_++, send_buffer)) {
         ALOGE("RemoteAgentTopicExporter(%s): Unable to send SubscribeResult for %s",
               vm_name_.c_str(), exported_topic.topic.GetMetadata().name.c_str());
