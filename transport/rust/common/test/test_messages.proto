@@ -20,3 +20,5 @@ package sdv.mw.commstests;
 message Pressure { fixed32 pressure = 1; }
 
 message Payload { bytes payload = 1; }
+
+message VariableString { string description = 1; }
