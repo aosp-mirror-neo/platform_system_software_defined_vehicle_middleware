@@ -16,5 +16,5 @@
 //! reflection metadata and dynamically generated messages
 
 pub mod codec;
-mod message;
+pub mod message;
 pub mod metadata;
