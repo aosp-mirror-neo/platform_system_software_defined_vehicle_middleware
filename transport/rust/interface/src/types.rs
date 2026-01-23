@@ -197,8 +197,10 @@ pub enum UnitQuery {
 pub struct PublisherAttributes {
     /// publication unit name
     publication_name: String,
-    /// TypeName
+    /// The Type this publisher publishes
     type_name: TypeName,
+    /// The channel this publisher publishes to
+    channel_name: String,
     /// publisher metadata
     metadata: PublisherMetadata,
 }
@@ -220,6 +222,10 @@ impl PublisherAttributes {
     pub fn get_metadata(&self) -> &PublisherMetadata {
         &self.metadata
     }
+    /// publisher channel name
+    pub fn get_channel_name(&self) -> &String {
+        &self.channel_name
+    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -227,6 +233,7 @@ pub struct PublisherAttributesBuilder {
     publication_name: String,
     type_name: Option<TypeName>,
     metadata: PublisherMetadata,
+    channel_name: String,
 }
 
 impl PublisherAttributesBuilder {
@@ -245,6 +252,11 @@ impl PublisherAttributesBuilder {
         self.metadata = metadata;
         self
     }
+    /// set the channel name
+    pub fn channel_name(mut self, channel_name: impl Into<String>) -> Self {
+        self.channel_name = channel_name.into();
+        self
+    }
     /// Validates PublisherAttributes before returning an instance of it.
     pub fn build(self) -> SdvResult<PublisherAttributes> {
         //TODO(b/379139605): Validate builder arguments
@@ -257,6 +269,7 @@ impl PublisherAttributesBuilder {
         Ok(PublisherAttributes {
             publication_name: self.publication_name,
             type_name,
+            channel_name: self.channel_name,
             metadata: self.metadata,
         })
     }
@@ -751,17 +764,20 @@ mod test {
         let publication_name = "some-service-unit";
         let package_name = "rand.pgk.name";
         let type_name = TypeName::builder().package_name(package_name).build().unwrap();
+        let channel_name = "test-channel";
         let metadata = PublisherMetadata::builder().is_multipub(true).build().unwrap();
 
         let result = PublisherAttributes::builder()
             .publication_name(publication_name)
             .type_name(type_name)
+            .channel_name(channel_name)
             .metadata(metadata)
             .build();
         assert!(result.is_ok());
         let publisher_attributes = result.unwrap();
         assert_eq!(publisher_attributes.get_publication_name(), publication_name);
         assert_eq!(publisher_attributes.get_type_name().get_package_name(), package_name);
+        assert_eq!(publisher_attributes.get_channel_name(), channel_name);
         assert!(publisher_attributes.get_metadata().is_multipub());
     }
 

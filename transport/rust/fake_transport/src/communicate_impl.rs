@@ -108,6 +108,12 @@ impl Communicate for LocalComms {
         )))
     }
 
+    #[allow(useless_deprecated)]
+    #[allow(unused_attributes)]
+    #[deprecated(
+        since = "2.0.0",
+        note = "Channel-based subscribe methods are called instead, e.g. `create_subscribe_handle`"
+    )]
     async fn find_publication(&self, attributes: &UnitQuery) -> SdvResult<Arc<dyn Publication>> {
         let publication_name = match &attributes {
             UnitQuery::Name(name) => name.get_service_unit_name().to_owned(),
@@ -158,12 +164,27 @@ impl Communicate for LocalComms {
         Ok(Box::pin(rx))
     }
 
+    #[allow(useless_deprecated)]
+    #[allow(unused_attributes)]
+    #[deprecated(
+        since = "2.0.0",
+        note = "Channel-based subscribe methods are called instead, e.g. `create_subscribe_handle`"
+    )]
     async fn subscribe_by_type(
         &self,
         _type_name: &TypeName,
         _options: &SubscribeOptions,
     ) -> SdvResult<Box<dyn Subscribe>> {
         unimplemented!("subscribe by type not implemented")
+    }
+
+    async fn create_subscribe_handle(
+        &self,
+        _type_name: &TypeName,
+        _channel_name: &str,
+        _options: &SubscribeOptions,
+    ) -> SdvResult<Box<dyn Subscribe>> {
+        unimplemented!("create_subscribe_handle not implemented")
     }
 
     async fn observe_by_type(

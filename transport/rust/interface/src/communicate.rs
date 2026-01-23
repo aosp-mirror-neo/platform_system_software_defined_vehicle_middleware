@@ -38,12 +38,32 @@ pub trait Communicate: Send + Sync {
         -> SdvResult<Box<dyn Publish>>;
 
     /// Look for a publication with the attributes specified in UnitQuery.
+    #[allow(useless_deprecated)]
+    #[allow(unused_attributes)]
+    #[deprecated(
+        since = "2.0.0",
+        note = "Channel-based subscribe methods are called instead, e.g. `create_subscribe_handle`"
+    )]
     async fn find_publication(&self, attributes: &UnitQuery) -> SdvResult<Arc<dyn Publication>>;
 
     /// Create a Subscriber for a message type, published by zero to many publishers.
+    #[allow(useless_deprecated)]
+    #[allow(unused_attributes)]
+    #[deprecated(
+        since = "2.0.0",
+        note = "Channel-based subscribe methods are called instead, e.g. `create_subscribe_handle`"
+    )]
     async fn subscribe_by_type(
         &self,
         type_name: &TypeName,
+        options: &SubscribeOptions,
+    ) -> SdvResult<Box<dyn Subscribe>>;
+
+    /// Create a Subscriber for a message type on a specific channel, published by zero to many publishers.
+    async fn create_subscribe_handle(
+        &self,
+        type_name: &TypeName,
+        channel_name: &str,
         options: &SubscribeOptions,
     ) -> SdvResult<Box<dyn Subscribe>>;
 
