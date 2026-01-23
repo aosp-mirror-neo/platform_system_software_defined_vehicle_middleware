@@ -30,8 +30,6 @@
 // later when a module using the interface is updated, e.g., Mainline modules.
 
 package google.sdv.identity.internal;
-@VintfStability
 interface IIdentityVerifier {
-    boolean verifyFqinForProcess(in google.sdv.identity.LocalServiceFqin fqin,
-            in google.sdv.identity.ProcessIdentifier processIdentifier);
+  boolean verifyFqinForProcess(in google.sdv.identity.LocalServiceFqin fqin, in google.sdv.identity.ProcessIdentifier processIdentifier);
 }

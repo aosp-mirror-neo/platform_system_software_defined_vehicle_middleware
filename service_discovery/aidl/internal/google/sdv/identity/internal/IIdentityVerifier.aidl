@@ -18,7 +18,6 @@ import google.sdv.identity.LocalServiceFqin;
 import google.sdv.identity.ProcessIdentifier;
 
 /** The interface for checking whether the given identity is available for the process. */
-@VintfStability
 interface IIdentityVerifier {
     /**
      * Checks if the given FQIN can be used by the process.
