@@ -126,6 +126,58 @@ impl Subscriber {
     }
 
     /// Non blocking.
+    /// Subscribes to all publications of the specified unit_type and cannel_name and wires them into a single
+    /// DataTunnel subscription. The subscription is made dynamically to all current and future
+    /// publications of the specified UnitType and cannel_name. Creating more than one Subscriber
+    /// instance for the same UnitType and cannel_name will create independent objects with separate
+    /// subscription related resources.
+    ///
+    /// Parameters:
+    ///    [IN] context: Reference to the local SDV Comm Stack Context object
+    ///    [IN] unit_type: Unit Type of the publications to subscribe
+    ///    [IN] channel_name: The name of the channel to subscribe to
+    ///    [IN] options: see SubscriberOptions for details
+    ///
+    /// Return value:
+    ///   Returns a Future of SdvResult that contains SdvStatus of the
+    ///   method call and, if method succeeded, a new Subscriber instance.
+    pub async fn create_for_channel(
+        context: ContextRef,
+        unit_type: &UnitType,
+        channel_name: &str,
+        options: SubscriberOptions,
+    ) -> SdvResult<Subscriber> {
+        type SubscribeToChannelCb = OnceCallbackWrapper<OwnedOpaquePtr<ASDV_SubscriptionHandle>>;
+
+        let (cb, fut) = SubscribeToChannelCb::new_async();
+        let vtable = ASDV_CallbackVTable_SubscribeToPublication {
+            func: Some(SubscribeToChannelCb::trampoline_func),
+            clear: Some(SubscribeToChannelCb::trampoline_clear),
+            cb_data: cb.into_void_ptr(),
+        };
+
+        let channel_name_cstr =
+            std::ffi::CString::new(channel_name).map_err(derive!(SdvStatusCode::Internal))?;
+        // SAFETY: `context`, `unit_type` and `channel_name_cstr` are valid pointers to
+        // corresponding types.
+        // `vtable` represents the correct Vtable: ASDV_CallbackVTable_SubscribeToPublication.
+        // The pointer returned by the callback will be cleared through the Drop trait
+        // implementation of struct [Subscriber].
+        unsafe {
+            sdv_comms_bindgen::ASDV_SubscribeToChannel(
+                context.as_raw(),
+                UnitType::peel_ref(unit_type),
+                channel_name_cstr.as_ptr(),
+                options.as_raw_flags(),
+                vtable,
+            );
+        }
+
+        let handle = fut.await.map_err(derive!(SdvStatusCode::Internal))??;
+        Ok(Subscriber(handle))
+    }
+
+    /// Non blocking.
     /// Returns the publication metadata that contains the message size in bytes
     /// along with other publication related metadata.
     ///
