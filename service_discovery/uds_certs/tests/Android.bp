@@ -18,7 +18,7 @@
 
 package {
     default_team: "trendy_team_automotive",
-    default_applicable_licenses: ["sdv_license"],
+    default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
 // Note: Have the test target definition in a separate Android.bp file as well
