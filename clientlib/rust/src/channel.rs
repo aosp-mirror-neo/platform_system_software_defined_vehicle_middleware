@@ -43,9 +43,11 @@ pub mod publisher {
         /// Associated type required to link a Channel to its Proto Message.
         type ProtoMessage: ::protobuf::Message;
         #[doc(hidden)]
-        fn get_id(&self) -> i32;
+        fn get_name(&self) -> &str;
         #[doc(hidden)]
         fn get_service_unit_name(&self) -> &str;
+        #[doc(hidden)]
+        fn get_capacity(&self) -> u32;
     }
 
     /// A trait for vsidlc-generated publisher channel types to provide metadata about the physical channel configuration.
@@ -56,8 +58,6 @@ pub mod publisher {
     pub trait Metadata {
         #[doc(hidden)]
         const MESSAGE_SIZE: u32 = 0;
-        #[doc(hidden)]
-        const MESSAGE_COUNT: u32 = 0;
         #[doc(hidden)]
         const IS_MULTIPUB: bool = false;
         #[doc(hidden)]
@@ -96,7 +96,7 @@ pub mod subscriber {
         /// Associated type required to link a Channel to its Proto Message.
         type ProtoMessage: ::protobuf::Message;
         #[doc(hidden)]
-        fn get_id(&self) -> i32;
+        fn get_name(&self) -> &str;
         #[doc(hidden)]
         fn get_service_unit_name(&self) -> &str;
         #[doc(hidden)]

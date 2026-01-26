@@ -44,12 +44,13 @@ pub async fn create_publisher<Channel: publisher::Channel>(
         .metadata(
             PublisherMetadata::builder()
                 .message_size(Channel::MESSAGE_SIZE)
-                .message_count(Channel::MESSAGE_COUNT)
+                .message_count(channel.get_capacity())
                 .is_multipub(Channel::IS_MULTIPUB)
                 .message_metadata(Channel::get_message_metadata())
                 .message_metadata_required(Channel::IS_MESSAGE_METADATA_REQUIRED)
                 .build()?,
         )
+        .topic_name(channel.get_name())
         .build()?;
     let publish_handle = comms.create_publish(&attributes).await?;
     Ok(Publisher::<Channel::ProtoMessage>::new(publish_handle))
@@ -74,12 +75,12 @@ pub async fn create_publisher<Channel: publisher::Channel>(
 pub async fn fill_publication_channels<Channel: publisher::Channel>(
     comms: &dyn Communicate,
     channels: &[&Channel],
-    publishers: &mut HashMap<(TypeId, i32), Box<dyn Any + Send + Sync>>,
+    publishers: &mut HashMap<(TypeId, String), Box<dyn Any + Send + Sync>>,
 ) -> SdvResult<()> {
     for chan in channels {
         let publisher = create_publisher(comms, *chan).await?;
         publishers.insert(
-            (std::any::TypeId::of::<Channel::ProtoMessage>(), chan.get_id()),
+            (std::any::TypeId::of::<Channel::ProtoMessage>(), chan.get_name().to_string()),
             Box::new(std::sync::Mutex::new(publisher)),
         );
     }

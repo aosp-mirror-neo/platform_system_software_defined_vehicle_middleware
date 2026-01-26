@@ -21,6 +21,23 @@ service_bundle {
 
   publisher {
     message: "TirePressure"
+    channel: "CHANNEL_ZERO"
+    channel: "CHANNEL_ONE"
+    channel: "CHANNEL_TWO"
+    channel: "CHANNEL_THREE"
+    channel: "CHANNEL_FOUR"
+    channel: "CHANNEL_FIVE"
+    channel: "CHANNEL_SIX"
+    channel: "CHANNEL_SEVEN"
+    channel: "CHANNEL_EIGHT"
+    channel: "CHANNEL_NINE"
+    channel: "CHANNEL_TEN"
+    channel: "CHANNEL_ELEVEN"
+    channel: "CHANNEL_TWELVE"
+    channel: "CHANNEL_THIRTEEN"
+    channel: "CHANNEL_FOURTEEN"
+    channel: "CHANNEL_FIFTEEN"
+    capacity: 8
   }
 }
 
@@ -29,7 +46,5 @@ service_bundle {
 
   subscriber {
     message: "sdv.vsidl.pubsub.test.TirePressure"
-    channel: "FRONT_LEFT"
-    channel: "FRONT_RIGHT"
   }
 }

@@ -30,6 +30,7 @@ rust_defaults {
         "libtokio",
         "libfutures",
         "libgoogletest_rust",
+        "libbinder_rs",
     ],
 }
 
