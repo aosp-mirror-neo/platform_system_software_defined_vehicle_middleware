@@ -371,7 +371,7 @@ mod test {
     use super::*;
     use protobuf::well_known_types::empty::Empty;
     use sdv_comms::id::ServiceFqin;
-    use sdv_mw_commstests_protos::test_messages::{Payload, Pressure};
+    use sdv_mw_commstests_protos::test_messages::{Payload, Pressure, VariableString};
     use sdv_mw_rs_comms::{
         call_client_streaming_method, call_method, call_server_streaming_method, observe,
         ClientAttributes, ClientOptions, History, InstantReader, MethodMapBuilder, Publisher,
@@ -411,6 +411,15 @@ mod test {
         type_name: Option<&str>,
         metadata: PublisherMetadata,
     ) -> Publisher<Pressure> {
+        new_publisher::<Pressure>(comms, service_unit_name, type_name, metadata).await
+    }
+
+    async fn new_publisher<T: protobuf::Message>(
+        comms: Arc<dyn Communicate>,
+        service_unit_name: &str,
+        type_name: Option<&str>,
+        metadata: PublisherMetadata,
+    ) -> Publisher<T> {
         let attr = PublisherAttributes::builder()
             .publication_name(service_unit_name)
             .type_name(
@@ -425,7 +434,7 @@ mod test {
             .build()
             .unwrap();
 
-        Publisher::<Pressure>::new(comms.create_publish(&attr).await.unwrap())
+        Publisher::<T>::new(comms.create_publish(&attr).await.unwrap())
     }
 
     #[tokio::test]
@@ -1858,10 +1867,10 @@ mod test {
         let result = publisher_trait_object.publish_messages(&[oversized_message]);
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert_eq!(err.status_code(), SdvStatusCode::Internal);
+        assert_eq!(err.status_code(), SdvStatusCode::InvalidArgument);
         assert_eq!(
             err.to_string(),
-            "SdvStatusCode::Internal(13): Failed to write the message into cursor"
+            "SdvStatusCode::InvalidArgument(3): Message at index 0 (size 19) exceeds maximum allowed size 13"
         );
     }
 
@@ -2024,5 +2033,60 @@ mod test {
             assert_eq!(response.pressure, 100);
         }
         assert!(response_stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_pub_sub_publishing_batch_with_bigger_size_than_expected() {
+        let bundle_name: &str = "PubsubMessageTooBig";
+        let service_unit_name: &str = "variable-string-publication";
+
+        // Let's remind that VariableString message uses 6 bytes
+        // 1. byte for the field index
+        // 1. byte for the actual length of the string (<=255)
+        // 4. bytes for the payload itself
+        // total message size = 6 bytes
+        //
+        // On top of that there is an additional byte to notify during
+        // decode operation the size of the message to decode.
+        // So every message slot on the FMQ is 7 bytes.
+        // Therefore 2 messages are mapped to 14 bytes.
+        let message_size = 6;
+
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{VM}:{PACKAGE}.{bundle_name}/sample"))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = Arc::new(SdvComms { context });
+
+        // GIVEN a publisher.
+        let pub_metadata = PublisherMetadata::builder()
+            .message_count(10)
+            .message_size(message_size)
+            .build()
+            .unwrap();
+
+        let publisher =
+            new_publisher::<VariableString>(comms.clone(), service_unit_name, None, pub_metadata)
+                .await;
+
+        // WHEN publishing two message with total size
+        // being 2 * (MESSAGE_SIZE + header_size).
+        let result = publisher.publish_batch(&[
+            // First message size is 8 bytes.
+            // 7 bytes of payload
+            // 1 extra byte for the varint header
+            VariableString { description: "12345".to_string(), ..Default::default() },
+            // Second message size is 6 bytes
+            // 5 bytes of payload
+            // 1 extra byte for the varint header
+            VariableString { description: "123".to_string(), ..Default::default() },
+        ]);
+
+        // THEN an error is returned if any message is bigger than MESSAGE_SIZE
+        assert!(result.is_err());
+        let _ = result.inspect_err(|e| {
+            assert_eq!(e.status_code(), SdvStatusCode::InvalidArgument);
+            assert!(e.to_string().contains("exceeds maximum allowed size"));
+        });
     }
 }
