@@ -77,7 +77,9 @@ rust_bindgen {
     visibility: [":__pkg__"],
     apex_available: [
         "//apex_available:platform",
+        // TODO: b/478278157 - remove the legacy one once all names are migrated
         "com.sdv.*",
+        "com.?.sdv.*",
     ],
     min_sdk_version: "34",
 }

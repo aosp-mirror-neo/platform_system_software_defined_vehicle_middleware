@@ -72,6 +72,18 @@ impl Publish for SdvPublisher {
         span.exit();
         let span = tracing::info_span!("Pad Msgs").entered();
         for (i, message) in messages.iter().enumerate() {
+            if message.len() > size_for_one_msg {
+                return Err(SdvStatus::with_message(
+                    SdvStatusCode::InvalidArgument,
+                    format!(
+                        "Message at index {} (size {}) exceeds maximum allowed size {}",
+                        i,
+                        message.len(),
+                        size_for_one_msg
+                    ),
+                ));
+            }
+
             let pos = (i * size_for_one_msg) as u64;
             cursor.set_position(pos);
             cursor.write_all(message).map_err(|_| {
