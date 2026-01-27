@@ -89,9 +89,8 @@ pub(crate) fn get_sdv_boot_mode() -> anyhow::Result<SdvBootMode> {
             invalid => bail!("Invalid value for {SYSTEM_PROP_BOOT_MODE}: {invalid}"),
         },
         None => {
-            // TODO(b/365528464): Return an Err instead.
-            error!("Android system property {SYSTEM_PROP_BOOT_MODE} not set. Assuming {UNLOCKED}");
-            SdvBootMode::Unlocked
+            error!("Android system property {SYSTEM_PROP_BOOT_MODE} not set. Assuming {LOCKED}");
+            SdvBootMode::Locked
         }
     };
 
