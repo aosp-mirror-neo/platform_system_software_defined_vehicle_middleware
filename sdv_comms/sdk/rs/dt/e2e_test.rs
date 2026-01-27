@@ -535,6 +535,84 @@ async fn dt_history_success() {
 }
 
 #[tokio::test]
+async fn dt_history_topic_success() {
+    // Topics depends on a SD listener that needs a running binder thread.
+    binder::ProcessState::start_thread_pool();
+
+    let history_size = 2;
+    let mut pub_buff = [0x11_u8; BUFFER_SIZE];
+
+    let fqin = ServiceFqin::from_str(
+        "vm-name:com.google.comms_stack_tests.DTE2EHistoryTopicTests/instance",
+    )
+    .expect("ServiceFqin should not be malformed");
+    let ctx = ContextRef::create(fqin);
+
+    let unit_type = make_unit_type("HistoryTopicTestTopic").expect("Valid UnitType");
+    let topic_name = "test_topic";
+
+    // Create two publishers on the same topic
+    let mut pub_a_meta = PublisherUnitMetadata::new();
+    pub_a_meta.set_message_size(MESSAGE_SIZE);
+    pub_a_meta.set_message_count(MESSAGE_COUNT);
+    pub_a_meta.set_topic(topic_name);
+    let mut unit_registration_args_a = UnitRegistrationArgs::new();
+    unit_registration_args_a.set_unit_type(&unit_type);
+    unit_registration_args_a.set_unit_name("pub-a");
+    unit_registration_args_a.set_unit_metadata(&UnitMetadata::Publisher(pub_a_meta));
+    let publisher_a = Publisher::create(ctx, unit_registration_args_a)
+        .await
+        .expect("Publisher A creation failed");
+
+    let mut pub_b_meta = PublisherUnitMetadata::new();
+    pub_b_meta.set_message_size(MESSAGE_SIZE);
+    pub_b_meta.set_message_count(MESSAGE_COUNT);
+    pub_b_meta.set_topic(topic_name);
+    let mut unit_registration_args_b = UnitRegistrationArgs::new();
+    unit_registration_args_b.set_unit_type(&unit_type);
+    unit_registration_args_b.set_unit_name("pub-b");
+    unit_registration_args_b.set_unit_metadata(&UnitMetadata::Publisher(pub_b_meta));
+    let publisher_b = Publisher::create(ctx, unit_registration_args_b)
+        .await
+        .expect("Publisher B creation failed");
+
+    // Create a history reader for the topic
+    let history_reader = HistoryReader::create_for_topic(ctx, &unit_type, topic_name, history_size)
+        .await
+        .expect("HistoryReader topic creation failed");
+
+    // Wait for the listener to pick up the publishers
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Write messages from both publishers
+    pub_buff.fill(0xAA);
+    publisher_a.write_messages(&pub_buff).expect("Write failed");
+    // Since copy of messages from publisher to history is async operation
+    // we add a small delay to make the test not flaky and avoid
+    // having different order of messages when reading from history
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    pub_buff.fill(0xBB);
+    publisher_b.write_messages(&pub_buff).expect("Write failed");
+    // Since copy of messages from publisher to history is async operation
+    // we add a small delay to make the test not flaky and avoid
+    // having different order of messages when reading from history
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    pub_buff.fill(0xCC);
+    publisher_a.write_messages(&pub_buff).expect("Write failed");
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    assert_eq!(history_reader.available_to_read().expect("Available failed"), 2u32);
+
+    let mut read_buf = vec![0u8; (MESSAGE_SIZE * 2) as usize];
+    assert_eq!(history_reader.read_last_messages(&mut read_buf).unwrap(), 2u32);
+
+    // Messages should be in order: BB, CC
+    assert_eq!(&read_buf[0..BUFFER_SIZE], &[0xBB_u8; BUFFER_SIZE]);
+    assert_eq!(&read_buf[BUFFER_SIZE..(BUFFER_SIZE * 2)], &[0xCC_u8; BUFFER_SIZE]);
+}
+
+#[tokio::test]
 async fn dt_instant_read_success() {
     let mut pub_buff = [0x11_u8; BUFFER_SIZE];
 
@@ -955,7 +1033,7 @@ async fn dt_validate_publisher_metadata_on_create() {
 
 #[tokio::test]
 async fn dt_subscriber_topic_success() {
-    // Channels depends on a SD listener that needs a running binder thread.
+    // Topics depends on a SD listener that needs a running binder thread.
     binder::ProcessState::start_thread_pool();
 
     // Spawn a new task to ensure all futures are Send.
@@ -963,13 +1041,12 @@ async fn dt_subscriber_topic_success() {
         let pub_buff = [0x11_u8; BUFFER_SIZE];
         let mut sub_buff = [0x00_u8; BUFFER_SIZE];
 
-        let fqin = ServiceFqin::from_str(
-            "vm-name:com.google.comms_stack_tests.DTSubChannelTests/instance",
-        )
-        .expect("ServiceFqin should not be malformed");
+        let fqin =
+            ServiceFqin::from_str("vm-name:com.google.comms_stack_tests.DTSubTopicTests/instance")
+                .expect("ServiceFqin should not be malformed");
         let ctx = ContextRef::create(fqin);
 
-        let unit_type = make_unit_type("SubscriberChannelTestTopic").expect("Valid UnitType");
+        let unit_type = make_unit_type("SubscriberTopicTestTopic").expect("Valid UnitType");
         let topic_name = "test-topic";
 
         let publisher =
@@ -1005,7 +1082,7 @@ async fn dt_subscriber_topic_success() {
 
 #[tokio::test]
 async fn dt_subscriber_multiple_topics_success() {
-    // Channels depends on a SD listener that needs a running binder thread.
+    // Topics depends on a SD listener that needs a running binder thread.
     binder::ProcessState::start_thread_pool();
 
     // Spawn a new task to ensure all futures are Send.
@@ -1014,12 +1091,12 @@ async fn dt_subscriber_multiple_topics_success() {
         let mut sub_buff = [0x00_u8; BUFFER_SIZE];
 
         let fqin = ServiceFqin::from_str(
-            "vm-name:com.google.comms_stack_tests.DTMultiChannelTests/instance",
+            "vm-name:com.google.comms_stack_tests.DTMultiTopicTests/instance",
         )
         .expect("ServiceFqin should not be malformed");
         let ctx = ContextRef::create(fqin);
 
-        let unit_type = make_unit_type("MultiChannelTestTopic").expect("Valid UnitType");
+        let unit_type = make_unit_type("MultiTopicTestTopic").expect("Valid UnitType");
         let topic_a = "topic-a";
         let topic_b = "topic-b";
 
@@ -1078,7 +1155,7 @@ async fn dt_subscriber_multiple_topics_success() {
 
 #[tokio::test]
 async fn dt_subscriber_topic_create_before_publish() {
-    // Channels depends on a SD listener that needs a running binder thread.
+    // Topics depends on a SD listener that needs a running binder thread.
     binder::ProcessState::start_thread_pool();
 
     tokio::spawn(async {
@@ -1110,7 +1187,7 @@ async fn dt_subscriber_topic_metadata() {
         .expect("ServiceFqin should not be malformed");
         let ctx = ContextRef::create(fqin);
 
-        let unit_type = make_unit_type("SubscriberChannelMetadataTopic").expect("Valid UnitType");
+        let unit_type = make_unit_type("SubscriberTopicMetadataTopic").expect("Valid UnitType");
         let topic_name = "metadata-topic";
 
         let publisher =
@@ -1143,7 +1220,7 @@ async fn dt_subscriber_topic_invalid_name() {
                 .expect("ServiceFqin should not be malformed");
         let ctx = ContextRef::create(fqin);
 
-        let unit_type = make_unit_type("SubscriberChannelInvalidTopic").expect("Valid UnitType");
+        let unit_type = make_unit_type("SubscriberTopicInvalidTopic").expect("Valid UnitType");
         let topic_name = "INVALID\x07TOPIC-NAME"; // Invalid topic name
 
         let options = SubscriberOptions { fetch_last_message: false };
@@ -1166,7 +1243,7 @@ async fn dt_subscriber_topic_invalid_name() {
 
 #[tokio::test]
 async fn dt_subscriber_topic_incompatible_message_sizes() {
-    // Channels depends on a SD listener that needs a running binder thread.
+    // Topics depends on a SD listener that needs a running binder thread.
     binder::ProcessState::start_thread_pool();
 
     tokio::spawn(async {
@@ -1178,7 +1255,7 @@ async fn dt_subscriber_topic_incompatible_message_sizes() {
         let ctx = ContextRef::create(fqin);
 
         let unit_type =
-            make_unit_type("SubscriberChannelIncompatibleSizesTopic").expect("Valid UnitType");
+            make_unit_type("SubscriberTopicIncompatibleSizesTopic").expect("Valid UnitType");
         let topic_name = "incompatible-sizes-topic";
 
         // Create two publishers with different message sizes
@@ -1227,18 +1304,18 @@ async fn dt_subscriber_topic_incompatible_message_sizes() {
 
 #[tokio::test]
 async fn dt_e2e_topic_stream_success() {
-    // Channels depends on a SD listener that needs a running binder thread.
+    // Topics depends on a SD listener that needs a running binder thread.
     binder::ProcessState::start_thread_pool();
 
     let pub_buff = [0x11_u8; BUFFER_SIZE];
 
     let fqin = ServiceFqin::from_str(
-        "vm-name:com.google.comms_stack_tests.DTE2EChannelStreamTests/instance",
+        "vm-name:com.google.comms_stack_tests.DTE2ETopicStreamTests/instance",
     )
     .expect("ServiceFqin should not be malformed");
     let ctx = ContextRef::create(fqin);
 
-    let unit_type = make_unit_type("ChannelStreamTestTopic").expect("Valid UnitType");
+    let unit_type = make_unit_type("TopicStreamTestTopic").expect("Valid UnitType");
     let topic_name = "test-topic-stream";
 
     let publisher =
@@ -1270,7 +1347,7 @@ async fn dt_e2e_topic_stream_success() {
 
 #[tokio::test]
 async fn dt_subscriber_topic_stream_create_before_publish() {
-    // Channels depends on a SD listener that needs a running binder thread.
+    // Topics depends on a SD listener that needs a running binder thread.
     binder::ProcessState::start_thread_pool();
 
     tokio::spawn(async {
@@ -1309,7 +1386,7 @@ async fn dt_subscriber_topic_stream_invalid_name() {
         let ctx = ContextRef::create(fqin);
 
         let unit_type =
-            make_unit_type("SubscriberChannelStreamInvalidTopic").expect("Valid UnitType");
+            make_unit_type("SubscriberTopicStreamInvalidTopic").expect("Valid UnitType");
         let topic_name = "INVALID\x07TOPIC-NAME"; // Invalid topic name
 
         let options = SubscriberOptions { fetch_last_message: false };
