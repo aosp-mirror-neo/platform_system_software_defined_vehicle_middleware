@@ -87,7 +87,7 @@ fn process_output(input_fn: &mut ItemFn) -> SynResult<Option<Stmt>> {
 
     if let ReturnType::Type(_, box_type) = &mut input_fn.sig.output {
         let (new_ret, out_stmt) = map_output_type(box_type, allow_ref)?;
-        *box_type = Box::new(new_ret);
+        **box_type = new_ret;
         return Ok(out_stmt);
     }
     Ok(None)
