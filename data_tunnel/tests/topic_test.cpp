@@ -37,7 +37,7 @@ struct TestTopicWithMQ {
     std::unique_ptr<AidlMQ> mq;
 };
 
-TestTopicWithMQ MakeTestTopicWithWriterMQ() {
+TestTopicWithMQ MakeTestTopicWithWriterMQ(bool is_remote = false) {
     // Create metadata
     auto metadata = TestMetadata();
 
@@ -53,7 +53,7 @@ TestTopicWithMQ MakeTestTopicWithWriterMQ() {
     CHECK(topic_mq->isValid());
 
     auto topic = Topic::Create(metadata, /* id= */ 101, /* client_id= */ 202,
-                               /* is_remote= */ false, std::move(topic_mq));
+                               /* is_remote= */ is_remote, std::move(topic_mq));
     CHECK(topic);
     return TestTopicWithMQ{std::move(topic), std::move(mq)};
 }
@@ -174,6 +174,85 @@ TEST_F(DTAgentTopicTest, GetLastMessageWithOverflowedQueue) {
     auto last_message = topic->GetLastMessage();
     ASSERT_TRUE(last_message);
     ASSERT_EQ(last_message->at(0), message_1[0]);
+}
+
+TEST_F(DTAgentTopicTest, ReadinessHandlerFiresOnRegistrationForLocal) {
+    auto [topic, writer_mq] = MakeTestTopicWithWriterMQ(/*is_remote=*/false);
+
+    // Callback fires upon registration with success
+    std::optional<::sdv::SdvStatusCode> on_ready_result;
+    topic->RegisterOnReadyCallback([&](auto status) { on_ready_result = status; });
+    ASSERT_TRUE(on_ready_result);
+    ASSERT_EQ(on_ready_result, ::sdv::SdvStatusCode::kOk);
+
+    // Mark topic deleted
+    topic->Delete();
+
+    // After deletion, callback fires upon registration with failure.
+    std::optional<::sdv::SdvStatusCode> on_ready_result_2;
+    topic->RegisterOnReadyCallback([&](auto status) { on_ready_result_2 = status; });
+    ASSERT_TRUE(on_ready_result_2);
+    ASSERT_NE(on_ready_result_2, ::sdv::SdvStatusCode::kOk);
+}
+
+TEST_F(DTAgentTopicTest, ReadinessHandlersFiredWhenUnreadyRemoteBecomesReady) {
+    auto [topic, writer_mq] = MakeTestTopicWithWriterMQ(/*is_remote=*/true);
+
+    std::optional<::sdv::SdvStatusCode> on_ready_result_0;
+    topic->RegisterOnReadyCallback([&](auto status) { on_ready_result_0 = status; });
+    ASSERT_FALSE(on_ready_result_0);
+
+    std::optional<::sdv::SdvStatusCode> on_ready_result_1;
+    topic->RegisterOnReadyCallback([&](auto status) { on_ready_result_1 = status; });
+    ASSERT_FALSE(on_ready_result_1);
+
+    topic->ReportReady();
+    ASSERT_TRUE(on_ready_result_0);
+    EXPECT_EQ(on_ready_result_0, ::sdv::SdvStatusCode::kOk);
+    ASSERT_TRUE(on_ready_result_1);
+    EXPECT_EQ(on_ready_result_1, ::sdv::SdvStatusCode::kOk);
+}
+
+TEST_F(DTAgentTopicTest, ReadinessHandlersFireOnRegistrationForReadyRemote) {
+    auto [topic, writer_mq] = MakeTestTopicWithWriterMQ(/*is_remote=*/true);
+
+    topic->ReportReady();
+
+    // Since the topic is already ready, we fire callback upon registration.
+    std::optional<::sdv::SdvStatusCode> on_ready_result;
+    topic->RegisterOnReadyCallback([&](auto status) { on_ready_result = status; });
+    ASSERT_TRUE(on_ready_result);
+    EXPECT_EQ(on_ready_result, ::sdv::SdvStatusCode::kOk);
+}
+
+TEST_F(DTAgentTopicTest, ReadinessHandlerFiredWhenUnreadyRemoteDeleted) {
+    auto [topic, writer_mq] = MakeTestTopicWithWriterMQ(/*is_remote=*/true);
+
+    std::optional<::sdv::SdvStatusCode> on_ready_result_0;
+    topic->RegisterOnReadyCallback([&](auto status) { on_ready_result_0 = status; });
+    ASSERT_FALSE(on_ready_result_0);
+
+    std::optional<::sdv::SdvStatusCode> on_ready_result_1;
+    topic->RegisterOnReadyCallback([&](auto status) { on_ready_result_1 = status; });
+    ASSERT_FALSE(on_ready_result_1);
+
+    topic->Delete();
+    ASSERT_TRUE(on_ready_result_0);
+    EXPECT_NE(on_ready_result_0, ::sdv::SdvStatusCode::kOk);
+    ASSERT_TRUE(on_ready_result_1);
+    EXPECT_NE(on_ready_result_1, ::sdv::SdvStatusCode::kOk);
+}
+
+TEST_F(DTAgentTopicTest, ReadinessHandlersFireOnRegistrationForDeletedRemote) {
+    auto [topic, writer_mq] = MakeTestTopicWithWriterMQ(/*is_remote=*/true);
+
+    topic->Delete();
+
+    // Since the topic is already ready, we fire callback upon registration.
+    std::optional<::sdv::SdvStatusCode> on_ready_result;
+    topic->RegisterOnReadyCallback([&](auto status) { on_ready_result = status; });
+    ASSERT_TRUE(on_ready_result);
+    EXPECT_NE(on_ready_result, ::sdv::SdvStatusCode::kOk);
 }
 
 }  // namespace

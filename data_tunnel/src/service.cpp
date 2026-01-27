@@ -95,6 +95,9 @@ using CommsTransportMetadata =
         ::aidl::google::sdv::service_discovery::common::metadata::TransportMetadata;
 using CommsApplicationMetadata =
         aidl::google::sdv::service_discovery::common::metadata::ApplicationMetadata;
+using aidl::google::sdv::data_tunnel::ISubscriptionReadinessListener;
+using aidl::google::sdv::data_tunnel::SubscriptionParams;
+using aidl::google::sdv::data_tunnel::SubscriptionResult;
 
 typedef std::vector<uint8_t> RawGenericMetadata;
 
@@ -564,7 +567,8 @@ public:
     }
 
     bool SubscribeToCommsPublication(int64_t client_sid, const CommsUnitIdentifier& unit_identifier,
-                                     CommsPublicationDescriptor& publication_desc) {
+                                     CommsPublicationDescriptor& publication_desc,
+                                     Topic::OnReadyCallback on_ready) {
         core::ClientId client_id;
         if (!FindCliendId(client_sid, client_id)) {
             ALOGE("Unable to find a client with sid==%016" PRIX64 "!", client_sid);
@@ -625,8 +629,8 @@ public:
                                      publisher_metadata.message_count);
 
             // Create the MQ; this is the mapping that will be stored in Topic manager; it
-            // needs to be writeable so that we can write messages received from remote
-            // agents to it using Topic::Write.
+            // needs to be writeable so that we can write messages received from remote agents to it
+            // using Topic::Write.
             auto mq = std::make_unique<AidlMQ>(publisher_metadata.message_size *
                                                publisher_metadata.message_count);
             if (!mq->isValid()) {
@@ -667,7 +671,15 @@ public:
             }
         }
 
-        return topic->MakeDescriptor(&publication_desc);
+        if (!topic->MakeDescriptor(&publication_desc)) {
+            return false;
+        }
+
+        if (on_ready) {
+            topic->RegisterOnReadyCallback(std::move(on_ready));
+        }
+
+        return true;
     }
 
     std::optional<std::vector<uint8_t>> GetLastPublicationMessage(
@@ -833,12 +845,10 @@ public:
         return ::ndk::ScopedAStatus::ok();
     }
 
-    ::ndk::ScopedAStatus SubscribeToPublication(
+    ::ndk::ScopedAStatus SubscribeToPublicationCommon(
             const CommsUnitIdentifier& in_unit_identifier,
-            CommsPublicationDescriptor* out_publication_desc) override {
-        ALOGD("IAgentService::SubscribeToPublication(sid==%016" PRIX64 ")",
-              in_unit_identifier.service_identity.sid);
-
+            const std::shared_ptr<ISubscriptionReadinessListener>& in_ready_listener,
+            CommsPublicationDescriptor* out_publication_desc) {
         auto client_service_identity =
                 InternalCommsSD::GetProcessServiceIdentity(AIBinder_getCallingPid(),
                                                            AIBinder_getCallingUid());
@@ -873,8 +883,16 @@ public:
                                                  "out_publication_desc can't be nullptr!");
         }
 
+        Topic::OnReadyCallback on_ready;  // Ignored by SubscribeToCommsPublication if unpopulated
+        if (in_ready_listener) {
+            on_ready = [in_ready_listener](auto status_code) {
+                in_ready_listener->onSubscriptionReady(static_cast<int32_t>(status_code));
+            };
+        }
+
         if (!instance_->SubscribeToCommsPublication(client_service_identity->sid,
-                                                    in_unit_identifier, *out_publication_desc)) {
+                                                    in_unit_identifier, *out_publication_desc,
+                                                    on_ready)) {
             ALOGE("SubscribeToPublication() failed!");
             return ndk::ScopedAStatus::
                     fromServiceSpecificErrorWithMessage(CommsAgentService::ERROR_UNKNOWN,
@@ -882,6 +900,20 @@ public:
         }
 
         return ::ndk::ScopedAStatus::ok();
+    }
+
+    ::ndk::ScopedAStatus SubscribeToPublicationExtended(const SubscriptionParams& in_params,
+                                                        SubscriptionResult* out_result) {
+        return SubscribeToPublicationCommon(in_params.unit_identifier, in_params.readiness_listener,
+                                            &out_result->publication_descriptor);
+    }
+
+    ::ndk::ScopedAStatus SubscribeToPublication(
+            const CommsUnitIdentifier& in_unit_identifier,
+            CommsPublicationDescriptor* out_publication_desc) override {
+        ALOGD("IAgentService::SubscribeToPublication(sid==%016" PRIX64 ")",
+              in_unit_identifier.service_identity.sid);
+        return SubscribeToPublicationCommon(in_unit_identifier, nullptr, out_publication_desc);
     }
 
     ::ndk::ScopedAStatus UnsubscribeFromPublication(int in_publication_id) {

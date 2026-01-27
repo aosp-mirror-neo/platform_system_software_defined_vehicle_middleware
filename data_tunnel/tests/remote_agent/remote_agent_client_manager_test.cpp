@@ -372,6 +372,20 @@ TEST_F(RemoteAgentClientManagerTest, RequestSubscribe_QueuesAndLaterProcessesReq
     EXPECT_EQ(payload->topic_name_, kTestTopicName);
 }
 
+TEST_F(RemoteAgentClientManagerTest,
+       RequestSubscribe_UnregistersPendingSubscriptionTopicsOnShutdown) {
+    StartupClientManager();
+    CreateRemoteTestTopic();
+
+    EXPECT_TRUE(client_manager_.RequestSubscribe(kTestPeerVmName, kTestTopicName).isOk());
+
+    auto topic = topic_manager_.FindTopic(kTestTopicName, /*local_only=*/false);
+    ASSERT_TRUE(topic);
+    EXPECT_TRUE(topic->IsActive());
+    client_manager_.Shutdown();
+    EXPECT_FALSE(topic->IsActive());
+}
+
 TEST_F(RemoteAgentClientManagerTest, DumpStats) {
     StartupClientManager();
 

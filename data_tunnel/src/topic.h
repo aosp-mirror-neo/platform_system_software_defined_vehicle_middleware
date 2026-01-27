@@ -26,6 +26,8 @@
 #include <mutex>
 #include <vector>
 
+#include <sdv/status.hpp>
+
 namespace android::sdv::dt::agent {
 
 using AidlMQ =
@@ -123,6 +125,31 @@ public:
     // Create a reader for use within DT Agent.
     std::optional<Reader> CreateReader();
 
+    // An on-ready callback fires when a topic becomes "ready", meaning that we have learned
+    // whether any data has ever been published to the topic (and if so, have at least one message
+    // available to read in the current VM's FMQ for that topic).
+    //
+    // This is to support 'fetch_last_message' subscriptions.  These subscriptions are supposed to
+    // provide the most recent written message (as of their creation) as the first message returned
+    // the application, unless no message has ever been written; the topic must be in the "ready"
+    // state described above before we can finish constructing a `fetch_last_message` subscription.
+    //
+    // Local topics are ready upon creation.  Remote topics become ready when ReportRemoteReady
+    // is called.
+    //
+    // If Delete() is called on a remote topic without it ever becoming ready, all registered
+    // on-ready callbacks will fire with a non-success status.
+    //
+    // Note that the provided callback can be instantly fired from within RegisterOnReadyCallback
+    // if the topic is already ready or has had Delete() called.
+    using OnReadyCallback = std::function<void(::sdv::SdvStatusCode)>;
+    void RegisterOnReadyCallback(OnReadyCallback cb);
+
+    void ReportReady();
+
+    // Public only for testing.  Do not call from outside of TopicManager.
+    void Delete();
+
 private:
     friend class TopicManager;
 
@@ -132,12 +159,14 @@ private:
     // Returns an empty unique_ptr on error.
     std::unique_ptr<AidlMQ> CloneMQHandle();
 
-    void Delete();
-
     const int32_t id_;
     const core::ClientId client_id_;
     const Metadata metadata_;
     const bool is_remote_;
+
+    // A local topic is always "ready".  A remote topic becomes ready once the
+    // subscription at the peer VM has been established.
+    bool is_ready_;
 
     // Protects state in this class.
     mutable std::mutex lock_;
@@ -154,6 +183,9 @@ private:
     // accessed only with lock_ locked.
     std::map<uint32_t, Callback> subscriber_callbacks_;
     uint32_t subscriber_callbacks_id_counter_ = 1;  // allocating 0 for error
+
+    // Tracks callbacks that need to be fired when a topic becomes ready.
+    std::vector<OnReadyCallback> on_ready_callbacks_;
 };
 
 }  // namespace android::sdv::dt::agent

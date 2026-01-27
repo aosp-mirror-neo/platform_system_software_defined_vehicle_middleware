@@ -40,6 +40,7 @@ Topic::Topic(const Topic::Metadata& metadata, int32_t id, const core::ClientId& 
       client_id_(client_id),
       metadata_(metadata),
       is_remote_(is_remote),
+      is_ready_(!is_remote),
       mq_(std::move(mq)) {}
 
 // Returns an empty unique_ptr on error.
@@ -56,7 +57,7 @@ std::unique_ptr<AidlMQ> Topic::CloneMQHandle() {
 }
 
 void Topic::Delete() {
-    std::lock_guard<std::mutex> guard(lock_);
+    std::unique_lock<std::mutex> guard(lock_);
 
     // Notify all the subscribers then clear callbacks.
     for (auto& [_, callback_fn] : subscriber_callbacks_) {
@@ -70,6 +71,29 @@ void Topic::Delete() {
     // Clear FMQ
     ALOGD("Releasing FMQ handle for publication %d.", id_);
     mq_.reset();
+
+    // Let anyone waiting for readiness know that it's not happening.
+    auto callbacks = std::exchange(on_ready_callbacks_, {});
+    guard.unlock();
+    for (auto& cb : callbacks) {
+        cb(::sdv::SdvStatusCode::kUnavailable);
+    }
+}
+
+void Topic::ReportReady() {
+    std::unique_lock<std::mutex> guard(lock_);
+    if (is_ready_) {
+        // Harmless to get multiple reports for the same topic.
+        // This can happen on suspend / resume since we automatically re-subscribe.
+        return;
+    }
+    is_ready_ = true;
+
+    auto callbacks = std::exchange(on_ready_callbacks_, {});
+    guard.unlock();
+    for (auto& cb : callbacks) {
+        cb(::sdv::SdvStatusCode::kOk);
+    }
 }
 
 std::unique_ptr<Topic> Topic::Create(const Topic::Metadata& metadata, int32_t id,
@@ -227,6 +251,18 @@ std::optional<Topic::Reader> Topic::CreateReader() {
     ALOGE("CreateReader (%s): failed to set read pointer to last message!", metadata_.name.c_str());
 
     return std::nullopt;
+}
+
+void Topic::RegisterOnReadyCallback(OnReadyCallback on_ready_cb) {
+    std::unique_lock<std::mutex> guard(lock_);
+
+    if (mq_ && !is_ready_) {
+        on_ready_callbacks_.emplace_back(std::move(on_ready_cb));
+        return;
+    }
+    guard.unlock();
+
+    on_ready_cb(mq_ ? ::sdv::SdvStatusCode::kOk : ::sdv::SdvStatusCode::kUnavailable);
 }
 
 }  // namespace android::sdv::dt::agent

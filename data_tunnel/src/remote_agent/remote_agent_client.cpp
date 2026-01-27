@@ -287,6 +287,9 @@ void RemoteAgentClient::HandleSubscribeResult(const Payload_SubscribeResult& sub
     }
 
     subscription.is_active = true;
+    guard.unlock();
+
+    topic.ReportReady();
 }
 
 void RemoteAgentClient::HandleTopicRawData(const Payload_TopicRawData& topic_raw_data) {

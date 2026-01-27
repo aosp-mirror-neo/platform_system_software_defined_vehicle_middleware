@@ -16,7 +16,10 @@
 
 #include "service.h"
 
+#include <aidl/google/sdv/data_tunnel/BnSubscriptionReadinessListener.h>
 #include <aidl/google/sdv/data_tunnel/IAgentService.h>
+#include <aidl/google/sdv/data_tunnel/SubscriptionParams.h>
+#include <aidl/google/sdv/data_tunnel/SubscriptionResult.h>
 #include <aidl/google/sdv/identity/IIdentityAgent.h>
 #include <aidl/google/sdv/service_discovery/discovery/IServiceDiscoveryAgent.h>
 #include <aidl/google/sdv/service_discovery/discovery/IServiceRegistrationAgent.h>
@@ -31,10 +34,13 @@
 
 #include <libsdv_dt_core.h>
 
+#include <future>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <random>
+
+#include <sdv/status.hpp>
 
 namespace android::sdv::dt::agent::test {
 
@@ -224,6 +230,16 @@ DtAgentTestState& GetDtAgentTestState() {
     return *global_state;
 }
 
+struct SubscriptionReadinessListener :
+      public aidl::google::sdv::data_tunnel::BnSubscriptionReadinessListener {
+    ndk::ScopedAStatus onSubscriptionReady(int32_t status_code) override {
+        result_promise.set_value(status_code);
+        return ndk::ScopedAStatus::ok();
+    }
+
+    std::promise<int32_t> result_promise;
+};
+
 TEST_F(DataTunnel_IAgentService_AIDL_Test, ConnectTwiceWithExistingClientAlive_Fail) {
     auto& state = GetDtAgentTestState();
 
@@ -341,9 +357,60 @@ TEST_F(DataTunnel_IAgentService_AIDL_Test, Essentials) {
     /*
      * Subscribe to the newly created publication
      */
+    auto readiness_listener = ndk::SharedRefBase::make<SubscriptionReadinessListener>();
     auto unit_identifier = UnitIdentifier{/*identity*/ service_unit_definition->identity,
                                           /*unit_name*/ service_unit_name};
-    PublicationDescriptor publication_descriptor_subs;
+
+    aidl::google::sdv::data_tunnel::SubscriptionParams sub_params{
+            .unit_identifier = unit_identifier,
+            .readiness_listener = readiness_listener,
+    };
+    aidl::google::sdv::data_tunnel::SubscriptionResult sub_result;
+    call_status = state.dt_agent->SubscribeToPublicationExtended(sub_params, &sub_result);
+    ASSERT_TRUE(call_status.isOk()) << "IAgentService::SubscribeToPublicationExtended() failed! "
+                                    << call_status.getDescription();
+
+    auto ready_future = readiness_listener->result_promise.get_future();
+    ASSERT_EQ(ready_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    ASSERT_EQ(ready_future.get(), static_cast<int32_t>(::sdv::SdvStatusCode::kOk));
+
+    /*
+     * Validate if Subscriber's publication descriptor is configured properly
+     */
+    ASSERT_EQ(static_cast<int>(message_size), sub_result.publication_descriptor.message_size)
+            << "Message size value returned by IAgentService::SubscribeToPublicationExtended() is "
+               "incorrect!";
+    ASSERT_EQ(static_cast<int>(message_count), sub_result.publication_descriptor.message_count)
+            << "Message count value returned by IAgentService::SubscribeToPublicationExtended() is "
+               "incorrect!";
+
+    /*
+     * Create an FMQ instance for the subscriber
+     */
+    auto sub_mq = std::make_unique<AidlMQ>(sub_result.publication_descriptor.mq_desc, false);
+    ASSERT_TRUE(sub_mq->isValid()) << "Unable to create FMQ for from a publisher's descriptor !";
+
+    /*
+     * Write to the FMQ buffer
+     */
+    ASSERT_TRUE(pub_mq->write(pub_buff, message_size))
+            << "Unable to write into publisher's FMQ buffer!";
+
+    /*
+     * Read from the FMQ buffer
+     */
+    ASSERT_EQ(sub_mq->availableToRead(), message_size)
+            << "availableToRead() returns unexpected value!";
+    ASSERT_TRUE(sub_mq->read(sub_buff, message_size))
+            << "Unable to read from subscriber's FMQ buffer!";
+    // Validate the result
+    ASSERT_EQ(memcmp(pub_buff, sub_buff, message_size), 0)
+            << "The received messages isn't the same as the published one!";
+
+    /*
+     * Subscribe using "old" SubscribeToPublication
+     */
+    auto publication_descriptor_subs = PublicationDescriptor();
     call_status =
             state.dt_agent->SubscribeToPublication(unit_identifier, &publication_descriptor_subs);
     ASSERT_TRUE(call_status.isOk())
@@ -362,17 +429,11 @@ TEST_F(DataTunnel_IAgentService_AIDL_Test, Essentials) {
     /*
      * Create an FMQ instance for the subscriber
      */
-    auto sub_mq = new (std::nothrow) AidlMQ(publication_descriptor_subs.mq_desc, false);
+    sub_mq = std::make_unique<AidlMQ>(publication_descriptor_subs.mq_desc, false);
     ASSERT_TRUE(sub_mq->isValid()) << "Unable to create FMQ for from a publisher's descriptor !";
 
     /*
-     * Write to the FMQ buffer
-     */
-    ASSERT_TRUE(pub_mq->write(pub_buff, message_size))
-            << "Unable to write into publisher's FMQ buffer!";
-
-    /*
-     * Read from the FMQ buffer
+     * Read from the FMQ buffer -- same data already published
      */
     ASSERT_EQ(sub_mq->availableToRead(), message_size)
             << "availableToRead() returns unexpected value!";
