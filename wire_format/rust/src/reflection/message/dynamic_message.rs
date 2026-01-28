@@ -14,6 +14,10 @@
 
 use std::collections::HashMap;
 
+use protobuf::rt::WireType;
+
+use crate::reflection::codec::api::protobuf::IProtobufWriter;
+use crate::reflection::codec::api::protobuf::RpcWriter as ProtobufWriter;
 use crate::reflection::message::error::MergeError;
 use crate::reflection::message::map::MapField;
 use crate::reflection::message::repeated::RepeatedField;
@@ -93,6 +97,34 @@ impl DynamicMessage {
     fn num_fields(&self) -> usize {
         self.fields.len()
     }
+
+    /// Serialize the dynamic message to a byte array
+    pub fn write_to_bytes(&self) -> anyhow::Result<Vec<u8>> {
+        let mut buffer = Vec::new();
+        // we use a RPC writer since we don't need to prefix the message with a length
+        let mut writer = ProtobufWriter::create_rpc_writer(&mut buffer);
+        self.write_message(&mut writer)?;
+        writer.finalize()?;
+        Ok(buffer)
+    }
+
+    pub(crate) fn write_message_field(
+        &self,
+        field_number: u32,
+        writer: &mut ProtobufWriter,
+    ) -> anyhow::Result<()> {
+        writer.write_tag(field_number, WireType::LengthDelimited)?;
+        writer.start_length_delimited_message()?;
+        self.write_message(writer)?;
+        writer.end_length_delimited_message()
+    }
+
+    pub(crate) fn write_message(&self, writer: &mut ProtobufWriter) -> anyhow::Result<()> {
+        for (field_number, dynamic_message_field) in &self.fields {
+            dynamic_message_field.write_field(*field_number, writer)?;
+        }
+        Ok(())
+    }
 }
 
 /// Message field value
@@ -152,6 +184,19 @@ impl SingularField {
             }
         }
     }
+
+    pub(crate) fn write_singular_field(
+        &self,
+        field_number: u32,
+        writer: &mut ProtobufWriter,
+    ) -> anyhow::Result<()> {
+        match self {
+            SingularField::Simple(simple_field) => {
+                simple_field.write_simple_field(field_number, writer)
+            }
+            SingularField::Message(message) => message.write_message_field(field_number, writer),
+        }
+    }
 }
 
 impl DynamicMessageField {
@@ -205,6 +250,22 @@ impl DynamicMessageField {
                     other_field.get_type_for_error_msg()
                 ),
             }),
+        }
+    }
+
+    pub(crate) fn write_field(
+        &self,
+        field_number: u32,
+        writer: &mut ProtobufWriter,
+    ) -> anyhow::Result<()> {
+        match self {
+            DynamicMessageField::Singular(singular_field) => {
+                singular_field.write_singular_field(field_number, writer)
+            }
+            DynamicMessageField::Repeated(repeated_field) => {
+                repeated_field.write_repeated_field(field_number, writer)
+            }
+            DynamicMessageField::Map(map_field) => map_field.write_map_field(field_number, writer),
         }
     }
 }
@@ -386,5 +447,100 @@ mod tests {
             panic!("Repeated field should exist");
         };
         assert_eq!(repeated_field.len(), 6);
+    }
+
+    #[test]
+    fn test_write_to_bytes() {
+        let mut message = DynamicMessage::new("test.Message".to_string());
+        message
+            .add_field(
+                1,
+                DynamicMessageField::Singular(SingularField::Simple(SimpleField::Int32(150))),
+            )
+            .expect("Failed to add field");
+
+        let bytes = message.write_to_bytes().unwrap();
+        assert_eq!(bytes, vec![0x08, 0x96, 0x01]);
+    }
+
+    #[test]
+    fn test_write_to_bytes_nested() {
+        let mut inner = DynamicMessage::new("test.Inner".to_string());
+        inner
+            .add_field(
+                1,
+                DynamicMessageField::Singular(SingularField::Simple(SimpleField::Int32(150))),
+            )
+            .expect("Failed to add field");
+
+        let mut outer = DynamicMessage::new("test.Outer".to_string());
+        outer
+            .add_field(2, DynamicMessageField::Singular(SingularField::Message(Box::new(inner))))
+            .expect("Failed to add field");
+
+        let bytes = outer.write_to_bytes().unwrap();
+        // Field 2 (tag 0x12), length 3, payload 0x08 0x96 0x01
+        assert_eq!(bytes, vec![0x12, 0x03, 0x08, 0x96, 0x01]);
+    }
+
+    #[test]
+    fn test_write_to_bytes_multiple_fields() {
+        let mut message = DynamicMessage::new("test.Message".to_string());
+        message
+            .add_field(
+                1,
+                DynamicMessageField::Singular(SingularField::Simple(SimpleField::Int32(150))),
+            )
+            .expect("Failed to add field");
+        message
+            .add_field(
+                2,
+                DynamicMessageField::Singular(SingularField::Simple(SimpleField::String(
+                    "foo".to_string(),
+                ))),
+            )
+            .expect("Failed to add field");
+
+        let bytes = message.write_to_bytes().unwrap();
+        // Field 1: 08 96 01
+        // Field 2: 12 03 66 6f 6f
+        // Order is not guaranteed due to HashMap storage of fields
+        let expected1 = vec![0x08, 0x96, 0x01, 0x12, 0x03, 0x66, 0x6f, 0x6f];
+        let expected2 = vec![0x12, 0x03, 0x66, 0x6f, 0x6f, 0x08, 0x96, 0x01];
+        assert!(bytes == expected1 || bytes == expected2);
+    }
+
+    #[test]
+    fn test_write_to_bytes_repeated_field() {
+        let mut message = DynamicMessage::new("test.Message".to_string());
+        message
+            .add_field(
+                1,
+                DynamicMessageField::Repeated(RepeatedField::Simple(SimpleRepeatedField::Int32(
+                    vec![1, 2],
+                ))),
+            )
+            .expect("Failed to add field");
+
+        let bytes = message.write_to_bytes().expect("Failed to serialize message to bytes");
+        // Tag: 1 (00001) | WireType::LengthDelimited (010) -> 0x0A
+        // Length: 2
+        // Payload: 01 02
+        assert_eq!(bytes, vec![0x0A, 0x02, 0x01, 0x02]);
+    }
+
+    #[test]
+    fn test_write_to_bytes_map_field() {
+        use crate::reflection::message::map::MapFieldContainer;
+        let mut message = DynamicMessage::new("test.Message".to_string());
+        let mut map_container = MapFieldContainer::new();
+        map_container
+            .insert(1, SingularField::Simple(SimpleField::Int32(2)))
+            .expect("Failed to insert value");
+        message.add_field(1, DynamicMessageField::Map(MapField::Int32(map_container))).unwrap();
+
+        let bytes = message.write_to_bytes().expect("Failed to serialize message to bytes");
+        // Tag: 0x0A, Length: 4, Key: 08 01, Value: 10 02
+        assert_eq!(bytes, vec![0x0A, 0x04, 0x08, 0x01, 0x10, 0x02]);
     }
 }
