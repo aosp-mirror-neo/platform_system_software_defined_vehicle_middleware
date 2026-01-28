@@ -629,6 +629,15 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_OkMakesSubscriptionActiveAndAccept
 
     EXPECT_TRUE(client_->Subscriptions().at(kTestTopicName).is_active);
 
+    // Verify that topic has been marked ready -- on-ready callback fires on
+    // registration.
+    std::optional<::sdv::SdvStatusCode> on_ready_result;
+    auto topic = topic_manager_.FindTopic(kTestTopicName, /*local_only*/ false);
+    ASSERT_TRUE(topic);
+    topic->RegisterOnReadyCallback([&](auto status) { on_ready_result = status; });
+    ASSERT_TRUE(on_ready_result);
+    EXPECT_EQ(*on_ready_result, ::sdv::SdvStatusCode::kOk);
+
     EnqueueTestTopicMessagesForReceive({123, 456});
 
     WaitForConditionOrTimeout(

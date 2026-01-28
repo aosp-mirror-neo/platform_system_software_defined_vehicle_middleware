@@ -271,6 +271,7 @@ cc_test {
     test_options: {
         unit_test: true,
     },
+    defaults: ["dt_agent_defaults"],
     local_include_dirs: ["src"],
     shared_libs: [
         "google.sdv.data_tunnel-V2-ndk",
