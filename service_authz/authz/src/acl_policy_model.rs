@@ -23,6 +23,8 @@ use std::collections::HashSet;
 use sdv_authz_policy::Acl;
 use sdv_authz_policy_proto_rust::acl_policy::AclPolicy as AclPolicyProto;
 #[cfg(feature = "permissions")]
+use sdv_comms::sd::UnitType;
+#[cfg(feature = "permissions")]
 use sdv_comms_id::names::ChannelName;
 use sdv_comms_id::names::{ServiceUnitName, UnitTypeName};
 
@@ -36,13 +38,13 @@ pub struct AclPolicyModel {
     unit_types_acls: HashMap<UnitTypeName, Vec<Acl>>,
 
     #[cfg(feature = "permissions")]
-    pub(crate) publish_permissions: HashSet<(UnitTypeName, Option<ChannelName>)>,
+    pub(crate) publish_permissions: HashSet<(UnitType, Option<ChannelName>)>,
     #[cfg(feature = "permissions")]
-    pub(crate) subscribe_permissions: HashSet<(UnitTypeName, Option<ChannelName>)>,
+    pub(crate) subscribe_permissions: HashSet<(UnitType, Option<ChannelName>)>,
     #[cfg(feature = "permissions")]
-    pub(crate) serve_permissions: HashSet<(UnitTypeName, Option<ServiceUnitName>)>,
+    pub(crate) serve_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
     #[cfg(feature = "permissions")]
-    pub(crate) call_permissions: HashSet<(UnitTypeName, Option<ServiceUnitName>)>,
+    pub(crate) call_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
 }
 
 impl AclPolicyModel {
@@ -68,10 +70,10 @@ impl AclPolicyModel {
     pub(crate) fn new_with_permissions(
         service_units_acls: HashMap<ServiceUnitName, Vec<Acl>>,
         unit_types_acls: HashMap<UnitTypeName, Vec<Acl>>,
-        publish_permissions: HashSet<(UnitTypeName, Option<ChannelName>)>,
-        subscribe_permissions: HashSet<(UnitTypeName, Option<ChannelName>)>,
-        serve_permissions: HashSet<(UnitTypeName, Option<ServiceUnitName>)>,
-        call_permissions: HashSet<(UnitTypeName, Option<ServiceUnitName>)>,
+        publish_permissions: HashSet<(UnitType, Option<ChannelName>)>,
+        subscribe_permissions: HashSet<(UnitType, Option<ChannelName>)>,
+        serve_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
+        call_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
     ) -> AclPolicyModel {
         AclPolicyModel {
             service_units_acls,
@@ -107,25 +109,25 @@ impl AclPolicyModel {
     }
 
     #[cfg(feature = "permissions")]
-    pub fn can_publish(&self, publication_type: &UnitTypeName, channel: &ChannelName) -> bool {
+    pub fn can_publish(&self, publication_type: &UnitType, channel: &ChannelName) -> bool {
         self.publish_permissions.contains(&(publication_type.clone(), Some(channel.clone())))
             || self.publish_permissions.contains(&(publication_type.clone(), None))
     }
 
     #[cfg(feature = "permissions")]
-    pub fn can_subscribe(&self, publication_type: &UnitTypeName, channel: &ChannelName) -> bool {
+    pub fn can_subscribe(&self, publication_type: &UnitType, channel: &ChannelName) -> bool {
         self.subscribe_permissions.contains(&(publication_type.clone(), Some(channel.clone())))
             || self.subscribe_permissions.contains(&(publication_type.clone(), None))
     }
 
     #[cfg(feature = "permissions")]
-    pub fn can_serve(&self, server_type: &UnitTypeName, service_unit: &ServiceUnitName) -> bool {
+    pub fn can_serve(&self, server_type: &UnitType, service_unit: &ServiceUnitName) -> bool {
         self.serve_permissions.contains(&(server_type.clone(), Some(service_unit.clone())))
             || self.serve_permissions.contains(&(server_type.clone(), None))
     }
 
     #[cfg(feature = "permissions")]
-    pub fn can_call(&self, server_type: &UnitTypeName, service_unit: &ServiceUnitName) -> bool {
+    pub fn can_call(&self, server_type: &UnitType, service_unit: &ServiceUnitName) -> bool {
         self.call_permissions.contains(&(server_type.clone(), Some(service_unit.clone())))
             || self.call_permissions.contains(&(server_type.clone(), None))
     }
@@ -243,25 +245,25 @@ mod tests {
         let proto: AclPolicyProto = text_format::parse_from_str(
             r#"
             publish {
-                publication_type: "TirePressureTopic"
+                publication_type: "test.package.TirePressureTopic"
                 channel_name: "front_left"
             }
             publish {
-                publication_type: "BrakeTopic"
+                publication_type: "test.package.BrakeTopic"
             }
             subscribe {
-                publication_type: "TemperatureTopic"
+                publication_type: "test.package.TemperatureTopic"
                 channel_name: "cabin"
             }
             serve {
-                server_type: "HvacServer"
+                server_type: "test.package.HvacServer"
                 service_unit_name: "hvac-controller"
             }
             serve {
-                server_type: "MediaServer"
+                server_type: "test.package.MediaServer"
             }
             call {
-                server_type: "NavServer"
+                server_type: "test.package.NavServer"
                 service_unit_name: "nav-system"
             }
         "#,
@@ -270,15 +272,15 @@ mod tests {
 
         let acl_policy = AclPolicyModel::try_from(proto).unwrap();
 
-        let tire_topic = UnitTypeName::from_str("TirePressureTopic").unwrap();
-        let brake_topic = UnitTypeName::from_str("BrakeTopic").unwrap();
-        let temp_topic = UnitTypeName::from_str("TemperatureTopic").unwrap();
+        let tire_topic = UnitType::from_str("test.package.TirePressureTopic").unwrap();
+        let brake_topic = UnitType::from_str("test.package.BrakeTopic").unwrap();
+        let temp_topic = UnitType::from_str("test.package.TemperatureTopic").unwrap();
         let hvac_unit = ServiceUnitName::from_str("hvac-controller").unwrap();
-        let hvac_server = UnitTypeName::from_str("HvacServer").unwrap();
-        let media_server = UnitTypeName::from_str("MediaServer").unwrap();
+        let hvac_server = UnitType::from_str("test.package.HvacServer").unwrap();
+        let media_server = UnitType::from_str("test.package.MediaServer").unwrap();
         let any_media_unit = ServiceUnitName::from_str("any-media-unit").unwrap();
         let nav_unit = ServiceUnitName::from_str("nav-system").unwrap();
-        let nav_server = UnitTypeName::from_str("NavServer").unwrap();
+        let nav_server = UnitType::from_str("test.package.NavServer").unwrap();
         let front_left = ChannelName::from_str("front_left").unwrap();
         let cabin = ChannelName::from_str("cabin").unwrap();
         let rear_right = ChannelName::from_str("rear_right").unwrap();
@@ -296,7 +298,7 @@ mod tests {
 
         // 3. Test Negative Logic (Denial)
         assert!(!acl_policy.can_publish(&tire_topic, &rear_right));
-        assert!(!acl_policy.can_subscribe(&hvac_server, &cabin));
+        assert!(!acl_policy.can_subscribe(&tire_topic, &cabin));
         assert!(!acl_policy.can_serve(&hvac_server, &nav_unit));
         assert!(!acl_policy.can_call(&nav_server, &hvac_unit));
     }
@@ -320,11 +322,11 @@ mod tests {
 
             # 2. Permission Definitions
             publish {
-                publication_type: "MyTopic"
+                publication_type: "test.package.MyTopic"
                 channel_name: "ch1"
             }
             serve {
-                server_type: "MyServer"
+                server_type: "test.package.MyServer"
                 service_unit_name: "my-service-unit"
             }
         "#,
@@ -343,11 +345,11 @@ mod tests {
 
         // Check Permissions logic.
         assert!(acl_policy.can_publish(
-            &UnitTypeName::from_str("MyTopic").unwrap(),
+            &UnitType::from_str("test.package.MyTopic").unwrap(),
             &ChannelName::from_str("ch1").unwrap()
         ));
         assert!(acl_policy.can_serve(
-            &UnitTypeName::from_str("MyServer").unwrap(),
+            &UnitType::from_str("test.package.MyServer").unwrap(),
             &ServiceUnitName::from_str("my-service-unit").unwrap()
         ));
     }

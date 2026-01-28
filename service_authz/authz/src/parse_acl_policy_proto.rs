@@ -33,7 +33,8 @@ use sdv_authz_policy_proto_rust::acl_policy::{
     CallPermission as CallPermissionProto, PublishPermission as PublishPermissionProto,
     ServePermission as ServePermissionProto, SubscribePermission as SubscribePermissionProto,
 };
-
+#[cfg(feature = "permissions")]
+use sdv_comms::sd::UnitType;
 #[cfg(feature = "permissions")]
 use sdv_comms_id::names::ChannelName;
 use sdv_comms_id::names::{ServiceUnitName, UnitTypeName};
@@ -73,10 +74,10 @@ pub(crate) fn parse_acl_policy_from_proto(
 #[cfg(feature = "permissions")]
 fn parse_publish_permissions(
     proto_perms: &[PublishPermissionProto],
-) -> Result<HashSet<(UnitTypeName, Option<ChannelName>)>, anyhow::Error> {
+) -> Result<HashSet<(UnitType, Option<ChannelName>)>, anyhow::Error> {
     let mut set = HashSet::new();
     for perm in proto_perms {
-        let type_name = UnitTypeName::from_str(&perm.publication_type)
+        let type_name = UnitType::from_str(&perm.publication_type)
             .context("Failed to parse publication_type in PublishPermission")?;
         let channel_name = if perm.channel_name.is_empty() {
             None
@@ -95,10 +96,10 @@ fn parse_publish_permissions(
 #[cfg(feature = "permissions")]
 fn parse_subscribe_permissions(
     proto_perms: &[SubscribePermissionProto],
-) -> Result<HashSet<(UnitTypeName, Option<ChannelName>)>, anyhow::Error> {
+) -> Result<HashSet<(UnitType, Option<ChannelName>)>, anyhow::Error> {
     let mut set = HashSet::new();
     for perm in proto_perms {
-        let type_name = UnitTypeName::from_str(&perm.publication_type)
+        let type_name = UnitType::from_str(&perm.publication_type)
             .context("Failed to parse publication_type in SubscribePermission")?;
         let channel_name = if perm.channel_name.is_empty() {
             None
@@ -117,7 +118,7 @@ fn parse_subscribe_permissions(
 #[cfg(feature = "permissions")]
 fn parse_serve_permissions(
     proto_perms: &[ServePermissionProto],
-) -> Result<HashSet<(UnitTypeName, Option<ServiceUnitName>)>, anyhow::Error> {
+) -> Result<HashSet<(UnitType, Option<ServiceUnitName>)>, anyhow::Error> {
     let mut set = HashSet::new();
     for perm in proto_perms {
         let service_unit = if perm.service_unit_name.is_empty() {
@@ -128,7 +129,7 @@ fn parse_serve_permissions(
                     .context("Failed to parse service_unit_name in ServePermission")?,
             )
         };
-        let type_name = UnitTypeName::from_str(&perm.server_type)
+        let type_name = UnitType::from_str(&perm.server_type)
             .context("Failed to parse server_type in ServePermission")?;
 
         set.insert((type_name, service_unit));
@@ -139,7 +140,7 @@ fn parse_serve_permissions(
 #[cfg(feature = "permissions")]
 fn parse_call_permissions(
     proto_perms: &[CallPermissionProto],
-) -> Result<HashSet<(UnitTypeName, Option<ServiceUnitName>)>, anyhow::Error> {
+) -> Result<HashSet<(UnitType, Option<ServiceUnitName>)>, anyhow::Error> {
     let mut set = HashSet::new();
     for perm in proto_perms {
         let service_unit = if perm.service_unit_name.is_empty() {
@@ -150,7 +151,7 @@ fn parse_call_permissions(
                     .context("Failed to parse service_unit_name in CallPermission")?,
             )
         };
-        let type_name = UnitTypeName::from_str(&perm.server_type)
+        let type_name = UnitType::from_str(&perm.server_type)
             .context("Failed to parse server_type in CallPermission")?;
 
         set.insert((type_name, service_unit));
@@ -330,19 +331,19 @@ mod tests {
         let proto: AclPolicyProto = text_format::parse_from_str(
             r#"
             publish {
-                publication_type: "TopicA"
+                publication_type: "test.package.TopicA"
                 channel_name: "ch1"
             }
             publish {
-                publication_type: "TopicA"
+                publication_type: "test.package.TopicA"
                 channel_name: "ch2"
             }
             subscribe {
-                publication_type: "TopicB"
+                publication_type: "test.package.TopicB"
                 channel_name: "ch1"
             }
             subscribe {
-                publication_type: "TopicC"
+                publication_type: "test.package.TopicC"
             }
         "#,
         )
@@ -350,9 +351,9 @@ mod tests {
 
         let acl_policy = parse_acl_policy_from_proto(proto).unwrap();
 
-        let topic_a = UnitTypeName::from_str("TopicA").unwrap();
-        let topic_b = UnitTypeName::from_str("TopicB").unwrap();
-        let topic_c = UnitTypeName::from_str("TopicC").unwrap();
+        let topic_a = UnitType::from_str("test.package.TopicA").unwrap();
+        let topic_b = UnitType::from_str("test.package.TopicB").unwrap();
+        let topic_c = UnitType::from_str("test.package.TopicC").unwrap();
         let ch1 = ChannelName::from_str("ch1").unwrap();
         let ch2 = ChannelName::from_str("ch2").unwrap();
 
