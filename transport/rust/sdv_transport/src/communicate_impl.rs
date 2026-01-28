@@ -69,6 +69,7 @@ impl Communicate for SdvComms {
             ),
         );
         metadata.set_message_count(attributes.get_metadata().get_message_count());
+        metadata.set_channel(attributes.get_channel_name());
 
         let mut unit_registration_args = UnitRegistrationArgs::new();
         unit_registration_args.set_unit_type(&unit_type);
@@ -88,6 +89,12 @@ impl Communicate for SdvComms {
         Ok(Box::new(SdvPublisher::new(dt_publisher)))
     }
 
+    #[allow(useless_deprecated)]
+    #[allow(unused_attributes)]
+    #[deprecated(
+        since = "2.0.0",
+        note = "Channel-based subscribe methods are called instead, e.g. `create_subscribe_handle`"
+    )]
     async fn find_publication(&self, attributes: &UnitQuery) -> SdvResult<Arc<dyn Publication>> {
         let sd = ServiceDiscoveryManager::new(self.context);
         let service_unit = match attributes {
@@ -119,6 +126,12 @@ impl Communicate for SdvComms {
         Ok(Arc::new(SdvPublication::new(self.context, service_unit)))
     }
 
+    #[allow(useless_deprecated)]
+    #[allow(unused_attributes)]
+    #[deprecated(
+        since = "2.0.0",
+        note = "Channel-based subscribe methods are called instead, e.g. `create_subscribe_handle`"
+    )]
     async fn subscribe_by_type(
         &self,
         type_name: &TypeName,
@@ -132,6 +145,26 @@ impl Communicate for SdvComms {
         let dt_subscriber = DtSubscriber::create_for_multipub(
             self.context,
             &unit_type,
+            DtSubscriberOptions { fetch_last_message: options.read_on_subscribe() },
+        )
+        .await?;
+        Ok(Box::new(SdvSubscriber::new(dt_subscriber)))
+    }
+
+    async fn create_subscribe_handle(
+        &self,
+        type_name: &TypeName,
+        channel_name: &str,
+        options: &SubscribeOptions,
+    ) -> SdvResult<Box<dyn Subscribe>> {
+        let unit_type = UnitType::builder()
+            .set_sdv_package_name(type_name.get_package_name())
+            .set_unit_type_name(type_name.get_type_name())
+            .build()?;
+        let dt_subscriber = DtSubscriber::create_for_channel(
+            self.context,
+            &unit_type,
+            channel_name,
             DtSubscriberOptions { fetch_last_message: options.read_on_subscribe() },
         )
         .await?;
@@ -390,6 +423,7 @@ mod test {
     const TYPE_NAME: &str = "Pressure";
     const EVENT_STREAM_TIMEOUT: Duration = Duration::from_millis(500);
     const HISTORY_PROCESSING_DURATION: Duration = Duration::from_millis(200);
+    const CHANNEL_CREATION_DURATION: Duration = Duration::from_millis(200);
 
     async fn create_pressure_publisher(
         comms: Arc<dyn Communicate>,
@@ -402,25 +436,27 @@ mod test {
             .build()
             .unwrap();
 
-        new_pressure_publisher(comms, service_unit_name, type_name, pub_metadata).await
+        new_pressure_publisher(comms, service_unit_name, type_name, None, pub_metadata).await
     }
 
     async fn new_pressure_publisher(
         comms: Arc<dyn Communicate>,
         service_unit_name: &str,
         type_name: Option<&str>,
+        channel_name: Option<&str>,
         metadata: PublisherMetadata,
     ) -> Publisher<Pressure> {
-        new_publisher::<Pressure>(comms, service_unit_name, type_name, metadata).await
+        new_publisher::<Pressure>(comms, service_unit_name, type_name, channel_name, metadata).await
     }
 
     async fn new_publisher<T: protobuf::Message>(
         comms: Arc<dyn Communicate>,
         service_unit_name: &str,
         type_name: Option<&str>,
+        channel_name: Option<&str>,
         metadata: PublisherMetadata,
     ) -> Publisher<T> {
-        let attr = PublisherAttributes::builder()
+        let mut builder = PublisherAttributes::builder()
             .publication_name(service_unit_name)
             .type_name(
                 TypeName::builder()
@@ -430,9 +466,13 @@ mod test {
                     .build()
                     .unwrap(),
             )
-            .metadata(metadata)
-            .build()
-            .unwrap();
+            .metadata(metadata);
+
+        if let Some(channel) = channel_name {
+            builder = builder.channel_name(channel);
+        }
+
+        let attr = builder.build().unwrap();
 
         Publisher::<T>::new(comms.create_publish(&attr).await.unwrap())
     }
@@ -1160,6 +1200,7 @@ mod test {
             comms.clone(),
             service_unit_name_without_msg_metadata,
             None,
+            None,
             pub_metadata_without_msg_metadata,
         )
         .await;
@@ -1180,6 +1221,7 @@ mod test {
         let _pub_with_msg_metadata = new_pressure_publisher(
             comms.clone(),
             service_unit_name_with_msg_metadata,
+            None,
             None,
             pub_metadata_with_msg_metadata,
         )
@@ -2065,9 +2107,14 @@ mod test {
             .build()
             .unwrap();
 
-        let publisher =
-            new_publisher::<VariableString>(comms.clone(), service_unit_name, None, pub_metadata)
-                .await;
+        let publisher = new_publisher::<VariableString>(
+            comms.clone(),
+            service_unit_name,
+            None,
+            None,
+            pub_metadata,
+        )
+        .await;
 
         // WHEN publishing two message with total size
         // being 2 * (MESSAGE_SIZE + header_size).
@@ -2088,5 +2135,67 @@ mod test {
             assert_eq!(e.status_code(), SdvStatusCode::InvalidArgument);
             assert!(e.to_string().contains("exceeds maximum allowed size"));
         });
+    }
+
+    #[tokio::test]
+    async fn test_sdv_pub_sub_channel() {
+        // Channels depend on a SD listener that needs a running binder thread.
+        binder::ProcessState::start_thread_pool();
+        let bundle_name: &str = "PubsubChannel";
+        let channel_name: &str = "pressure-channel";
+        let type_name: &str = "ChannelPressure";
+
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{VM}:{PACKAGE}.{bundle_name}/sample"))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = Arc::new(SdvComms { context });
+
+        // GIVEN two publishers on the same channel.
+        let pub_one = new_pressure_publisher(
+            comms.clone(),
+            "pub-one",
+            Some(type_name),
+            Some(channel_name),
+            PublisherMetadata::builder().message_count(10).message_size(5).build().unwrap(),
+        )
+        .await;
+        let pub_two = new_pressure_publisher(
+            comms.clone(),
+            "pub-two",
+            Some(type_name),
+            Some(channel_name),
+            PublisherMetadata::builder().message_count(10).message_size(5).build().unwrap(),
+        )
+        .await;
+
+        // AND GIVEN a subscriber on the same channel.
+        let fq_type_name = TypeName::builder()
+            .package_name(PACKAGE)
+            .bundle_name(OWNING_BUNDLE_NAME)
+            .type_name(type_name)
+            .build()
+            .unwrap();
+        let subscriber = Subscriber::<Pressure>::new(
+            comms
+                .create_subscribe_handle(&fq_type_name, channel_name, &SubscribeOptions::default())
+                .await
+                .unwrap(),
+        );
+
+        // Needed for the channel reader to be created on a separate process.
+        tokio::time::sleep(CHANNEL_CREATION_DURATION).await;
+
+        // WHEN messages are published from both publishers.
+        pub_one.publish(&Pressure { pressure: 1234, ..Default::default() }).unwrap();
+        pub_two.publish(&Pressure { pressure: 5678, ..Default::default() }).unwrap();
+
+        // THEN the subscriber can read messages from both publishers.
+        let mut read = subscriber.read_next_messages(2).unwrap();
+        assert_eq!(read.len(), 2);
+        // Ordering of messages from different contributing topics is not guaranteed.
+        read.sort_by_key(|x| x.pressure);
+        assert_eq!(read[0].pressure, 1234);
+        assert_eq!(read[1].pressure, 5678);
     }
 }

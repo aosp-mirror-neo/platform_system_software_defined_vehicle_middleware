@@ -21,7 +21,7 @@
 /// the exact behavior of SdvComms. It's a naive implementation of a (process-)local comms stack in order to
 /// compile, run, and test the sdv_mw_rs_comms crate.
 use crate::{
-    pubsub_impl::LocalPublication,
+    pubsub_impl::{LocalPublication, LocalSubscriber},
     {LocalMessageQueue, LocalPublisher},
 };
 use async_trait::async_trait;
@@ -41,9 +41,12 @@ use std::{
 
 #[derive(Clone)]
 pub struct LocalComms {
+    // Channel -> MessageQueue
     msg_queues: Arc<Mutex<HashMap<String, Arc<Mutex<LocalMessageQueue>>>>>,
+    // Channel -> List of Listener
     registration_streams: Arc<Mutex<HashMap<String, Vec<mpsc::Sender<Availability>>>>>,
-    publishers: Arc<Mutex<HashSet<String>>>,
+    // Channel -> Set of PublishersName
+    publishers: Arc<Mutex<HashMap<String, HashSet<String>>>>,
 }
 
 impl LocalComms {
@@ -51,21 +54,52 @@ impl LocalComms {
         Self {
             msg_queues: Arc::new(Mutex::new(HashMap::new())),
             registration_streams: Arc::new(Mutex::new(HashMap::new())),
-            publishers: Arc::new(Mutex::new(HashSet::new())), // Initialize the publishers set
+            publishers: Arc::new(Mutex::new(HashMap::new())), // Initialize the publishers map
         }
     }
 
-    pub fn send_availability_event(&self, publication_name: &str, availability: Availability) {
+    pub fn send_availability_event(&self, channel_name: &str, availability: Availability) {
         let mut registration_streams = self.registration_streams.lock().unwrap();
-        if let Some(streams) = registration_streams.get_mut(publication_name) {
+        if let Some(streams) = registration_streams.get_mut(channel_name) {
             streams.retain_mut(|tx| tx.try_send(availability.clone()).is_ok());
         }
-        if availability == Availability::Unavailable {
-            let mut msg_queues = self.msg_queues.lock().unwrap();
-            msg_queues.remove(&publication_name.to_owned());
-            let mut publishers = self.publishers.lock().unwrap();
-            publishers.remove(publication_name);
+    }
+
+    pub fn publisher_added(&self, channel_name: &str, publisher_name: &str) {
+        let mut publishers = self.publishers.lock().unwrap();
+        publishers.entry(channel_name.to_string()).or_default().insert(publisher_name.to_string());
+        self.send_availability_event(channel_name, Availability::Available);
+    }
+
+    pub fn publisher_removed(&self, channel_name: &str, publisher_name: &str) {
+        let mut publishers = self.publishers.lock().unwrap();
+        let mut channel_empty = false;
+        if let Some(channel_publishers) = publishers.get_mut(channel_name) {
+            channel_publishers.remove(publisher_name);
+            if channel_publishers.is_empty() {
+                channel_empty = true;
+            }
         }
+
+        self.send_availability_event(channel_name, Availability::Unavailable);
+        if channel_empty {
+            publishers.remove(channel_name);
+            let mut msg_queues = self.msg_queues.lock().unwrap();
+            msg_queues.remove(channel_name);
+        }
+    }
+
+    pub fn find_channel_queue_for_publisher(&self, publisher_name: &str) -> Option<String> {
+        let publishers = self.publishers.lock().unwrap();
+        let mut channel_name = None;
+        for (channel, pubs) in publishers.iter() {
+            if pubs.contains(publisher_name) {
+                channel_name = Some(channel.clone());
+                break;
+            }
+        }
+
+        channel_name
     }
 }
 
@@ -81,33 +115,35 @@ impl Communicate for LocalComms {
         &self,
         attributes: &PublisherAttributes,
     ) -> SdvResult<Box<dyn Publish>> {
-        let publication_name = attributes.get_publication_name().to_string();
-
-        // Acquire the lock for publishers
-        let mut publishers = self.publishers.lock().unwrap();
-
-        // Check if a publisher with the same name already exists
-        if publishers.contains(&publication_name) {
-            return Err(SdvStatus::new(SdvStatusCode::AlreadyExists));
-        }
+        let channel_name = attributes.get_channel_name().to_string();
+        let publisher_name = attributes.get_publication_name().to_string();
 
         let mut msg_queues = self.msg_queues.lock().unwrap();
         let msg_q = msg_queues
-            .entry(publication_name.clone())
+            .entry(channel_name.clone())
             .or_insert_with(|| Arc::new(Mutex::new(LocalMessageQueue::new())));
-        msg_q.lock().unwrap().register_publisher(attributes.get_metadata().get_message_count());
 
-        // Insert the new publisher name into the set
-        publishers.insert(publication_name.clone());
+        // Let's assume the first publisher sets the queue size.
+        if self.publishers.lock().unwrap().get(&channel_name).map_or(true, |s| s.is_empty()) {
+            msg_q.lock().unwrap().register_publisher(attributes.get_metadata().get_message_count());
+        }
 
-        // Pass LocalComms instance and publication name to LocalPublisher
+        self.publisher_added(&channel_name, &publisher_name);
+
         Ok(Box::new(LocalPublisher::new(
             Arc::new(self.clone()), // Clone the Arc to create a new reference
             msg_q.clone(),
-            publication_name,
+            channel_name,
+            publisher_name,
         )))
     }
 
+    #[allow(useless_deprecated)]
+    #[allow(unused_attributes)]
+    #[deprecated(
+        since = "2.0.0",
+        note = "Channel-based subscribe methods are called instead, e.g. `create_subscribe_handle`"
+    )]
     async fn find_publication(&self, attributes: &UnitQuery) -> SdvResult<Arc<dyn Publication>> {
         let publication_name = match &attributes {
             UnitQuery::Name(name) => name.get_service_unit_name().to_owned(),
@@ -120,10 +156,16 @@ impl Communicate for LocalComms {
             }
         };
 
-        let msg_queues = self.msg_queues.lock().unwrap();
-        match msg_queues.get(&publication_name) {
-            Some(q) => Ok(Arc::new(LocalPublication::new(q.clone()))),
-            None => Err(SdvStatus::new(SdvStatusCode::Unavailable)),
+        let channel_name = self.find_channel_queue_for_publisher(&publication_name);
+
+        if let Some(channel_name) = channel_name {
+            let msg_queues = self.msg_queues.lock().unwrap();
+            match msg_queues.get(&channel_name) {
+                Some(q) => Ok(Arc::new(LocalPublication::new(q.clone()))),
+                None => Err(SdvStatus::new(SdvStatusCode::Unavailable)),
+            }
+        } else {
+            Err(SdvStatus::new(SdvStatusCode::Unavailable))
         }
     }
 
@@ -144,26 +186,59 @@ impl Communicate for LocalComms {
             }
         };
 
-        let msg_queues = self.msg_queues.lock().unwrap();
-        let availability = if msg_queues.contains_key(&publication_name.to_owned()) {
-            Availability::Available
+        let mut channel_name = self.find_channel_queue_for_publisher(&publication_name);
+
+        let publishers = self.publishers.lock().unwrap();
+        let availability = if let Some(ref channel) = channel_name {
+            if publishers.get(channel).is_some_and(|s| !s.is_empty()) {
+                Availability::Available
+            } else {
+                Availability::Unavailable
+            }
         } else {
             Availability::Unavailable
         };
 
         let _ = tx.try_send(availability);
 
-        self.registration_streams.lock().unwrap().entry(publication_name).or_default().push(tx); // Move the original tx here
+        if channel_name.is_none() {
+            // if the channel does not exist, let's register this on the test default channel
+            channel_name = Some("pressure-channel".to_string())
+        }
+        let channel_name = channel_name.expect("Expecting channel name to be set");
+        self.registration_streams.lock().unwrap().entry(channel_name).or_default().push(tx);
 
         Ok(Box::pin(rx))
     }
 
+    #[allow(useless_deprecated)]
+    #[allow(unused_attributes)]
+    #[deprecated(
+        since = "2.0.0",
+        note = "Channel-based subscribe methods are called instead, e.g. `create_subscribe_handle`"
+    )]
     async fn subscribe_by_type(
         &self,
         _type_name: &TypeName,
         _options: &SubscribeOptions,
     ) -> SdvResult<Box<dyn Subscribe>> {
         unimplemented!("subscribe by type not implemented")
+    }
+
+    async fn create_subscribe_handle(
+        &self,
+        _type_name: &TypeName,
+        channel_name: &str,
+        options: &SubscribeOptions,
+    ) -> SdvResult<Box<dyn Subscribe>> {
+        let msg_queues = self.msg_queues.lock().unwrap();
+        match msg_queues.get(channel_name) {
+            Some(msg_q_arc) => {
+                let id = msg_q_arc.lock().unwrap().subscribe(options);
+                Ok(Box::new(LocalSubscriber::new(msg_q_arc.clone(), id)))
+            }
+            None => Err(SdvStatus::new(SdvStatusCode::Unavailable)),
+        }
     }
 
     async fn observe_by_type(
@@ -215,7 +290,8 @@ mod test {
     const VM: &str = "vm-name";
     const BUNDLE: &str = "Bundle";
     const TYPE: &str = "Pressure";
-    static PRESSURE_PUBLICATION: &str = "pressure-publication";
+    static DEFAULT_PUBLISHER_NAME: &str = "pressure-publication";
+    static DEFAULT_CHANNEL_NAME: &str = "pressure-channel";
     const DEFAULT_COUNT: u32 = 10;
 
     fn get_pressure_unit_name() -> UnitName {
@@ -223,7 +299,7 @@ mod test {
             .vm_name(VM)
             .package_name(PACKAGE)
             .bundle_name(BUNDLE)
-            .service_unit_name(PRESSURE_PUBLICATION)
+            .service_unit_name(DEFAULT_PUBLISHER_NAME)
             .build()
             .unwrap()
     }
@@ -237,13 +313,14 @@ mod test {
             .unwrap()
     }
 
-    fn get_pressure_pub_attr(message_count: u32) -> PublisherAttributes {
+    fn get_pressure_pub_attr(publisher_name: &str, message_count: u32) -> PublisherAttributes {
         let pub_metadata =
             PublisherMetadata::builder().message_count(message_count).build().unwrap();
         PublisherAttributes::builder()
-            .publication_name(PRESSURE_PUBLICATION)
+            .publication_name(publisher_name)
             .type_name(get_pressure_type_name())
             .metadata(pub_metadata)
+            .channel_name(DEFAULT_CHANNEL_NAME)
             .build()
             .unwrap()
     }
@@ -256,7 +333,10 @@ mod test {
     async fn test_publish_before_subscribe() {
         let comms = LocalComms::new();
         let publisher = Publisher::<Pressure>::new(
-            comms.create_publish(&get_pressure_pub_attr(DEFAULT_COUNT)).await.unwrap(),
+            comms
+                .create_publish(&get_pressure_pub_attr(DEFAULT_PUBLISHER_NAME, DEFAULT_COUNT))
+                .await
+                .unwrap(),
         );
 
         // GIVEN a message is published before calling `subscribe`
@@ -265,9 +345,15 @@ mod test {
         let _ = publisher.publish(&pressure_msg_1);
 
         // WHEN the subscriber subscribes and reads_next_message
-        let publication = comms.find_publication(&query_args()).await.unwrap();
         let subscriber = Subscriber::<Pressure>::new(
-            publication.subscribe(&SubscribeOptions::default()).await.unwrap(),
+            comms
+                .create_subscribe_handle(
+                    &get_pressure_type_name(),
+                    DEFAULT_CHANNEL_NAME,
+                    &SubscribeOptions::default(),
+                )
+                .await
+                .unwrap(),
         );
         // THEN no messages are returned
         assert!(subscriber.read_next_messages(1).unwrap().is_empty());
@@ -285,11 +371,20 @@ mod test {
     async fn test_read_published_messages() {
         let comms = LocalComms::new();
         let publisher = Publisher::<Pressure>::new(
-            comms.create_publish(&get_pressure_pub_attr(DEFAULT_COUNT)).await.unwrap(),
+            comms
+                .create_publish(&get_pressure_pub_attr(DEFAULT_PUBLISHER_NAME, DEFAULT_COUNT))
+                .await
+                .unwrap(),
         );
-        let publication = comms.find_publication(&query_args()).await.unwrap();
         let subscriber = Subscriber::<Pressure>::new(
-            publication.subscribe(&SubscribeOptions::default()).await.unwrap(),
+            comms
+                .create_subscribe_handle(
+                    &get_pressure_type_name(),
+                    DEFAULT_CHANNEL_NAME,
+                    &SubscribeOptions::default(),
+                )
+                .await
+                .unwrap(),
         );
 
         // GIVEN we publish 3 messages:
@@ -324,7 +419,10 @@ mod test {
     async fn test_read_latest_message() {
         let comms = LocalComms::new();
         let publisher = Publisher::<Pressure>::new(
-            comms.create_publish(&get_pressure_pub_attr(DEFAULT_COUNT)).await.unwrap(),
+            comms
+                .create_publish(&get_pressure_pub_attr(DEFAULT_PUBLISHER_NAME, DEFAULT_COUNT))
+                .await
+                .unwrap(),
         );
 
         // GIVEN 2 messages are published from a publisher:
@@ -351,7 +449,13 @@ mod test {
         // GIVEN A Publisher with message_count (queue size) of 1
         const PUBLICATION_QUEUE_SIZE: u32 = 1;
         let publisher = Publisher::<Pressure>::new(
-            comms.create_publish(&get_pressure_pub_attr(PUBLICATION_QUEUE_SIZE)).await.unwrap(),
+            comms
+                .create_publish(&get_pressure_pub_attr(
+                    DEFAULT_PUBLISHER_NAME,
+                    PUBLICATION_QUEUE_SIZE,
+                ))
+                .await
+                .unwrap(),
         );
 
         // WHEN we enable subscriber history with a message count of 3:
@@ -397,7 +501,10 @@ mod test {
     async fn test_data_on_subscribe() {
         let comms = LocalComms::new();
         let publisher = Publisher::<Pressure>::new(
-            comms.create_publish(&get_pressure_pub_attr(DEFAULT_COUNT)).await.unwrap(),
+            comms
+                .create_publish(&get_pressure_pub_attr(DEFAULT_PUBLISHER_NAME, DEFAULT_COUNT))
+                .await
+                .unwrap(),
         );
 
         // GIVEN 2 messages are published from a publisher:
@@ -410,10 +517,13 @@ mod test {
         let _ = publisher.publish_batch(&[pressure_msg_1, pressure_msg_2]);
 
         // WHEN creating a subscriber and calling .subscribe with data_on_subscribe enabled:
-        let publication = comms.find_publication(&query_args()).await.unwrap();
         let subscriber = Subscriber::<Pressure>::new(
-            publication
-                .subscribe(&SubscribeOptions::builder().read_on_subscribe(true).build().unwrap())
+            comms
+                .create_subscribe_handle(
+                    &get_pressure_type_name(),
+                    DEFAULT_CHANNEL_NAME,
+                    &SubscribeOptions::builder().read_on_subscribe(true).build().unwrap(),
+                )
                 .await
                 .unwrap(),
         );
@@ -430,7 +540,10 @@ mod test {
     async fn test_observer() {
         let comms = LocalComms::new();
         let publisher = Publisher::<Pressure>::new(
-            comms.create_publish(&get_pressure_pub_attr(DEFAULT_COUNT)).await.unwrap(),
+            comms
+                .create_publish(&get_pressure_pub_attr(DEFAULT_PUBLISHER_NAME, DEFAULT_COUNT))
+                .await
+                .unwrap(),
         );
 
         // GIVEN we observe a publication:
@@ -479,7 +592,10 @@ mod test {
 
         // WHEN creating a publisher using SdvComms.
         let publisher = Publisher::<Pressure>::new(
-            comms.create_publish(&get_pressure_pub_attr(DEFAULT_COUNT)).await.unwrap(),
+            comms
+                .create_publish(&get_pressure_pub_attr(DEFAULT_PUBLISHER_NAME, DEFAULT_COUNT))
+                .await
+                .unwrap(),
         );
         // THEN the publisher is `Send`.
         assert_send(&publisher);
@@ -510,7 +626,14 @@ mod test {
 
         // WHEN creating a subscriber using SdvComms.
         let subscriber = Subscriber::<Pressure>::new(
-            publication.subscribe(&SubscribeOptions::default()).await.unwrap(),
+            comms
+                .create_subscribe_handle(
+                    &get_pressure_type_name(),
+                    DEFAULT_CHANNEL_NAME,
+                    &SubscribeOptions::default(),
+                )
+                .await
+                .unwrap(),
         );
         // THEN the subscriber is `Send`.
         assert_send(&subscriber);
@@ -579,12 +702,7 @@ mod test {
         // Dropping the publisher to test for the `Unavailable` event
         drop(publisher);
 
-        // WHEN create registration event stream after the publisher was dropped
-        let mut registration_event_stream_created_after_publisher_dropped = comms
-            .create_registration_event_stream(&UnitQuery::Name(get_pressure_unit_name()))
-            .await
-            .unwrap();
-        // THEN unavailable
+        // THEN the channel should become Unavailable
         assert_eq!(
             registration_event_stream_created_at_start.next().await,
             Some(Availability::Unavailable)
@@ -593,9 +711,58 @@ mod test {
             registration_event_stream_created_after_publisher.next().await,
             Some(Availability::Unavailable)
         );
+
+        // WHEN create registration event stream after the publisher was dropped
+        let mut registration_event_stream_created_after_publisher_dropped = comms
+            .create_registration_event_stream(&UnitQuery::Name(get_pressure_unit_name()))
+            .await
+            .unwrap();
+        // THEN unavailable
         assert_eq!(
             registration_event_stream_created_after_publisher_dropped.next().await,
             Some(Availability::Unavailable)
         );
+    }
+
+    #[tokio::test]
+    async fn test_multiple_publishers_same_channel() {
+        let comms = LocalComms::new();
+
+        // GIVEN two publishers on the same channel
+        let publisher1 = Publisher::<Pressure>::new(
+            comms.create_publish(&get_pressure_pub_attr("pub1", DEFAULT_COUNT)).await.unwrap(),
+        );
+        let publisher2 = Publisher::<Pressure>::new(
+            comms.create_publish(&get_pressure_pub_attr("pub2", DEFAULT_COUNT)).await.unwrap(),
+        );
+
+        // AND WHEN a subscriber is created
+        let subscriber = Subscriber::<Pressure>::new(
+            comms
+                .create_subscribe_handle(
+                    &get_pressure_type_name(),
+                    DEFAULT_CHANNEL_NAME,
+                    &SubscribeOptions::default(),
+                )
+                .await
+                .unwrap(),
+        );
+
+        // WHEN publisher1 publishes a message
+        let mut pressure_msg_1 = Pressure::new();
+        pressure_msg_1.pressure = 1234;
+        let _ = publisher1.publish(&pressure_msg_1);
+
+        // AND WHEN publisher2 publishes a message
+        let mut pressure_msg_2 = Pressure::new();
+        pressure_msg_2.pressure = 5678;
+        let _ = publisher2.publish(&pressure_msg_2);
+
+        // THEN the subscriber can read both messages
+        let messages = subscriber.read_next_messages(2).unwrap();
+        assert_eq!(messages.len(), 2);
+        let mut pressures: Vec<u32> = messages.iter().map(|m| m.pressure).collect();
+        pressures.sort();
+        assert_eq!(pressures, vec![1234, 5678]);
     }
 }
