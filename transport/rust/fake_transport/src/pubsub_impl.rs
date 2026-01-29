@@ -25,8 +25,7 @@ use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::Stream;
 use sdv_mw_rs_comms::{
-    Availability, ByteBuffersStream, InstantRead, Publication, Publish, ReadHistory, Subscribe,
-    SubscribeOptions,
+    ByteBuffersStream, InstantRead, Publication, Publish, ReadHistory, Subscribe, SubscribeOptions,
 };
 use sdv_status_rs::{SdvResult, SdvStatus, SdvStatusCode};
 use std::cmp::min;
@@ -37,26 +36,24 @@ use std::sync::{Arc, Mutex};
 pub struct LocalPublisher {
     msg_q: Arc<Mutex<LocalMessageQueue>>,
     comms: Arc<LocalComms>,
-    publication_name: String,
+    channel_name: String,
+    publisher_name: String,
 }
 
 impl LocalPublisher {
     pub fn new(
         comms: Arc<LocalComms>,
         msg_q: Arc<Mutex<LocalMessageQueue>>,
-        publication_name: String,
+        channel_name: String,
+        publisher_name: String,
     ) -> Self {
-        // Send Availability::Available to all registered streams
-        comms.send_availability_event(&publication_name, Availability::Available);
-
-        Self { comms, msg_q, publication_name }
+        Self { comms, msg_q, channel_name, publisher_name }
     }
 }
 
 impl Drop for LocalPublisher {
     fn drop(&mut self) {
-        // Send Availability::Unavailable to all registered streams
-        self.comms.send_availability_event(&self.publication_name, Availability::Unavailable);
+        self.comms.publisher_removed(&self.channel_name, &self.publisher_name);
     }
 }
 
@@ -240,7 +237,7 @@ impl LocalMessageQueue {
         self.message_queue.drain(..drop_count);
     }
 
-    fn subscribe(&mut self, options: &SubscribeOptions) -> usize {
+    pub fn subscribe(&mut self, options: &SubscribeOptions) -> usize {
         // The next published message is the first one for this subscriber
         let mut read_idx = self.message_queue.len();
         if options.read_on_subscribe() && read_idx != 0 {

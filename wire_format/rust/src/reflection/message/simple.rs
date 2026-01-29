@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::reflection::codec::api::protobuf::RpcWriter;
 use crate::reflection::metadata::api::protobuf::ProtobufSimpleType;
 
 /// Dynamic protobuf simple field
@@ -135,11 +136,38 @@ impl SimpleField {
             SimpleField::Enum(_) => ProtobufSimpleType::Enum,
         }
     }
+
+    pub(crate) fn write_simple_field(
+        &self,
+        field_number: u32,
+        writer: &mut RpcWriter,
+    ) -> anyhow::Result<()> {
+        match self {
+            SimpleField::Double(double) => writer.write_double(field_number, *double),
+            SimpleField::Float(float) => writer.write_float(field_number, *float),
+            SimpleField::Int32(int32) => writer.write_int32(field_number, *int32),
+            SimpleField::Int64(int64) => writer.write_int64(field_number, *int64),
+            SimpleField::Uint32(uint32) => writer.write_uint32(field_number, *uint32),
+            SimpleField::Uint64(uint64) => writer.write_uint64(field_number, *uint64),
+            SimpleField::Sint32(sint32) => writer.write_sint32(field_number, *sint32),
+            SimpleField::Sint64(sint64) => writer.write_sint64(field_number, *sint64),
+            SimpleField::Fixed32(fixed32) => writer.write_fixed32(field_number, *fixed32),
+            SimpleField::Fixed64(fixed64) => writer.write_fixed64(field_number, *fixed64),
+            SimpleField::Sfixed32(sfixed32) => writer.write_sfixed32(field_number, *sfixed32),
+            SimpleField::Sfixed64(sfixed64) => writer.write_sfixed64(field_number, *sfixed64),
+            SimpleField::Bool(bool) => writer.write_bool(field_number, *bool),
+            SimpleField::String(string) => writer.write_string(field_number, string),
+            SimpleField::Bytes(bytes) => writer.write_bytes(field_number, bytes),
+            SimpleField::Enum(enum_value) => writer.write_enum(field_number, *enum_value),
+        }
+        .map_err(|e| anyhow::Error::msg(format!("Error serializing simple value - {e:?}")))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reflection::codec::api::protobuf::RpcWriter;
 
     #[test]
     fn test_merge_simple_field_succeeds() {
@@ -211,6 +239,48 @@ mod tests {
                 let result = value_one.clone().merge(value_two.clone());
                 assert!(result.is_err());
             }
+        }
+    }
+
+    #[test]
+    fn test_write_simple_field() {
+        let cases = vec![
+            (
+                SimpleField::Double(1.0),
+                1,
+                vec![0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f],
+            ),
+            (SimpleField::Float(1.0), 2, vec![0x15, 0x00, 0x00, 0x80, 0x3f]),
+            (SimpleField::Int32(150), 3, vec![0x18, 0x96, 0x01]),
+            (SimpleField::Int64(150), 4, vec![0x20, 0x96, 0x01]),
+            (SimpleField::Uint32(150), 5, vec![0x28, 0x96, 0x01]),
+            (SimpleField::Uint64(150), 6, vec![0x30, 0x96, 0x01]),
+            (SimpleField::Sint32(-1), 7, vec![0x38, 0x01]),
+            (SimpleField::Sint64(-1), 8, vec![0x40, 0x01]),
+            (SimpleField::Fixed32(100), 9, vec![0x4d, 0x64, 0x00, 0x00, 0x00]),
+            (
+                SimpleField::Fixed64(100),
+                10,
+                vec![0x51, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            ),
+            (SimpleField::Sfixed32(-1), 11, vec![0x5d, 0xff, 0xff, 0xff, 0xff]),
+            (
+                SimpleField::Sfixed64(-1),
+                12,
+                vec![0x61, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+            ),
+            (SimpleField::Bool(true), 13, vec![0x68, 0x01]),
+            (SimpleField::String("foo".to_string()), 14, vec![0x72, 0x03, 0x66, 0x6f, 0x6f]),
+            (SimpleField::Bytes(vec![0x01, 0x02]), 15, vec![0x7a, 0x02, 0x01, 0x02]),
+            (SimpleField::Enum(1), 16, vec![0x80, 0x01, 0x01]),
+        ];
+
+        for (field, field_number, expected) in cases {
+            let mut buffer = Vec::new();
+            let mut writer = RpcWriter::create_rpc_writer(&mut buffer);
+            field.write_simple_field(field_number, &mut writer).expect("Failed to write field");
+            writer.finalize().expect("Failed to finalize writer");
+            assert_eq!(buffer, expected, "Mismatch for {:?}", field);
         }
     }
 }
