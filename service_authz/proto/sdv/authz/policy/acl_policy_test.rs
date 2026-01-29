@@ -24,18 +24,18 @@ fn test_parse_textproto_with_permissions() {
     let policy: AclPolicy = parse_from_str(&textproto_content).unwrap();
 
     assert_eq!(policy.publish.len(), 1);
-    assert_eq!(policy.publish[0].publication_type, "test.MessageType");
+    assert_eq!(policy.publish[0].publication_type, "test.package.MessageType");
     assert_eq!(policy.publish[0].channel_name, "test-channel-name");
 
     assert_eq!(policy.subscribe.len(), 1);
-    assert_eq!(policy.subscribe[0].publication_type, "test.MessageType");
+    assert_eq!(policy.subscribe[0].publication_type, "test.package.MessageType");
     assert_eq!(policy.subscribe[0].channel_name, "test-another-channel-name");
 
     assert_eq!(policy.serve.len(), 1);
-    assert_eq!(policy.serve[0].server_type, "test.Server");
+    assert_eq!(policy.serve[0].server_type, "test.package.Server");
     assert_eq!(policy.serve[0].service_unit_name, "test-service-unit-name");
 
     assert_eq!(policy.call.len(), 1);
-    assert_eq!(policy.call[0].server_type, "test.Server");
+    assert_eq!(policy.call[0].server_type, "test.package.Server");
     assert_eq!(policy.call[0].service_unit_name, "test-another-service-unit-name");
 }
