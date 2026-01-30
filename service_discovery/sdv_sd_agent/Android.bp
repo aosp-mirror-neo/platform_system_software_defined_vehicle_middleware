@@ -28,6 +28,7 @@ rust_defaults {
         "google.sdv.authz-V2-rust",
         "google.sdv.ca-V1-rust",
         "google.sdv.identity-V2-rust",
+        "google.sdv.identity.internal-V1-rust",
         "google.sdv.init_open_dice-rust",
         "google.sdv.mesh-status-V1-rust",
         "google.sdv.mesh.provisioning-V1-rust",
@@ -62,11 +63,13 @@ rust_defaults {
         "liblog_rust",
         "libmio",
         "libmockall",
+        "libnative_services_names",
         "libonce_cell",
         "libopenssl",
         "libprotobuf",
         "librand",
         "librustutils",
+        "libsdv_aid",
         "libsdv_authz",
         "libsdv_authz_enforcement_flag",
         "libsdv_authz_local_vm_acl_policy_provider_factory",
@@ -112,12 +115,7 @@ rust_binary {
         "sdv_sd_agent_binary_defaults",
     ],
     features: [
-        "verified_fqin",
         "vpm",
-    ],
-    rustlibs: [
-        "google.sdv.service_bundles.identity-rust",
-        "libsdv_aid",
     ],
     system_ext_specific: true,
 }
@@ -166,34 +164,6 @@ rust_binary {
     min_sdk_version: "35",
 }
 
-rust_bindgen {
-    name: "libsdv_aid",
-    wrapper_src: "rust_bindgen/android_filesystem_config_wrapper.h",
-    crate_name: "sdv_aid",
-    source_stem: "bindings",
-    header_libs: ["libcutils_headers"],
-    bindgen_flags: [
-        "--allowlist-var",
-        "AID_ROOT",
-        "--allowlist-var",
-        "AID_SYSTEM",
-        "--allowlist-var",
-        "AID_SYSTEM_EXT_RESERVED_START",
-        "--allowlist-var",
-        "AID_SYSTEM_EXT_RESERVED_END",
-        "--allowlist-var",
-        "AID_PRODUCT_RESERVED_START",
-        "--allowlist-var",
-        "AID_PRODUCT_RESERVED_END",
-        "--allowlist-var",
-        "AID_OEM_RESERVED_START",
-        "--allowlist-var",
-        "AID_OEM_RESERVED_END",
-    ],
-    system_ext_specific: true,
-    visibility: [":__pkg__"],
-}
-
 rust_test {
     name: "sdv_core_middleware_unit_sd_agent_test",
     srcs: ["srcs/main.rs"],
@@ -203,17 +173,12 @@ rust_test {
         "sdv_sd@rust_defaults",
         "sdv@rust_defaults",
     ],
-    features: [
-        "verified_fqin",
-    ],
     rustlibs: [
-        "google.sdv.service_bundles.identity-rust",
         "libdiced_open_dice_multialg",
         "libgoogletest_rust",
         "libkmr_common",
         "libkmr_wire",
         "libsample_dice_handover",
-        "libsdv_aid",
         "libsdv_dice",
         "libtempfile",
         "libtest_dice_artifacts_builder",
