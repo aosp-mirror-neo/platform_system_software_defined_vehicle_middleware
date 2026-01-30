@@ -26,6 +26,8 @@ mod authz_via_permissions;
 mod multi_vm_authz_guard;
 mod parse_acl_policy_proto;
 mod single_vm_acl_policy_provider;
+#[cfg(test)]
+mod test_acl_policy_provider;
 
 pub use acl_policy_model::AclPolicyModel;
 pub use acl_policy_provider::AclPolicyProvider;
@@ -35,3 +37,5 @@ pub use single_vm_acl_policy_provider::SingleVmAclPolicyProvider;
 
 use authz_guard::AuthzGuard;
 use authz_result::AuthzResult;
+#[cfg(test)]
+use test_acl_policy_provider::TestAclPolicyProvider;

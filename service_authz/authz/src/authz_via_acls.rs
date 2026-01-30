@@ -194,6 +194,7 @@ mod tests {
     use super::*;
 
     use crate::AclPolicyModel;
+    use crate::TestAclPolicyProvider;
 
     use std::{collections::HashMap, str::FromStr, sync::Arc};
 
@@ -201,62 +202,10 @@ mod tests {
     use sdv_authz_policy_proto_rust::acl_policy::AclPolicy as AclPolicyProto;
     use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName, VmName};
 
-    struct TestAclPolicyProvider {
-        mapping: HashMap<(VmName, PackageName, Option<ServiceBundleName>), AclPolicyModel>,
-    }
-
-    impl TestAclPolicyProvider {
-        fn new() -> Self {
-            Self { mapping: HashMap::new() }
-        }
-
-        fn set_alc_policy(
-            &mut self,
-            vm_name: VmName,
-            package_name: PackageName,
-            service_name: Option<ServiceBundleName>,
-            acl_policy: AclPolicyModel,
-        ) {
-            self.mapping.insert(
-                (vm_name.clone(), package_name.clone(), service_name.clone()),
-                acl_policy.clone(),
-            );
-            if service_name.is_some() {
-                self.mapping.insert((vm_name, package_name, None), acl_policy);
-            }
-        }
-    }
-
-    impl AclPolicyProvider for TestAclPolicyProvider {
-        fn get_acl_policy(
-            &self,
-            vm_name: &VmName,
-            package_name: &PackageName,
-            service_bundle_name: Option<&ServiceBundleName>,
-        ) -> Result<Arc<AclPolicyModel>, anyhow::Error> {
-            self.mapping
-                .get(&(vm_name.clone(), package_name.clone(), service_bundle_name.cloned()))
-                .ok_or(anyhow!(
-                    "ACLs for {:?}:{}.{:?} are not specified",
-                    vm_name,
-                    package_name,
-                    service_bundle_name
-                ))
-                .cloned()
-                .map(Arc::new)
-        }
-
-        fn get_available_vm_names(&self) -> Vec<VmName> {
-            let mut vm_names: Vec<VmName> = self.mapping.keys().map(|k| k.0.clone()).collect();
-            vm_names.sort_by_key(|vm_name| vm_name.name().to_string());
-            vm_names
-        }
-    }
-
     #[test]
     fn test_create_service_unit_authz_guard_success() {
         let mut test_provider = TestAclPolicyProvider::new();
-        test_provider.set_alc_policy(
+        test_provider.set_authz_policy(
             VmName::from_str("vm").unwrap(),
             PackageName::from_str("com.google.sdv").unwrap(),
             Some(ServiceBundleName::from_str("WindowManager").unwrap()),
@@ -312,7 +261,7 @@ mod tests {
     #[test]
     fn test_create_service_unit_authz_guard_not_found() {
         let mut test_provider = TestAclPolicyProvider::new();
-        test_provider.set_alc_policy(
+        test_provider.set_authz_policy(
             VmName::from_str("vm").unwrap(),
             PackageName::from_str("com.google.sdv").unwrap(),
             Some(ServiceBundleName::from_str("WindowManager").unwrap()),
@@ -373,7 +322,7 @@ mod tests {
     #[test]
     fn test_create_unit_type_authz_guard_no_acl_policy() {
         let mut test_provider = TestAclPolicyProvider::new();
-        test_provider.set_alc_policy(
+        test_provider.set_authz_policy(
             VmName::from_str("vm").unwrap(),
             PackageName::from_str("com.google.sdv").unwrap(),
             None,
@@ -397,7 +346,7 @@ mod tests {
     #[test]
     fn test_create_unit_type_authz_guard_no_unit_type_in_acl_policy() {
         let mut test_provider = TestAclPolicyProvider::new();
-        test_provider.set_alc_policy(
+        test_provider.set_authz_policy(
             VmName::from_str("vm").unwrap(),
             PackageName::from_str("com.google.sdv").unwrap(),
             None,
@@ -421,7 +370,7 @@ mod tests {
     #[test]
     fn test_create_unit_type_authz_guard_success() {
         let mut test_provider = TestAclPolicyProvider::new();
-        test_provider.set_alc_policy(
+        test_provider.set_authz_policy(
             VmName::from_str("vm-allow").unwrap(),
             PackageName::from_str("com.google.sdv").unwrap(),
             None,
@@ -442,7 +391,7 @@ mod tests {
             )
             .unwrap(),
         );
-        test_provider.set_alc_policy(
+        test_provider.set_authz_policy(
             VmName::from_str("vm-deny").unwrap(),
             PackageName::from_str("com.google.sdv").unwrap(),
             None,

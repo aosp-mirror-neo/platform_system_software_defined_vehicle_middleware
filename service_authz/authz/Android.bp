@@ -26,13 +26,18 @@ rust_defaults {
     ],
     srcs: ["src/lib.rs"],
     rustlibs: [
+        // keep-sorted start
+        "google.sdv.identity-V2-rust",
+        "google.sdv.service_discovery.discovery-V2-rust",
         "libanyhow",
+        "libbinder_rs",
+        "liblog_rust",
         "libprotobuf",
         "libsdv_authz_policy",
         "libsdv_authz_policy_proto_rust",
         "libsdv_comms_id",
         "libsdv_comms_rs",
-        "liblog_rust",
+        // keep-sorted end
     ],
     ld_flags: ["-Wl,--no-as-needed"],
 }
@@ -51,6 +56,9 @@ rust_test {
     test_options: {
         unit_test: true,
     },
+    rustlibs: [
+        "google.sdv.service_discovery.common-V2-rust",
+    ],
     test_suites: [
         "automotive-sdv-tests",
         "general-tests",
