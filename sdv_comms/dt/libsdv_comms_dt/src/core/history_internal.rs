@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use google_sdv_data_tunnel::aidl::google::sdv::data_tunnel::PublicationDescriptor::PublicationDescriptor;
-use google_sdv_identity::aidl::google::sdv::identity::UnitIdentifier::UnitIdentifier as UnitIdentifierAidl;
-use log::{error, warn};
+use sdv_comms_common::callback::ffi::Callback;
+use sdv_comms_common::callback::sdk::CallbackWrapper;
 use sdv_comms_ctx::ContextImpl;
 use sdv_comms_id::UnitIdentifier;
 use sdv_comms_sd::metadata::PublisherUnitMetadata;
-use sdv_fmq_rust::FmqWrapperRust;
 use sdv_status_rs::{SdvResult, SdvStatus, SdvStatusCode};
 use std::sync::{Arc, Mutex};
 
-use crate::core::shared_internal;
+use log::{error, warn};
+
+use crate::core::subscriber_internal::SubscriberInternal;
 use crate::ffi::ffi_types;
 
 struct HistoryBuffer {
@@ -97,28 +97,12 @@ impl HistoryBuffer {
 }
 
 pub struct HistoryInternal {
-    ctx: &'static ContextImpl,
+    // The subscriber must be kept alive to maintain the subscription and receive notifications,
+    // even though it is not accessed directly by the public API of this struct.
+    #[allow(dead_code)]
+    subscriber: Arc<Mutex<SubscriberInternal>>,
     metadata: PublisherUnitMetadata,
-    publication_id: i32,
-    callback_id: i32,
     history_buffer: Arc<Mutex<HistoryBuffer>>,
-}
-
-impl Drop for HistoryInternal {
-    fn drop(&mut self) {
-        match super::state::get_state(self.ctx) {
-            Ok(dt_state) => {
-                let _ = dt_state
-                    .comm_channel
-                    .write()
-                    .unwrap()
-                    .unregister_callback(self.publication_id, self.callback_id);
-            }
-            Err(e) => {
-                error!("Unable to get internal DT state from the context object: {e}");
-            }
-        };
-    }
 }
 
 impl HistoryInternal {
@@ -134,64 +118,94 @@ impl HistoryInternal {
             ));
         }
 
-        let dt_binder = ctx.get_agents().get_dt_binder();
-        let dt_state = super::state::get_state(ctx)?;
+        let subscriber = SubscriberInternal::subscribe_to_publication(
+            ctx,
+            unit_identifier,
+            ffi_types::ASDV_SubscriptionFlags_None,
+        )
+        .await?;
+        let metadata = subscriber.get_publisher_unit_metadata().clone();
+        let message_size = metadata.get_message_size() as usize;
 
-        let mut publication_descriptor: PublicationDescriptor = Default::default();
-
-        let unit_identifier_aidl: UnitIdentifierAidl = unit_identifier.into();
-        dt_binder.SubscribeToPublication(&unit_identifier_aidl, &mut publication_descriptor)?;
-        let publication_id = publication_descriptor.publication_id;
-        let message_size = publication_descriptor.message_size as usize;
-
-        let mut fmq = FmqWrapperRust::from_desc(&publication_descriptor.mq_desc, false);
+        let subscriber = Arc::new(Mutex::new(subscriber));
         let history_buffer =
             Arc::new(Mutex::new(HistoryBuffer::new(message_size, history_buffer_size as usize)));
 
-        // Move the reader pointer according to the subscription_flags
-        shared_internal::adjust_read_pointer(
-            &mut fmq,
+        Self::register_notification_handler(
+            subscriber.clone(),
+            history_buffer.clone(),
             message_size,
-            publication_descriptor.message_count as usize,
-            ffi_types::ASDV_SubscriptionFlags_None,
         )?;
 
-        let callback_id = dt_state.comm_channel.write().unwrap().register_closure(
-            publication_id,
-            {
-                let history_buffer = Arc::clone(&history_buffer);
-                move |_| {
+        Ok(HistoryInternal { subscriber, metadata, history_buffer })
+    }
+
+    fn register_notification_handler(
+        subscriber: Arc<Mutex<SubscriberInternal>>,
+        history_buffer: Arc<Mutex<HistoryBuffer>>,
+        message_size: usize,
+    ) -> SdvResult<()> {
+        // The callback needs to access the subscriber to read messages, but the subscriber
+        // owns the callback. To avoid a reference cycle (memory leak), we use a Weak reference.
+        let subscriber_weak = Arc::downgrade(&subscriber);
+
+        // TODO(b/479450652)
+        // Refactor SubscriberInternal to accept FnMut via register_notification_closure
+        // and handles the Callback ABI wrapping logic.
+        let wrapper = CallbackWrapper::new(move |_: ffi_types::ASDV_NotificationType| {
+            if let Some(subscriber_strong) = subscriber_weak.upgrade() {
+                if let Ok(mut subscriber) = subscriber_strong.lock() {
                     if let Ok(mut history) = history_buffer.lock() {
-                        Self::fetch_all_messages(&mut fmq, message_size, &mut history);
+                        Self::fetch_all_messages(&mut subscriber, message_size, &mut history);
                     }
-                    Ok(())
                 }
-            },
-            /*min_interval_ms*/ 0,
-        )?;
+            }
+        });
 
-        let mut metadata = PublisherUnitMetadata::default();
-        metadata.set_version(1);
-        metadata.set_message_size(publication_descriptor.message_size as u32);
-        metadata.set_message_count(publication_descriptor.message_count as u32);
+        let callback = Callback::new(
+            CallbackWrapper::trampoline_func,
+            Some(CallbackWrapper::<ffi_types::ASDV_NotificationType>::trampoline_clear),
+            wrapper.into_void_ptr(),
+        );
 
-        Ok(HistoryInternal { ctx, metadata, publication_id, callback_id, history_buffer })
+        subscriber
+            .lock()
+            .unwrap()
+            .set_notification_handler(callback, /*min_interval_ms*/ 0)?;
+
+        Ok(())
     }
 
     fn fetch_all_messages(
-        fmq: &mut FmqWrapperRust,
+        subscriber: &mut SubscriberInternal,
         message_size: usize,
         history: &mut HistoryBuffer,
     ) {
         let mut read_buffer = vec![0i8; message_size];
-        while fmq.available_to_read() > 0 {
-            if fmq.read_from_buffer(&mut read_buffer, message_size) {
-                history.write_message(&read_buffer);
-            } else {
-                history.reset();
-                warn!(
-                    "HistoryReader: FMQ::read() failed due to overflow! Resetting history buffer."
-                );
+        while subscriber.available_to_read().unwrap_or(0) > 0 {
+            match subscriber.read(&mut read_buffer, 1) {
+                Ok(1) => {
+                    history.write_message(&read_buffer);
+                }
+                Ok(n) => {
+                    // This should never happen
+                    error!(
+                        "HistoryInternal: Unexpected number of messages read: {}, expected 1",
+                        n
+                    );
+                    break;
+                }
+                Err(e) if e.status_code() == SdvStatusCode::DataLoss => {
+                    history.reset();
+                    warn!(
+                        "HistoryInternal: FMQ::read() failed due to overflow! Resetting history buffer."
+                    );
+                    // Reset complete. Continue looping to process any valid messages remaining.
+                }
+                Err(e) => {
+                    error!("HistoryInternal: Read failed in HistoryInternal: {}", e);
+                    break;
+                }
             }
         }
     }
