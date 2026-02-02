@@ -37,7 +37,7 @@ pub(crate) fn register_service_unit_for_test(
     process_identifier: &ProcessIdentifier,
     sid: i64,
 ) -> ServiceIdentityV2 {
-    register_service_unit_for_test_channel(
+    register_service_unit_for_test_topic(
         service_registry,
         vm_name,
         unit_type,
@@ -47,13 +47,13 @@ pub(crate) fn register_service_unit_for_test(
     )
 }
 
-pub(crate) fn register_service_unit_for_test_channel(
+pub(crate) fn register_service_unit_for_test_topic(
     service_registry: &ServiceRegistry,
     vm_name: &str,
     unit_type: &UnitType,
     process_identifier: &ProcessIdentifier,
     sid: i64,
-    channel_name: Option<String>,
+    topic_name: Option<String>,
 ) -> ServiceIdentityV2 {
     let service_identity = ServiceIdentityV2 {
         sid,
@@ -72,9 +72,9 @@ pub(crate) fn register_service_unit_for_test_channel(
 
     let acl = AccessControl { ..Default::default() };
     let mut app_metadata = ApplicationMetadata { ..Default::default() };
-    if let Some(channel_name) = channel_name {
+    if let Some(topic_name) = topic_name {
         app_metadata.typedMetadata = TypedMetadataAidl::PublisherUnit(PublisherUnitMetadata {
-            channel_name,
+            topic_name,
             ..Default::default()
         });
     }

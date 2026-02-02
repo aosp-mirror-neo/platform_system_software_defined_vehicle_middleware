@@ -27,7 +27,7 @@ use std::sync::Arc;
 use crate::kv::{InternalUnitNameParameters, ServiceUnitEvent};
 use crate::listeners::ServiceUnitChangeListener;
 use crate::unit_type_utils::deprecate_unit_type_owner;
-use sdv_comms_id::names::ChannelName;
+use sdv_comms_id::names::TopicName;
 use tokio::sync::mpsc;
 
 enum ListenerEventKind {
@@ -38,7 +38,7 @@ enum ListenerEventKind {
 #[derive(Default)]
 pub(crate) struct Listeners {
     unit_type_listeners: HashMap<UnitType, Vec<ServiceUnitChangeListener>>,
-    channel_listeners: HashMap<(UnitType, ChannelName), Vec<ServiceUnitChangeListener>>,
+    topic_listeners: HashMap<(UnitType, TopicName), Vec<ServiceUnitChangeListener>>,
     unit_name_listeners: HashMap<InternalUnitNameParameters, Vec<ServiceUnitChangeListener>>,
     local_unit_listeners: Vec<mpsc::UnboundedSender<ServiceUnitEvent>>,
 }
@@ -47,13 +47,13 @@ impl Listeners {
     pub(crate) fn on_service_unit_added(&self, service_unit_definition: &ServiceUnitDefinition) {
         self.notify_by_type(service_unit_definition, ListenerEventKind::Add);
         self.notify_by_name(service_unit_definition, ListenerEventKind::Add);
-        self.notify_by_channel(service_unit_definition, ListenerEventKind::Add);
+        self.notify_by_topic(service_unit_definition, ListenerEventKind::Add);
     }
 
     pub(crate) fn on_service_unit_removed(&self, service_unit_definition: &ServiceUnitDefinition) {
         self.notify_by_type(service_unit_definition, ListenerEventKind::Remove);
         self.notify_by_name(service_unit_definition, ListenerEventKind::Remove);
-        self.notify_by_channel(service_unit_definition, ListenerEventKind::Remove);
+        self.notify_by_topic(service_unit_definition, ListenerEventKind::Remove);
     }
 
     fn notify_listeners(
@@ -96,7 +96,7 @@ impl Listeners {
         }
     }
 
-    fn notify_by_channel(
+    fn notify_by_topic(
         &self,
         service_unit_definition: &ServiceUnitDefinition,
         event: ListenerEventKind,
@@ -106,16 +106,16 @@ impl Listeners {
         if let TypedMetadataAidl::PublisherUnit(metadata) =
             &service_unit_definition.appMetadata.typedMetadata
         {
-            let channel_name = match ChannelName::from_str(&metadata.channel_name) {
+            let topic_name = match TopicName::from_str(&metadata.topic_name) {
                 Ok(name) => name,
                 Err(err) => {
-                    warn!("Invalid channel name: {} due to: {}", metadata.channel_name, err);
+                    warn!("Invalid topic name: {} due to: {}", metadata.topic_name, err);
                     return;
                 }
             };
 
-            let key = (unit_type.clone(), channel_name);
-            if let Some(listeners) = self.channel_listeners.get(&key) {
+            let key = (unit_type.clone(), topic_name);
+            if let Some(listeners) = self.topic_listeners.get(&key) {
                 Self::notify_listeners(&event, service_unit_definition, listeners);
             }
         }
@@ -168,25 +168,25 @@ impl Listeners {
         self.unit_type_listeners.entry(unit_type).or_default().retain(|x| *x != listener);
     }
 
-    pub(crate) fn register_listener_by_channel(
+    pub(crate) fn register_listener_by_topic(
         &mut self,
         unit_type: &UnitType,
-        channel_name: &ChannelName,
+        topic_name: &TopicName,
         listener: ServiceUnitChangeListener,
     ) {
         let unit_type = deprecate_unit_type_owner(unit_type.clone());
-        self.channel_listeners.entry((unit_type, channel_name.clone())).or_default().push(listener);
+        self.topic_listeners.entry((unit_type, topic_name.clone())).or_default().push(listener);
     }
 
-    pub(crate) fn unregister_listener_by_channel(
+    pub(crate) fn unregister_listener_by_topic(
         &mut self,
         unit_type: &UnitType,
-        channel_name: &ChannelName,
+        topic_name: &TopicName,
         listener: ServiceUnitChangeListener,
     ) {
         let unit_type: UnitType = deprecate_unit_type_owner(unit_type.clone());
-        self.channel_listeners
-            .entry((unit_type, channel_name.clone()))
+        self.topic_listeners
+            .entry((unit_type, topic_name.clone()))
             .or_default()
             .retain(|x| *x != listener);
     }
@@ -235,7 +235,7 @@ mod tests {
         ServiceUnitDefinition::ServiceUnitDefinition,
         UnitNameParameters::UnitNameParameters,
     };
-    use sdv_comms_id::names::ChannelName;
+    use sdv_comms_id::names::TopicName;
     #[allow(unused_imports)]
     use std::{
         collections::HashSet,
@@ -318,12 +318,12 @@ mod tests {
     fn create_publisher_sud(
         unit_name: &str,
         unit_type: &UnitType,
-        channel_name: &str,
+        topic_name: &str,
     ) -> ServiceUnitDefinition {
         let mut sud = create_sud(unit_name, unit_type);
         sud.appMetadata = ApplicationMetadata {
             typedMetadata: TypedMetadataAidl::PublisherUnit(PublisherUnitMetadata {
-                channel_name: channel_name.to_string(),
+                topic_name: topic_name.to_string(),
                 ..Default::default()
             }),
             ..Default::default()
@@ -360,7 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn test_register_unregister_listener_by_channel() {
+    fn test_register_unregister_listener_by_topic() {
         let mut listeners = Listeners::default();
         let (listener, mock) = create_listener();
         let unit_type = UnitType {
@@ -368,24 +368,24 @@ mod tests {
             serviceBundleName: "TestBundle".to_string(),
             typeName: "TestType".to_string(),
         };
-        let channel_name = ChannelName::from_str("test-channel").unwrap();
+        let topic_name = TopicName::from_str("test_topic").unwrap();
 
-        listeners.register_listener_by_channel(&unit_type, &channel_name, listener.clone());
+        listeners.register_listener_by_topic(&unit_type, &topic_name, listener.clone());
 
-        let sud = create_publisher_sud("unit1", &unit_type, "test-channel");
+        let sud = create_publisher_sud("unit1", &unit_type, "test_topic");
         listeners.on_service_unit_added(&sud);
         println!("registered");
         assert_eq!(mock.get_registered(), vec![sud.clone()]);
 
-        let sud_wrong_channel = create_publisher_sud("unit2", &unit_type, "wrong-channel");
-        listeners.on_service_unit_added(&sud_wrong_channel);
-        assert_eq!(mock.get_registered(), vec![sud.clone()]); // Not notified for wrong channel.
+        let sud_wrong_topic = create_publisher_sud("unit2", &unit_type, "wrong-topic");
+        listeners.on_service_unit_added(&sud_wrong_topic);
+        assert_eq!(mock.get_registered(), vec![sud.clone()]); // Not notified for wrong topic.
 
         let sud_server = create_sud("unit3", &unit_type); // Not a publisher.
         listeners.on_service_unit_added(&sud_server);
         assert_eq!(mock.get_registered(), vec![sud.clone()]); // Not notified for non-publisher.
 
-        listeners.unregister_listener_by_channel(&unit_type, &channel_name, listener);
+        listeners.unregister_listener_by_topic(&unit_type, &topic_name, listener);
         listeners.on_service_unit_added(&sud);
         assert_eq!(mock.get_registered(), vec![sud.clone()]); // Not notified after unregister.
     }

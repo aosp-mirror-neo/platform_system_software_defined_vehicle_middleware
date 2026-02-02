@@ -975,14 +975,13 @@ public:
         return ::ndk::ScopedAStatus::ok();
     }
 
-    ::ndk::ScopedAStatus GetLastChannelMessage(
+    ::ndk::ScopedAStatus GetLastMessageByTopic(
             const ::aidl::google::sdv::service_discovery::common::UnitType& /*in_unit_type*/,
-            const std::string& /*in_channel_name*/,
-            std::vector<uint8_t>* /*out_message*/) override {
-        // TODO: Add implementation for GetLastChannelMessage
+            const std::string& /*in_topic_name*/, std::vector<uint8_t>* /*out_message*/) override {
+        // TODO: Add implementation for GetLastMessageByTopic
         return ::ndk::ScopedAStatus::
                 fromExceptionCodeWithMessage(EX_UNSUPPORTED_OPERATION,
-                                             "GetLastChannelMessage is not implemented");
+                                             "GetLastMessageByTopic is not implemented");
     }
 
 private:

@@ -135,39 +135,39 @@ impl Subscriber {
     /// Parameters:
     ///    [IN] context: Reference to the local SDV Comm Stack Context object
     ///    [IN] unit_type: Unit Type of the publications to subscribe
-    ///    [IN] channel_name: The name of the channel to subscribe to
+    ///    [IN] topic_name: The name of the topic to subscribe to
     ///    [IN] options: see SubscriberOptions for details
     ///
     /// Return value:
     ///   Returns a Future of SdvResult that contains SdvStatus of the
     ///   method call and, if method succeeded, a new Subscriber instance.
-    pub async fn create_for_channel(
+    pub async fn create_for_topic(
         context: ContextRef,
         unit_type: &UnitType,
-        channel_name: &str,
+        topic_name: &str,
         options: SubscriberOptions,
     ) -> SdvResult<Subscriber> {
-        type SubscribeToChannelCb = OnceCallbackWrapper<OwnedOpaquePtr<ASDV_SubscriptionHandle>>;
+        type SubscribeToTopicCb = OnceCallbackWrapper<OwnedOpaquePtr<ASDV_SubscriptionHandle>>;
 
-        let (cb, fut) = SubscribeToChannelCb::new_async();
+        let (cb, fut) = SubscribeToTopicCb::new_async();
         let vtable = ASDV_CallbackVTable_SubscribeToPublication {
-            func: Some(SubscribeToChannelCb::trampoline_func),
-            clear: Some(SubscribeToChannelCb::trampoline_clear),
+            func: Some(SubscribeToTopicCb::trampoline_func),
+            clear: Some(SubscribeToTopicCb::trampoline_clear),
             cb_data: cb.into_void_ptr(),
         };
 
-        let channel_name_cstr =
-            std::ffi::CString::new(channel_name).map_err(derive!(SdvStatusCode::Internal))?;
-        // SAFETY: `context`, `unit_type` and `channel_name_cstr` are valid pointers to
+        let topic_name_cstr =
+            std::ffi::CString::new(topic_name).map_err(derive!(SdvStatusCode::Internal))?;
+        // SAFETY: `context`, `unit_type` and `topic_name_cstr` are valid pointers to
         // corresponding types.
         // `vtable` represents the correct Vtable: ASDV_CallbackVTable_SubscribeToPublication.
         // The pointer returned by the callback will be cleared through the Drop trait
         // implementation of struct [Subscriber].
         unsafe {
-            sdv_comms_bindgen::ASDV_SubscribeToChannel(
+            sdv_comms_bindgen::ASDV_SubscribeToTopic(
                 context.as_raw(),
                 UnitType::peel_ref(unit_type),
-                channel_name_cstr.as_ptr(),
+                topic_name_cstr.as_ptr(),
                 options.as_raw_flags(),
                 vtable,
             );

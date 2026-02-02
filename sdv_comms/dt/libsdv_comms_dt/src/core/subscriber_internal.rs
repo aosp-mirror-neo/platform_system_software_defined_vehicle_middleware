@@ -17,7 +17,7 @@ use google_sdv_data_tunnel::aidl::google::sdv::data_tunnel::PublicationDescripto
 use google_sdv_identity::aidl::google::sdv::identity::UnitIdentifier::UnitIdentifier as UnitIdentifierAidl;
 use sdv_comms_common::callback::ffi::Callback;
 use sdv_comms_ctx::ContextImpl;
-use sdv_comms_id::names::ChannelName;
+use sdv_comms_id::names::TopicName;
 use sdv_comms_id::UnitIdentifier;
 use sdv_comms_sd::discovery::UnitType;
 use sdv_comms_sd::metadata::PublisherUnitMetadata;
@@ -196,19 +196,15 @@ impl SubscriberInternal {
         Ok(SubscriberInternal { delegate: SubscriberKind::Multiplexer(multiplexer) })
     }
 
-    pub async fn subscribe_to_channel(
+    pub async fn subscribe_to_topic(
         ctx: &'static ContextImpl,
         unit_type: &UnitType,
-        channel_name: &ChannelName,
+        topic_name: &TopicName,
         subscription_flags: u64,
     ) -> SdvResult<SubscriberInternal> {
-        let multiplexer = MultiplexerInternal::subscribe_to_channel(
-            ctx,
-            unit_type,
-            channel_name,
-            subscription_flags,
-        )
-        .await?;
+        let multiplexer =
+            MultiplexerInternal::subscribe_to_topic(ctx, unit_type, topic_name, subscription_flags)
+                .await?;
         Ok(SubscriberInternal { delegate: SubscriberKind::Multiplexer(multiplexer) })
     }
 

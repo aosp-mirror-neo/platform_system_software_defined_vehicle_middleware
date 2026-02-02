@@ -36,7 +36,7 @@ use sdv_authz_policy_proto_rust::acl_policy::{
 #[cfg(feature = "permissions")]
 use sdv_comms::sd::UnitType;
 #[cfg(feature = "permissions")]
-use sdv_comms_id::names::ChannelName;
+use sdv_comms_id::names::TopicName;
 use sdv_comms_id::names::{ServiceUnitName, UnitTypeName};
 use tracing::instrument;
 
@@ -74,21 +74,21 @@ pub(crate) fn parse_acl_policy_from_proto(
 #[cfg(feature = "permissions")]
 fn parse_publish_permissions(
     proto_perms: &[PublishPermissionProto],
-) -> Result<HashSet<(UnitType, Option<ChannelName>)>, anyhow::Error> {
+) -> Result<HashSet<(UnitType, Option<TopicName>)>, anyhow::Error> {
     let mut set = HashSet::new();
     for perm in proto_perms {
         let type_name = UnitType::from_str(&perm.publication_type)
             .context("Failed to parse publication_type in PublishPermission")?;
-        let channel_name = if perm.channel_name.is_empty() {
+        let topic_name = if perm.topic_name.is_empty() {
             None
         } else {
             Some(
-                ChannelName::from_str(&perm.channel_name)
-                    .context("Failed to parse channel_name in PublishPermission")?,
+                TopicName::from_str(&perm.topic_name)
+                    .context("Failed to parse topic_name in PublishPermission")?,
             )
         };
 
-        set.insert((type_name, channel_name));
+        set.insert((type_name, topic_name));
     }
     Ok(set)
 }
@@ -96,21 +96,21 @@ fn parse_publish_permissions(
 #[cfg(feature = "permissions")]
 fn parse_subscribe_permissions(
     proto_perms: &[SubscribePermissionProto],
-) -> Result<HashSet<(UnitType, Option<ChannelName>)>, anyhow::Error> {
+) -> Result<HashSet<(UnitType, Option<TopicName>)>, anyhow::Error> {
     let mut set = HashSet::new();
     for perm in proto_perms {
         let type_name = UnitType::from_str(&perm.publication_type)
             .context("Failed to parse publication_type in SubscribePermission")?;
-        let channel_name = if perm.channel_name.is_empty() {
+        let topic_name = if perm.topic_name.is_empty() {
             None
         } else {
             Some(
-                ChannelName::from_str(&perm.channel_name)
-                    .context("Failed to parse channel_name in SubscribePermission")?,
+                TopicName::from_str(&perm.topic_name)
+                    .context("Failed to parse topic_name in SubscribePermission")?,
             )
         };
 
-        set.insert((type_name, channel_name));
+        set.insert((type_name, topic_name));
     }
     Ok(set)
 }
@@ -332,15 +332,15 @@ mod tests {
             r#"
             publish {
                 publication_type: "test.package.TopicA"
-                channel_name: "ch1"
+                topic_name: "ch1"
             }
             publish {
                 publication_type: "test.package.TopicA"
-                channel_name: "ch2"
+                topic_name: "ch2"
             }
             subscribe {
                 publication_type: "test.package.TopicB"
-                channel_name: "ch1"
+                topic_name: "ch1"
             }
             subscribe {
                 publication_type: "test.package.TopicC"
@@ -354,8 +354,8 @@ mod tests {
         let topic_a = UnitType::from_str("test.package.TopicA").unwrap();
         let topic_b = UnitType::from_str("test.package.TopicB").unwrap();
         let topic_c = UnitType::from_str("test.package.TopicC").unwrap();
-        let ch1 = ChannelName::from_str("ch1").unwrap();
-        let ch2 = ChannelName::from_str("ch2").unwrap();
+        let ch1 = TopicName::from_str("ch1").unwrap();
+        let ch2 = TopicName::from_str("ch2").unwrap();
 
         assert_eq!(acl_policy.publish_permissions.len(), 2);
         assert!(acl_policy.publish_permissions.contains(&(topic_a.clone(), Some(ch1.clone()))));

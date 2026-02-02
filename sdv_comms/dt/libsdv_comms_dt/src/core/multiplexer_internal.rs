@@ -21,7 +21,7 @@ use log::error;
 
 use sdv_comms_common::callback::ffi::Callback;
 use sdv_comms_ctx::ContextImpl;
-use sdv_comms_id::names::ChannelName;
+use sdv_comms_id::names::TopicName;
 use sdv_comms_id::UnitIdentifier;
 use sdv_comms_sd::discovery::{ServiceUnitDefinition, UnitType};
 use sdv_comms_sd::manager as sd_manager;
@@ -38,7 +38,7 @@ pub struct MultiplexerInternal {
     ctx: &'static ContextImpl,
     unit_type: UnitType,
     metadata: PublisherUnitMetadata,
-    channel_name: Option<ChannelName>,
+    topic_name: Option<TopicName>,
     multiplexer_impl: Arc<Mutex<MultiplexerImpl>>,
     listener: binder::Strong<dyn IServiceUnitChangeListener>,
 }
@@ -82,35 +82,35 @@ impl MultiplexerInternal {
         Ok(MultiplexerInternal {
             ctx,
             unit_type: unit_type.clone(),
-            channel_name: None,
+            topic_name: None,
             metadata,
             multiplexer_impl,
             listener,
         })
     }
 
-    pub async fn subscribe_to_channel(
+    pub async fn subscribe_to_topic(
         ctx: &'static ContextImpl,
         unit_type: &UnitType,
-        channel_name: &ChannelName,
+        topic_name: &TopicName,
         subscription_flags: u64,
     ) -> SdvResult<MultiplexerInternal> {
         // List all the publication with given UnitType
         let sud_list = sd_manager::list_service_units_by_type(ctx, unit_type).await?;
 
-        // Filter publication by channel_name
+        // Filter publication by topic_name
         let mut metadata = PublisherUnitMetadata::default();
-        let mut found_pub_for_channel = false;
+        let mut found_pub_for_topic = false;
         for sud in sud_list {
             if let Some(pub_metadata) = sud.get_unit_metadata().get_publisher_metadata() {
-                if pub_metadata.get_channel_name() == channel_name.as_ref() {
-                    if !found_pub_for_channel {
+                if pub_metadata.get_topic_name() == topic_name.as_ref() {
+                    if !found_pub_for_topic {
                         metadata = pub_metadata;
-                        found_pub_for_channel = true;
+                        found_pub_for_topic = true;
                     } else {
                         // TODO (b/476033721)
                         // Several Service Units may publish the same Proto-message type on this
-                        // channel, but using different versions of the schema. Because Protobuf
+                        // topic, but using different versions of the schema. Because Protobuf
                         // is backward compatible, newer versions may include additional fields
                         // (e.g., extensions or new optional fields) that increase the total
                         // serialized size.
@@ -121,8 +121,8 @@ impl MultiplexerInternal {
                             return Err(SdvStatus::with_message(
                                 SdvStatusCode::InvalidArgument,
                                 format!(
-                                    "Incompatible message sizes on channel {}: {} != {}",
-                                    channel_name,
+                                    "Incompatible message sizes on topic {}: {} != {}",
+                                    topic_name,
                                     metadata.get_message_size(),
                                     pub_metadata.get_message_size()
                                 ),
@@ -135,7 +135,7 @@ impl MultiplexerInternal {
 
         // Return Error if no publication was found
         // TODO(b/365408445): Fix this workaround when UnitType metadata is introduced.
-        if !found_pub_for_channel {
+        if !found_pub_for_topic {
             return Err(SdvStatus::with_message(
                 SdvStatusCode::NotFound,
                 "No services registered with the specified UnitType were found.",
@@ -149,9 +149,9 @@ impl MultiplexerInternal {
         // Register listener with SD Agent.
         let sd_agent = ctx.get_agents().get_sd_binder();
         sd_agent
-            .registerServiceUnitChangeListenerByChannel(
+            .registerServiceUnitChangeListenerByTopic(
                 &unit_type.clone().into(),
-                channel_name.as_ref(),
+                topic_name.as_ref(),
                 &listener,
             )
             .map_err(SdvStatus::from)?;
@@ -159,7 +159,7 @@ impl MultiplexerInternal {
         Ok(MultiplexerInternal {
             ctx,
             unit_type: unit_type.clone(),
-            channel_name: Some(channel_name.clone()),
+            topic_name: Some(topic_name.clone()),
             metadata,
             multiplexer_impl,
             listener,
@@ -216,14 +216,14 @@ impl Drop for MultiplexerInternal {
         let ctx = self.ctx;
         let listener = self.listener.clone();
         let unit_type = self.unit_type.clone();
-        let channel_name = self.channel_name.clone();
+        let topic_name = self.topic_name.clone();
         ctx.get_executor().spawn(Box::pin(async move {
             let sd_agent = ctx.get_agents().get_sd_binder();
-            match channel_name {
-                Some(channel_name) => {
-                    if let Err(err) = sd_agent.unregisterServiceUnitChangeListenerByChannel(
+            match topic_name {
+                Some(topic_name) => {
+                    if let Err(err) = sd_agent.unregisterServiceUnitChangeListenerByTopic(
                         &unit_type.into(),
-                        channel_name.as_ref(),
+                        topic_name.as_ref(),
                         &listener,
                     ) {
                         error!("Error unregistering multipub ServiceUnitChangeListener: {err}");

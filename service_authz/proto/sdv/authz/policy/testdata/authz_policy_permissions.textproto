@@ -17,7 +17,7 @@
 # //system/software_defined_vehicle/middleware/service_authz/proto/sdv/authz/policy/acl_policy.proto
 # proto-message: AclPolicy
 
-publish { publication_type: "test.package.MessageType" channel_name: "test-channel-name" }
-subscribe { publication_type: "test.package.MessageType" channel_name: "test-another-channel-name" }
+publish { publication_type: "test.package.MessageType" topic_name: "test_topic_name" }
+subscribe { publication_type: "test.package.MessageType" topic_name: "test_another_topic_name" }
 serve { server_type: "test.package.Server" service_unit_name: "test-service-unit-name" }
 call { server_type: "test.package.Server" service_unit_name: "test-another-service-unit-name" }
