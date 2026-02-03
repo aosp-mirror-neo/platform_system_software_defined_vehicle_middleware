@@ -69,10 +69,9 @@ static const ServiceIdentity kDtAgentServiceIdentity_1 = ServiceIdentity{
         .name = kDtAgentFqin_1,
 };
 
-using ConnectionResult = ::sdv::SdvResult<std::unique_ptr<IConnection>>;
+using ConnectionResult = ::sdv::SdvResult<IConnectionHolder>;
 struct TestEventHandler : ConnectionManager::EventHandler {
-    virtual void OnConnectionManagerEvent(
-            ::sdv::SdvResult<std::unique_ptr<IConnection>> result) override {
+    virtual void OnConnectionManagerEvent(::sdv::SdvResult<IConnectionHolder> result) override {
         std::unique_lock guard(lock_);
         result_queue_.emplace(std::move(result));
         cv_.notify_one();
@@ -92,7 +91,7 @@ struct TestEventHandler : ConnectionManager::EventHandler {
 private:
     std::mutex lock_;
     std::condition_variable cv_;
-    std::queue<::sdv::SdvResult<std::unique_ptr<IConnection>>> result_queue_;
+    std::queue<::sdv::SdvResult<IConnectionHolder>> result_queue_;
 };
 
 struct IntegrationTestFixture {
@@ -117,7 +116,7 @@ struct IntegrationTestFixture {
                                server_connection_manager->GetListenPort());
     }
 
-    std::pair<std::unique_ptr<IConnection>, std::unique_ptr<IConnection>> MakeConnectionPair() {
+    std::pair<IConnectionHolder, IConnectionHolder> MakeConnectionPair() {
         auto listen_address = StartServerListen();
 
         TestEventHandler client_event_handler;

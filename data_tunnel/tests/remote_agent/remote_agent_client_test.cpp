@@ -131,8 +131,9 @@ public:
     }
 
     void CompleteConnection() {
-        auto owned_connection = std::make_unique<FakeConnection>();
-        connection_ = owned_connection.get();
+        auto [owned_connection, releaser] = MakeFakeConnection();
+        connection_ = static_cast<FakeConnection*>(owned_connection.get());
+        releaser_ = std::move(releaser);
 
         std::promise<void> handshake_promise;
         EXPECT_CALL(handshaker_,
@@ -210,6 +211,7 @@ public:
 protected:
     MockConnectionManager connection_manager_;
     FakeConnection* connection_;
+    FakeConnectionReleaser releaser_;
     ConnectionManager::EventHandler* connect_event_handler_ = nullptr;
     StrictMock<MockHandshaker> handshaker_;
     TopicManager topic_manager_;
@@ -253,8 +255,8 @@ TEST_F(RemoteAgentClientTest, ConnectionThread_RetriesOnConnectFailure) {
 TEST_F(RemoteAgentClientTest, ConnectionThread_RetriesOnHandshakeFailure) {
     PrepareClientAwaitingConnectResult();
 
-    auto owned_connection = std::make_unique<FakeConnection>();
-    connection_ = owned_connection.get();
+    auto [owned_connection, releaser] = MakeFakeConnection();
+    connection_ = static_cast<FakeConnection*>(owned_connection.get());
 
     std::promise<void> second_connect_promise;
     {
@@ -264,6 +266,9 @@ TEST_F(RemoteAgentClientTest, ConnectionThread_RetriesOnHandshakeFailure) {
                     PerformHandshake(Address(static_cast<IConnection*>(connection_)),
                                      Eq(kTestVmName)))
                 .WillOnce(Return(std::nullopt));
+
+        // Connection whose handshake fails will be dropped.
+        EXPECT_CALL(*releaser, Call(Eq(static_cast<IConnection*>(owned_connection.get()))));
 
         EXPECT_CALL(connection_manager_,
                     Connect(Eq(kTestServerAddress), Eq(kTestServerFqinString),
@@ -279,14 +284,32 @@ TEST_F(RemoteAgentClientTest, ConnectionThread_RetriesOnHandshakeFailure) {
               std::future_status::ready);
 }
 
+TEST_F(RemoteAgentClientTest, ConnectionThread_DropsConnectionThatSucceedsWhileTerminating) {
+    PrepareClientAwaitingConnectResult();
+
+    auto [owned_connection, releaser] = MakeFakeConnection();
+
+    client_->RequestTerminate();
+
+    EXPECT_CALL(*releaser, Call(Eq(owned_connection.get())));
+    connect_event_handler_->OnConnectionManagerEvent(std::move(owned_connection));
+}
+
 TEST_F(RemoteAgentClientTest, ConnectionThread_ReconnectsAfterFailure) {
     PrepareClientWithActiveConnection();
 
     std::promise<void> reconnect_promise;
-    EXPECT_CALL(connection_manager_,
-                Connect(Eq(kTestServerAddress), Eq(kTestServerFqinString),
-                        Address(connect_event_handler_)))
-            .WillOnce([&](const auto&, const auto&, auto&) { reconnect_promise.set_value(); });
+    {
+        ::testing::InSequence s;
+
+        // Old connection will be dropped
+        EXPECT_CALL(*releaser_, Call(Eq(connection_)));
+
+        EXPECT_CALL(connection_manager_,
+                    Connect(Eq(kTestServerAddress), Eq(kTestServerFqinString),
+                            Address(connect_event_handler_)))
+                .WillOnce([&](const auto&, const auto&, auto&) { reconnect_promise.set_value(); });
+    }
 
     // Simulate connection failure.
     connection_->Disconnect();

@@ -54,7 +54,7 @@ public:
 private:
     // Called by connection_manager when we get a new inbound connection.
     // TODO(b/432436114): Update this to take just the connection & pass lambda to Connect()
-    void OnConnectionManagerEvent(::sdv::SdvResult<std::unique_ptr<IConnection>> connection);
+    void OnConnectionManagerEvent(::sdv::SdvResult<IConnectionHolder> connection);
 
     // Requires lock_ to be held; callers must provide guard.
     void ClearTerminatedSessions(const std::unique_lock<std::mutex>& guard);
