@@ -191,7 +191,7 @@ impl SubscriberStream {
     /// Parameters:
     ///    [IN] context: Reference to the local SDV Comm Stack Context object
     ///    [IN] unit_type: Unit Type of the publications to subscribe
-    ///    [IN] channel_name: string of the channel name to subscribe
+    ///    [IN] topic_name: string of the channel name to subscribe
     ///    [IN] min_interval: Specifies the minimal interval between nearing
     ///                       callbacks for internal notifications implementation.
     ///                       Using Duration::ZERO disables minimal interval.
@@ -201,15 +201,15 @@ impl SubscriberStream {
     /// Return value:
     ///   Returns a Future of SdvResult that contains SdvStatus of the
     ///   method call and, if method succeeded, a new Subscriber instance.
-    pub async fn create_for_channel(
+    pub async fn create_for_topic(
         context: ContextRef,
         unit_type: &UnitType,
-        channel_name: &str,
+        topic_name: &str,
         min_interval: Duration,
         options: SubscriberOptions,
     ) -> SdvResult<SubscriberStream> {
         let subscriber =
-            Subscriber::create_for_channel(context, unit_type, channel_name, options).await?;
+            Subscriber::create_for_topic(context, unit_type, topic_name, options).await?;
 
         type SetNotificationsCb = CallbackWrapper<ASDV_NotificationType>;
         let (cb, receiver) = SetNotificationsCb::new_async();

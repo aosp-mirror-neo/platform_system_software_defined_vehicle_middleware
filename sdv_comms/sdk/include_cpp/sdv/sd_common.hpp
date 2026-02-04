@@ -183,13 +183,13 @@ public:
     sdv::SdvStatus SetVersion(uint32_t version);
     sdv::SdvStatus SetMessageSize(uint32_t message_size);
     sdv::SdvStatus SetMessageCount(uint32_t message_count);
-    sdv::SdvStatus SetChannel(const std::string &channel);
+    sdv::SdvStatus SetTopic(const std::string& topic);
 
     // Attribute getters.
     uint32_t GetVersion() const;
     uint32_t GetMessageSize() const;
     uint32_t GetMessageCount() const;
-    std::string GetChannel() const;
+    std::string GetTopic() const;
 
     bool operator==(const PublisherUnitMetadata& other) const;
 

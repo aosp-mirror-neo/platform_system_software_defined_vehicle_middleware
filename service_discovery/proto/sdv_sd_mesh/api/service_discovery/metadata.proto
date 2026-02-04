@@ -35,7 +35,7 @@ message PublisherUnitMetadata {
   uint32 version = 1;
   int32 message_size = 2;
   int32 message_count = 3;
-  string channel_name = 4;
+  string topic_name = 4;
 }
 
 message ServerUnitMetadata {

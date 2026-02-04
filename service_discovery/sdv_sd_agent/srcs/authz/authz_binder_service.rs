@@ -71,10 +71,10 @@ impl IAuthzService for AuthzBinderService {
         Ok(self.authz_service.is_authorized(&subject_fqin, &object_fqin, &object_service_unit_name))
     }
 
-    fn isAuthorizedForChannel(
+    fn isAuthorizedForTopic(
         &self,
         _subject_fqin: &ServiceFqinAidl,
-        _channel_name: &str,
+        _topic_name: &str,
         _object_unit_type: &UnitTypeAidl,
     ) -> binder::Result<bool> {
         unimplemented!()

@@ -25,7 +25,7 @@ use sdv_authz_policy_proto_rust::acl_policy::AclPolicy as AclPolicyProto;
 #[cfg(feature = "permissions")]
 use sdv_comms::sd::UnitType;
 #[cfg(feature = "permissions")]
-use sdv_comms_id::names::ChannelName;
+use sdv_comms_id::names::TopicName;
 use sdv_comms_id::names::{ServiceUnitName, UnitTypeName};
 
 /// ACL Policy represents Access Control Policy for a Service Bundle.
@@ -38,9 +38,9 @@ pub struct AclPolicyModel {
     unit_types_acls: HashMap<UnitTypeName, Vec<Acl>>,
 
     #[cfg(feature = "permissions")]
-    pub(crate) publish_permissions: HashSet<(UnitType, Option<ChannelName>)>,
+    pub(crate) publish_permissions: HashSet<(UnitType, Option<TopicName>)>,
     #[cfg(feature = "permissions")]
-    pub(crate) subscribe_permissions: HashSet<(UnitType, Option<ChannelName>)>,
+    pub(crate) subscribe_permissions: HashSet<(UnitType, Option<TopicName>)>,
     #[cfg(feature = "permissions")]
     pub(crate) serve_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
     #[cfg(feature = "permissions")]
@@ -70,8 +70,8 @@ impl AclPolicyModel {
     pub(crate) fn new_with_permissions(
         service_units_acls: HashMap<ServiceUnitName, Vec<Acl>>,
         unit_types_acls: HashMap<UnitTypeName, Vec<Acl>>,
-        publish_permissions: HashSet<(UnitType, Option<ChannelName>)>,
-        subscribe_permissions: HashSet<(UnitType, Option<ChannelName>)>,
+        publish_permissions: HashSet<(UnitType, Option<TopicName>)>,
+        subscribe_permissions: HashSet<(UnitType, Option<TopicName>)>,
         serve_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
         call_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
     ) -> AclPolicyModel {
@@ -109,14 +109,14 @@ impl AclPolicyModel {
     }
 
     #[cfg(feature = "permissions")]
-    pub fn can_publish(&self, publication_type: &UnitType, channel: &ChannelName) -> bool {
-        self.publish_permissions.contains(&(publication_type.clone(), Some(channel.clone())))
+    pub fn can_publish(&self, publication_type: &UnitType, topic: &TopicName) -> bool {
+        self.publish_permissions.contains(&(publication_type.clone(), Some(topic.clone())))
             || self.publish_permissions.contains(&(publication_type.clone(), None))
     }
 
     #[cfg(feature = "permissions")]
-    pub fn can_subscribe(&self, publication_type: &UnitType, channel: &ChannelName) -> bool {
-        self.subscribe_permissions.contains(&(publication_type.clone(), Some(channel.clone())))
+    pub fn can_subscribe(&self, publication_type: &UnitType, topic: &TopicName) -> bool {
+        self.subscribe_permissions.contains(&(publication_type.clone(), Some(topic.clone())))
             || self.subscribe_permissions.contains(&(publication_type.clone(), None))
     }
 
@@ -246,14 +246,14 @@ mod tests {
             r#"
             publish {
                 publication_type: "test.package.TirePressureTopic"
-                channel_name: "front_left"
+                topic_name: "front_left"
             }
             publish {
                 publication_type: "test.package.BrakeTopic"
             }
             subscribe {
                 publication_type: "test.package.TemperatureTopic"
-                channel_name: "cabin"
+                topic_name: "cabin"
             }
             serve {
                 server_type: "test.package.HvacServer"
@@ -281,10 +281,10 @@ mod tests {
         let any_media_unit = ServiceUnitName::from_str("any-media-unit").unwrap();
         let nav_unit = ServiceUnitName::from_str("nav-system").unwrap();
         let nav_server = UnitType::from_str("test.package.NavServer").unwrap();
-        let front_left = ChannelName::from_str("front_left").unwrap();
-        let cabin = ChannelName::from_str("cabin").unwrap();
-        let rear_right = ChannelName::from_str("rear_right").unwrap();
-        let any_brake_channel = ChannelName::from_str("any-brake-channel").unwrap();
+        let front_left = TopicName::from_str("front_left").unwrap();
+        let cabin = TopicName::from_str("cabin").unwrap();
+        let rear_right = TopicName::from_str("rear_right").unwrap();
+        let any_brake_topic = TopicName::from_str("any-brake-topic").unwrap();
 
         // 1. Test Positive Logic
         assert!(acl_policy.can_publish(&tire_topic, &front_left));
@@ -293,7 +293,7 @@ mod tests {
         assert!(acl_policy.can_call(&nav_server, &nav_unit));
 
         // 2. Test Blanket Permissions
-        assert!(acl_policy.can_publish(&brake_topic, &any_brake_channel));
+        assert!(acl_policy.can_publish(&brake_topic, &any_brake_topic));
         assert!(acl_policy.can_serve(&media_server, &any_media_unit));
 
         // 3. Test Negative Logic (Denial)
@@ -323,7 +323,7 @@ mod tests {
             # 2. Permission Definitions
             publish {
                 publication_type: "test.package.MyTopic"
-                channel_name: "ch1"
+                topic_name: "ch1"
             }
             serve {
                 server_type: "test.package.MyServer"
@@ -346,7 +346,7 @@ mod tests {
         // Check Permissions logic.
         assert!(acl_policy.can_publish(
             &UnitType::from_str("test.package.MyTopic").unwrap(),
-            &ChannelName::from_str("ch1").unwrap()
+            &TopicName::from_str("ch1").unwrap()
         ));
         assert!(acl_policy.can_serve(
             &UnitType::from_str("test.package.MyServer").unwrap(),

@@ -123,20 +123,20 @@ pub unsafe extern "C" fn ASDV_SubscribeToUnitType(
 
 #[comms_stack_ffi_fn]
 #[no_mangle]
-pub unsafe extern "C" fn ASDV_SubscribeToChannel(
+pub unsafe extern "C" fn ASDV_SubscribeToTopic(
     context: &'static ASDV_Context,
     unit_type: &ASDV_UnitType,
-    #[allow_ptr] channel_name: *const std::ffi::c_char,
+    #[allow_ptr] topic_name: *const std::ffi::c_char,
     subscription_flags: u64,
     #[allow_value] cb_vtable: ffi_types::ASDV_CallbackVTable_SubscribeToPublication,
 ) -> sdv_status_t {
     // SAFETY:
-    // `channel_name` is a pointer to a valid NUL-terminated string
+    // `topic_name` is a pointer to a valid NUL-terminated string
     unsafe {
-        ffi_impl::subscribe_to_channel(
+        ffi_impl::subscribe_to_topic(
             context,
             unit_type,
-            channel_name,
+            topic_name,
             subscription_flags,
             cb_vtable.into(),
         )

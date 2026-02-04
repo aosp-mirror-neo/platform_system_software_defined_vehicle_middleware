@@ -63,7 +63,7 @@ pub trait Communicate: Send + Sync {
     async fn create_subscribe_handle(
         &self,
         type_name: &TypeName,
-        channel_name: &str,
+        topic_name: &str,
         options: &SubscribeOptions,
     ) -> SdvResult<Box<dyn Subscribe>>;
 

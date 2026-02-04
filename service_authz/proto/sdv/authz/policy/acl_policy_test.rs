@@ -25,11 +25,11 @@ fn test_parse_textproto_with_permissions() {
 
     assert_eq!(policy.publish.len(), 1);
     assert_eq!(policy.publish[0].publication_type, "test.package.MessageType");
-    assert_eq!(policy.publish[0].channel_name, "test-channel-name");
+    assert_eq!(policy.publish[0].topic_name, "test_topic_name");
 
     assert_eq!(policy.subscribe.len(), 1);
     assert_eq!(policy.subscribe[0].publication_type, "test.package.MessageType");
-    assert_eq!(policy.subscribe[0].channel_name, "test-another-channel-name");
+    assert_eq!(policy.subscribe[0].topic_name, "test_another_topic_name");
 
     assert_eq!(policy.serve.len(), 1);
     assert_eq!(policy.serve[0].server_type, "test.package.Server");

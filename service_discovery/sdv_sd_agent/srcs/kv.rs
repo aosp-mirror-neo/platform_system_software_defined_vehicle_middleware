@@ -45,7 +45,7 @@ use google_sdv_identity::aidl::google::sdv::identity::{
 };
 
 use log::{debug, error, info, warn};
-use sdv_comms_id::names::ChannelName;
+use sdv_comms_id::names::TopicName;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::sync::mpsc;
@@ -586,21 +586,17 @@ impl ServiceRegistry {
         Ok(())
     }
 
-    pub(crate) fn register_service_unit_change_listener_by_channel(
+    pub(crate) fn register_service_unit_change_listener_by_topic(
         &self,
         unit_type: &UnitType,
-        channel_name: &ChannelName,
+        topic_name: &TopicName,
         listener: ServiceUnitChangeListener,
     ) -> binder::Result<()> {
         let unit_type = deprecate_unit_type_owner(unit_type.clone());
 
         let service_defns = {
             let mut storage: MutexGuard<RegistryStorage> = self.storage.lock().unwrap();
-            storage.listeners.register_listener_by_channel(
-                &unit_type,
-                channel_name,
-                listener.clone(),
-            );
+            storage.listeners.register_listener_by_topic(&unit_type, topic_name, listener.clone());
 
             let service_defns = storage
                 .service_unit_registry
@@ -611,7 +607,7 @@ impl ServiceRegistry {
                         if let TypedMetadataAidl::PublisherUnit(metadata) =
                             &sud.appMetadata.typedMetadata
                         {
-                            if metadata.channel_name != channel_name.as_ref() {
+                            if metadata.topic_name != topic_name.as_ref() {
                                 return None;
                             }
                             return Some(sud.clone());
@@ -632,16 +628,16 @@ impl ServiceRegistry {
         Ok(())
     }
 
-    pub(crate) fn unregister_service_unit_change_listener_by_channel(
+    pub(crate) fn unregister_service_unit_change_listener_by_topic(
         &self,
         unit_type: &UnitType,
-        channel_name: &ChannelName,
+        topic_name: &TopicName,
         listener: ServiceUnitChangeListener,
     ) -> binder::Result<()> {
         let unit_type = deprecate_unit_type_owner(unit_type.clone());
 
         let mut storage = self.storage.lock().unwrap();
-        storage.listeners.unregister_listener_by_channel(&unit_type, channel_name, listener);
+        storage.listeners.unregister_listener_by_topic(&unit_type, topic_name, listener);
 
         Ok(())
     }
@@ -701,7 +697,7 @@ mod tests {
 
     use super::test_support::{
         get_default_test_unit_type, register_service_unit_for_test,
-        register_service_unit_for_test_channel,
+        register_service_unit_for_test_topic,
     };
     use super::ServiceRegistry;
 
@@ -1592,19 +1588,19 @@ mod tests {
     }
 
     #[test]
-    fn register_unregister_listener_by_channel_succeeds() {
+    fn register_unregister_listener_by_topic_succeeds() {
         let service_registry = ServiceRegistry::default();
         let unit_type = get_listener_test_default_unit_type();
         let caller_pid = ProcessIdentifier { pid: 42, uid: 1001 };
-        let channel_name = ChannelName::from_str("channel").unwrap();
+        let topic_name = TopicName::from_str("topic").unwrap();
 
-        let identity = register_service_unit_for_test_channel(
+        let identity = register_service_unit_for_test_topic(
             &service_registry,
             "some_vm_name",
             &unit_type,
             &caller_pid,
             123,
-            Some(channel_name.to_string()),
+            Some(topic_name.to_string()),
         );
 
         let listener = FakeServiceUnitChangeListener::new();
@@ -1612,9 +1608,9 @@ mod tests {
 
         // Register the listener.
         assert!(service_registry
-            .register_service_unit_change_listener_by_channel(
+            .register_service_unit_change_listener_by_topic(
                 &unit_type,
-                &channel_name,
+                &topic_name,
                 binder_status_listener.clone()
             )
             .is_ok());
@@ -1633,62 +1629,62 @@ mod tests {
 
         // Unregister the listener.
         assert!(service_registry
-            .unregister_service_unit_change_listener_by_channel(
+            .unregister_service_unit_change_listener_by_topic(
                 &unit_type,
-                &channel_name,
+                &topic_name,
                 binder_status_listener
             )
             .is_ok());
     }
 
     #[test]
-    fn listener_by_channel_not_notified_for_wrong_channel() {
+    fn listener_by_topic_not_notified_for_wrong_topic() {
         let service_registry = ServiceRegistry::default();
         let unit_type = get_listener_test_default_unit_type();
         let caller_pid = ProcessIdentifier { pid: 42, uid: 1001 };
-        let channel_name = ChannelName::from_str("channel").unwrap();
-        let wrong_channel_name = ChannelName::from_str("wrong-channel").unwrap();
+        let topic_name = TopicName::from_str("topic").unwrap();
+        let wrong_topic_name = TopicName::from_str("wrong-topic").unwrap();
 
-        register_service_unit_for_test_channel(
+        register_service_unit_for_test_topic(
             &service_registry,
             "some_vm_name",
             &unit_type,
             &caller_pid,
             123,
-            Some(channel_name.to_string()),
+            Some(topic_name.to_string()),
         );
 
         let listener = FakeServiceUnitChangeListener::new();
         let binder_status_listener = listener.wrap_with_authz();
 
-        // Register the listener for the correct channel name.
+        // Register the listener for the correct topic name.
         assert!(service_registry
-            .register_service_unit_change_listener_by_channel(
+            .register_service_unit_change_listener_by_topic(
                 &unit_type,
-                &wrong_channel_name,
+                &wrong_topic_name,
                 binder_status_listener.clone()
             )
             .is_ok());
 
-        // Listener should not be notified because the channel name doesn't match.
+        // Listener should not be notified because the topic name doesn't match.
         assert_that!(listener.get_num_on_service_unit_registered(), eq(0));
 
         // Unregister the listener.
         assert!(service_registry
-            .unregister_service_unit_change_listener_by_channel(
+            .unregister_service_unit_change_listener_by_topic(
                 &unit_type,
-                &wrong_channel_name,
+                &wrong_topic_name,
                 binder_status_listener
             )
             .is_ok());
     }
 
     #[test]
-    fn listener_by_channel_not_notified_for_no_publication_metadata() {
+    fn listener_by_topic_not_notified_for_no_publication_metadata() {
         let service_registry = ServiceRegistry::default();
         let unit_type = get_listener_test_default_unit_type();
         let caller_pid = ProcessIdentifier { pid: 42, uid: 1001 };
-        let channel_name = ChannelName::from_str("channel").unwrap();
+        let topic_name = TopicName::from_str("topic").unwrap();
 
         register_service_unit_for_test(
             &service_registry,
@@ -1701,23 +1697,23 @@ mod tests {
         let listener = FakeServiceUnitChangeListener::new();
         let binder_status_listener = listener.wrap_with_authz();
 
-        // Register the listener for the correct channel name.
+        // Register the listener for the correct topic name.
         assert!(service_registry
-            .register_service_unit_change_listener_by_channel(
+            .register_service_unit_change_listener_by_topic(
                 &unit_type,
-                &channel_name,
+                &topic_name,
                 binder_status_listener.clone()
             )
             .is_ok());
 
-        // Listener should not be notified because the channel name doesn't match.
+        // Listener should not be notified because the topic name doesn't match.
         assert_that!(listener.get_num_on_service_unit_registered(), eq(0));
 
         // Unregister the listener.
         assert!(service_registry
-            .unregister_service_unit_change_listener_by_channel(
+            .unregister_service_unit_change_listener_by_topic(
                 &unit_type,
-                &channel_name,
+                &topic_name,
                 binder_status_listener
             )
             .is_ok());

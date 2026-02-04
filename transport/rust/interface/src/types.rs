@@ -199,8 +199,8 @@ pub struct PublisherAttributes {
     publication_name: String,
     /// The Type this publisher publishes
     type_name: TypeName,
-    /// The channel this publisher publishes to
-    channel_name: String,
+    /// The topic this publisher publishes to
+    topic_name: String,
     /// publisher metadata
     metadata: PublisherMetadata,
 }
@@ -222,9 +222,9 @@ impl PublisherAttributes {
     pub fn get_metadata(&self) -> &PublisherMetadata {
         &self.metadata
     }
-    /// publisher channel name
-    pub fn get_channel_name(&self) -> &String {
-        &self.channel_name
+    /// publisher topic name
+    pub fn get_topic_name(&self) -> &String {
+        &self.topic_name
     }
 }
 
@@ -233,7 +233,7 @@ pub struct PublisherAttributesBuilder {
     publication_name: String,
     type_name: Option<TypeName>,
     metadata: PublisherMetadata,
-    channel_name: String,
+    topic_name: String,
 }
 
 impl PublisherAttributesBuilder {
@@ -252,9 +252,9 @@ impl PublisherAttributesBuilder {
         self.metadata = metadata;
         self
     }
-    /// set the channel name
-    pub fn channel_name(mut self, channel_name: impl Into<String>) -> Self {
-        self.channel_name = channel_name.into();
+    /// set the topic name
+    pub fn topic_name(mut self, topic_name: impl Into<String>) -> Self {
+        self.topic_name = topic_name.into();
         self
     }
     /// Validates PublisherAttributes before returning an instance of it.
@@ -269,7 +269,7 @@ impl PublisherAttributesBuilder {
         Ok(PublisherAttributes {
             publication_name: self.publication_name,
             type_name,
-            channel_name: self.channel_name,
+            topic_name: self.topic_name,
             metadata: self.metadata,
         })
     }
@@ -764,20 +764,20 @@ mod test {
         let publication_name = "some-service-unit";
         let package_name = "rand.pgk.name";
         let type_name = TypeName::builder().package_name(package_name).build().unwrap();
-        let channel_name = "test-channel";
+        let topic_name = "test-topic";
         let metadata = PublisherMetadata::builder().is_multipub(true).build().unwrap();
 
         let result = PublisherAttributes::builder()
             .publication_name(publication_name)
             .type_name(type_name)
-            .channel_name(channel_name)
+            .topic_name(topic_name)
             .metadata(metadata)
             .build();
         assert!(result.is_ok());
         let publisher_attributes = result.unwrap();
         assert_eq!(publisher_attributes.get_publication_name(), publication_name);
         assert_eq!(publisher_attributes.get_type_name().get_package_name(), package_name);
-        assert_eq!(publisher_attributes.get_channel_name(), channel_name);
+        assert_eq!(publisher_attributes.get_topic_name(), topic_name);
         assert!(publisher_attributes.get_metadata().is_multipub());
     }
 
