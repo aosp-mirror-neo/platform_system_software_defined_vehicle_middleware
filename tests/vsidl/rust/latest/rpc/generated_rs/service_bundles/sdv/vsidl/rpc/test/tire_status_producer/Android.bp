@@ -32,9 +32,11 @@ genrule {
 rust_library {
     name: "libsdv_mw_rs_sdv_vsidl_rpc_test_tire_status_producer",
     crate_name: "sdv_mw_rs_sdv_vsidl_rpc_test_tire_status_producer",
+    crate_root: ":libsdv_mw_rs_sdv_vsidl_rpc_test_tire_status_producer_rs{service_bundle.rs}",
     srcs: [
-        ":libsdv_mw_rs_sdv_vsidl_rpc_test_tire_status_producer_rs{service_bundle.rs}",
+        ":libsdv_mw_rs_sdv_vsidl_rpc_test_tire_status_producer_rs",
     ],
+    use_expansive_default_srcs: false,
     rustlibs: [
         "libprotobuf",
         "liblog_rust",
