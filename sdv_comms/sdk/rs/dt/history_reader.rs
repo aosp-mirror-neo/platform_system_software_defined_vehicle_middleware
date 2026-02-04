@@ -99,6 +99,59 @@ impl HistoryReader {
     }
 
     /// Non blocking.
+    /// Subscribes to all publications of specified unit_type and topic_name, wires them into a
+    /// single DataTunnel publication and creates a "history_buffer_size"-size history aggregator
+    /// for it. The subscription is made dynamically to all current and future publications of
+    /// the specified UnitType and topic_name. Creating more than one HistoryReader instance for
+    /// the same UnitType and topic_name will create independent objects with separate buffers and
+    /// subscription related resources.
+    ///
+    /// Parameters:
+    ///    [IN] context: Reference to the local SDV Comm Stack Context object
+    ///    [IN] unit_type: Unit Type of the publications to subscribe
+    ///    [IN] topic_name: The topic_name to subscribe to
+    ///    [IN] history_buffer_size: Number of messages to store in history
+    ///
+    /// Return value:
+    ///   Returns a Future of SdvResult that contains SdvStatus of the
+    ///   method call and, if method succeeded, a new HistoryReader instance.
+    pub async fn create_for_topic(
+        context: ContextRef,
+        unit_type: &UnitType,
+        topic_name: &str,
+        history_buffer_size: u32,
+    ) -> SdvResult<HistoryReader> {
+        type SubscribeToHistoryCb = OnceCallbackWrapper<OwnedOpaquePtr<ASDV_HistoryHandle>>;
+
+        let (cb, fut) = SubscribeToHistoryCb::new_async();
+        let vtable = ASDV_CallbackVTable_SubscribeToHistory {
+            func: Some(SubscribeToHistoryCb::trampoline_func),
+            clear: Some(SubscribeToHistoryCb::trampoline_clear),
+            cb_data: cb.into_void_ptr(),
+        };
+
+        let topic_name_cstr = std::ffi::CString::new(topic_name).unwrap();
+
+        // SAFETY: `context.as_raw()`: `context` is a `ContextRef`, which wraps a `&'static
+        //   ASDV_Context`. This guarantees the pointer is valid for the program's lifetime.
+        // `topic_name_cstr.as_ptr()`: `topic_name_cstr` is a `std::ffi::CString` created from the
+        //   `topic_name` string slice. This ensures it's a valid NUL-terminated C string, and it
+        //   lives for the duration of this function scope.
+        unsafe {
+            sdv_comms_bindgen::ASDV_SubscribeToHistoryByTopic(
+                context.as_raw(),
+                UnitType::peel_ref(unit_type),
+                topic_name_cstr.as_ptr(),
+                history_buffer_size,
+                vtable,
+            );
+        }
+
+        let handle = fut.await.map_err(derive!(SdvStatusCode::Internal))??;
+        Ok(HistoryReader(handle))
+    }
+
+    /// Non blocking.
     /// Returns the publication metadata that contains the message size in bytes
     /// along with other publication related metadata.
     ///

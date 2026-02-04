@@ -377,6 +377,46 @@ pub fn subscribe_to_history(
     }
 }
 
+/// FFI implementation for `ASDV_SubscribeToHistoryByTopic`
+/// Creates a "history_buffer_size"-size history aggregator for all publications of the given
+/// unit type and topic and subscribes to it. Stores the newly created history handle.
+///
+/// SAFETY:
+///   `context` is a pointer to a valid Context object
+///   `unit_type` is a pointer to a valid ASDV_UnitType object
+///   `topic_name` is a pointer to a valid NUL-terminated string
+///   `callback` is a pointer to a valid OnceCallback<Box<ffi_types::ASDV_HistoryHandle>> object
+pub unsafe fn subscribe_to_history_by_topic(
+    context: &'static ASDV_Context,
+    unit_type: &ASDV_UnitType,
+    topic_name: *const std::ffi::c_char,
+    history_buffer_size: u32,
+    callback: OnceCallback<Box<ffi_types::ASDV_HistoryHandle>>,
+) -> sdv_status_t {
+    try_status! {
+        let context = ASDV_Context::peel_ref(context);
+        let unit_type: UnitType = unit_type.try_into()?;
+        // SAFETY: `topic_name` is a pointer to a valid NUL-terminated string
+        let topic_name = unsafe { std::ffi::CStr::from_ptr(topic_name)}
+            .to_str()
+            .map_err(|e| {
+                SdvStatus::with_message(SdvStatusCode::InvalidArgument, format!("Invalid topic name: {e}"))
+            })?;
+
+        let topic_name = TopicName::from_str(topic_name).map_err(|e| {
+            SdvStatus::with_message(SdvStatusCode::InvalidArgument, format!("Invalid topic name: {e}"))
+        })?;
+
+        context.get_executor().spawn(Box::pin(async move {
+            let res =
+                HistoryInternal::subscribe_to_topic(context, &unit_type, &topic_name, history_buffer_size).await;
+            callback.invoke(res.map(|history| Box::new(ASDV_HistoryHandle { history })));
+        }));
+
+        Ok(())
+    }
+}
+
 /// FFI implementation for `ASDV_AvailableInHistory`
 /// Reports the number of messages available in the history buffer
 ///
