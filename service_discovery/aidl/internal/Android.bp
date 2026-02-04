@@ -18,13 +18,11 @@ package {
 
 aidl_interface {
     name: "google.sdv.identity.internal",
-    vendor_available: true,
     system_ext_specific: true,
     srcs: ["google/sdv/identity/internal/*.aidl"],
     imports: [
         "google.sdv.identity-V2",
     ],
-    stability: "vintf",
     owner: "google",
     frozen: false,
     min_sdk_version: "35",
@@ -50,4 +48,5 @@ aidl_interface {
             enabled: false,
         },
     },
+    // No vintf stability since this is an internal SDV API without cross partition calls.
 }
