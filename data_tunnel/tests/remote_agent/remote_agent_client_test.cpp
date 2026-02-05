@@ -779,5 +779,15 @@ TEST_F(RemoteAgentClientTest, TopicDestroyed_ProcessedForActiveSubscription) {
     EXPECT_FALSE(topic_manager_.FindTopic(kTestTopicName, /*local_only*/ false));
 }
 
+TEST_F(RemoteAgentClientTest, RequestTerminate_UnregistersTopics) {
+    PrepareClientWithActiveSubscription();
+
+    ASSERT_TRUE(topic_manager_.FindTopic(kTestTopicName, /*local_only*/ false));
+
+    client_->RequestTerminate();
+
+    EXPECT_FALSE(topic_manager_.FindTopic(kTestTopicName, /*local_only*/ false));
+}
+
 }  // namespace
 }  // namespace android::sdv::dt::agent::test
