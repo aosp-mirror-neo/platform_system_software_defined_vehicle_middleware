@@ -272,7 +272,7 @@ impl LocalMessageQueue {
         Ok(res)
     }
 
-    fn observe(&mut self) -> Pin<Box<dyn Stream<Item = SdvResult<(u32, Vec<u8>)>> + Send>> {
+    pub fn observe(&mut self) -> Pin<Box<dyn Stream<Item = SdvResult<(u32, Vec<u8>)>> + Send>> {
         let (sender, receiver) = mpsc::channel::<SdvResult<(u32, Vec<u8>)>>(10);
         self.senders.push(sender);
         Box::pin(receiver)

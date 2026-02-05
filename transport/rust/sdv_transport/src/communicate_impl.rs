@@ -191,6 +191,27 @@ impl Communicate for SdvComms {
         Ok(Box::pin(dt_stream))
     }
 
+    async fn create_message_stream(
+        &self,
+        type_name: &TypeName,
+        topic_name: &str,
+        options: &SubscribeOptions,
+    ) -> SdvResult<ByteBuffersStream> {
+        let unit_type = UnitType::builder()
+            .set_sdv_package_name(type_name.get_package_name())
+            .set_unit_type_name(type_name.get_type_name())
+            .build()?;
+        let dt_stream = DtStream::create_for_topic(
+            self.context,
+            &unit_type,
+            topic_name,
+            options.get_min_interval(),
+            DtSubscriberOptions { fetch_last_message: options.read_on_subscribe() },
+        )
+        .await?;
+        Ok(Box::pin(dt_stream))
+    }
+
     async fn create_client_transport(
         &self,
         attributes: &ClientAttributes,
@@ -2183,6 +2204,14 @@ mod test {
                 .unwrap(),
         );
 
+        // AND GIVEN an observer on the same topic.
+        let mut observer = observe::<Pressure>(
+            comms
+                .create_message_stream(&fq_type_name, topic_name, &SubscribeOptions::default())
+                .await
+                .unwrap(),
+        );
+
         // Needed for the topic reader to be created on a separate process.
         tokio::time::sleep(TOPIC_CREATION_DURATION).await;
 
@@ -2197,5 +2226,12 @@ mod test {
         read.sort_by_key(|x| x.pressure);
         assert_eq!(read[0].pressure, 1234);
         assert_eq!(read[1].pressure, 5678);
+
+        // AND THEN the observer can receive messages from both publishers.
+        let mut received = observer.next().await.unwrap().unwrap();
+        assert_eq!(received.len(), 2);
+        received.sort_by_key(|x| x.pressure);
+        assert_eq!(received[0].pressure, 1234);
+        assert_eq!(received[1].pressure, 5678);
     }
 }
