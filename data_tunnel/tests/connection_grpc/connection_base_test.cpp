@@ -55,12 +55,8 @@ protected:
     }
 
     void TearDown() override {
-        if (client_connection_) {
-            client_connection_->Disconnect();
-        }
-        if (server_connection_) {
-            server_connection_->Disconnect();
-        }
+        client_connection_.reset();
+        server_connection_.reset();
         client_manager_->Shutdown();
         server_manager_->Shutdown();
     }

@@ -49,8 +49,8 @@ public:
     // Request termination of the session.
     void RequestTerminate();
 
-    // Session is completely terminated and destruction should not block.
-    bool IsTerminated() { return !connection_thread_active_; }
+    // Session is completely terminated and can be deleted.
+    bool IsTerminated();
 
     void DumpStats(std::ostream& out_stream) const;
 
@@ -66,8 +66,8 @@ private:
     std::string peer_vm_name_;
     std::atomic<uint32_t> parcel_id_counter_;
 
-    // Must be initialized before connection_thread_ to avoid race.
-    std::atomic<bool> connection_thread_active_ = true;
+    // Used to ensure we don't release connection_ while in use outside of ConnectionThread.
+    mutable std::mutex connection_lock_;
 
     // Dedicated thread since IConnection ReceiveData / SendData are blocking.
     std::jthread connection_thread_;

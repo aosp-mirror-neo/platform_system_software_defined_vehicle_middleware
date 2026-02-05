@@ -33,29 +33,24 @@
 namespace android::sdv::dt::agent {
 
 void GrpcOperationStateMachine::ReportGrpcResult(bool success) {
-    auto guard = Lock();
-    CHECK(state_ == State::GRPC_WAIT || state_ == State::TERMINAL_GRPC_WAIT);
-    grpc_result_ = success;
-    cv_.notify_all();
+    grpc_result_.set_value(success);
 }
 
-void GrpcOperationStateMachine::WaitToTerminate() {
-    auto guard = Lock();
-
-    CHECK(state_ != State::TERMINAL_GRPC_WAIT && state_ != State::TERMINATED);
-
-    state_ = (state_ == State::GRPC_WAIT) ? State::TERMINAL_GRPC_WAIT
-                                          : State::WAITING_THREADS_EXIT_WAIT;
-
-    cv_.wait(guard,
-             [this]() { return state_ == State::WAITING_THREADS_EXIT_WAIT && wait_count_ == 0; });
-    state_ = State::TERMINATED;
+void GrpcOperationStateMachine::Terminate(std::unique_lock<std::mutex>& guard) {
+    CHECK(guard.owns_lock() && guard.mutex() == &mutex_);
+    terminated_ = true;
 }
 
-void GrpcOperationStateMachine::ForceTerminate(std::unique_lock<std::mutex>& /*guard*/) {
-    // Make sure there's no outstanding activity that we would need to wait on.
-    CHECK(state_ != State::GRPC_WAIT && state_ != State::TERMINAL_GRPC_WAIT && wait_count_ == 0);
-    state_ = State::TERMINATED;
+bool GrpcOperationStateMachine::TryTerminate() {
+    std::unique_lock guard(mutex_, std::try_to_lock);
+    if (guard.owns_lock()) {
+        terminated_ = true;
+    }
+    return terminated_;
+}
+
+bool GrpcOperationStateMachine::IsTerminated() {
+    return terminated_;
 }
 
 }  // namespace android::sdv::dt::agent

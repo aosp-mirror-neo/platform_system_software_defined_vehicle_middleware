@@ -52,8 +52,9 @@ static uint32_t kTestTopicSubId = 42;
 class RemoteAgentServerSessionTest : public ::testing::Test {
 protected:
     void PrepareSession() {
-        auto [connection, deleter] = MakeFakeConnection();
+        auto [connection, releaser] = MakeFakeConnection();
         connection_ = static_cast<FakeConnection*>(connection.get());
+        connection_releaser_ = std::move(releaser);
 
         EXPECT_CALL(handshaker_,
                     PerformHandshake(Address(static_cast<IConnection*>(connection.get())),
@@ -123,6 +124,7 @@ protected:
     // Ownership of the connection will be handed into the RemoteAgentServerSession, but tests
     // retain a raw pointer so they can interact with it.
     FakeConnection* connection_;
+    FakeConnectionReleaser connection_releaser_;
     StrictMock<MockHandshaker> handshaker_;
     StrictMock<MockFunction<RemoteAgentServerSession::HandshakeCallback>> handshake_callback_;
     TopicManager topic_manager_;
@@ -131,7 +133,7 @@ protected:
 };
 
 TEST_F(RemoteAgentServerSessionTest, Construction_BecomesInactiveOnHandshakeFailure) {
-    auto [connection, deleter] = MakeFakeConnection();
+    auto [connection, releaser] = MakeFakeConnection();
     connection_ = static_cast<FakeConnection*>(connection.get());
 
     // Will attempt handshake on construction and get failure.
@@ -141,8 +143,8 @@ TEST_F(RemoteAgentServerSessionTest, Construction_BecomesInactiveOnHandshakeFail
     // Handshake callback never fires since handshake fails.
     EXPECT_CALL(handshake_callback_, Call(_, _)).Times(0);
 
-    // ConnectionThread should call Disconnect before exiting.
-    EXPECT_CALL(*connection_, Disconnect());
+    // ConnectionThread should release connection before exiting.
+    EXPECT_CALL(*releaser, Call(Eq(connection.get())));
 
     RemoteAgentServerSession session(std::move(connection), handshaker_,
                                      handshake_callback_.AsStdFunction(), topic_manager_);
@@ -188,16 +190,16 @@ TEST_F(RemoteAgentServerSessionTest, RequestTerminate_Shuts_Down_Connection) {
         connection_->SetSendDataReturnValue(false);
     });
 
-    EXPECT_CALL(*connection_, Disconnect());
+    EXPECT_CALL(*connection_releaser_, Call(Eq(connection_)));
 
     session_->RequestTerminate();
 
     // Session should reach terminated state.
     WaitForConditionOrTimeout([&]() { return session_->IsTerminated(); });
 
-    // Explicitly verify connection_ expectations before Session destruction to
+    // Explicitly verify connection_releaser_ expectations before Session destruction to
     // ensure they don't depend on destruction.
-    Mock::VerifyAndClearExpectations(connection_);
+    Mock::VerifyAndClearExpectations(connection_releaser_.get());
 }
 
 TEST_F(RemoteAgentServerSessionTest, LastMessage_FailsForUnknownTopic) {

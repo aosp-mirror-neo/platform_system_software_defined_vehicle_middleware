@@ -115,97 +115,128 @@ TEST_F(GrpcOperationStateMachineTest, ConcurrentOperations) {
     EXPECT_TRUE(op2_finished);
 }
 
-TEST_F(GrpcOperationStateMachineTest, WaitToTerminateWhenInactive) {
-    state_machine_.WaitToTerminate();
-    // It should just return without blocking.
+TEST_F(GrpcOperationStateMachineTest, TerminateWhenInactive) {
+    {
+        auto guard = state_machine_.Lock();
+        state_machine_.Terminate(guard);
+    }
+    EXPECT_TRUE(state_machine_.IsTerminated());
 }
 
-TEST_F(GrpcOperationStateMachineTest, WaitToTerminateWithActiveOperation) {
+TEST_F(GrpcOperationStateMachineTest, TryTerminateWhenInactive) {
+    EXPECT_TRUE(state_machine_.TryTerminate());
+}
+
+TEST_F(GrpcOperationStateMachineTest, TerminateWithActiveOperation) {
     std::promise<void> op_started;
     std::future<void> op_started_future = op_started.get_future();
+    std::optional<bool> op_result;
 
-    std::thread op_thread([&]() {
+    std::jthread op_thread([&]() {
         auto guard = state_machine_.Lock();
-        state_machine_.RunOperation(guard, [&]() { op_started.set_value(); });
+        op_result = state_machine_.RunOperation(guard, [&]() { op_started.set_value(); });
     });
 
-    op_started_future.wait_for(100ms);
+    ASSERT_EQ(op_started_future.wait_for(100ms), std::future_status::ready);
 
-    std::thread terminate_thread([&]() { state_machine_.WaitToTerminate(); });
+    std::promise<void> terminate_done_promise;
+    auto terminate_done_future = terminate_done_promise.get_future();
+    std::jthread term_thread([&]() {
+        auto guard = state_machine_.Lock();
+        state_machine_.Terminate(guard);
+        terminate_done_promise.set_value();
+    });
 
-    // Give terminate_thread a chance to run and block.
-    std::this_thread::sleep_for(20ms);
+    ASSERT_EQ(terminate_done_future.wait_for(1s), std::future_status::timeout);
+    ASSERT_FALSE(state_machine_.IsTerminated());
 
-    // Now complete the operation.
+    // Now complete the operation and wait briefly for terminate to complete.
     state_machine_.ReportGrpcResult(true);
 
-    // The terminate thread should now unblock and finish.
-    terminate_thread.join();
-    op_thread.join();
+    ASSERT_EQ(terminate_done_future.wait_for(200ms), std::future_status::ready);
+    ASSERT_TRUE(state_machine_.IsTerminated());
+
+    // Operation should have returned success despite termination
+    ASSERT_TRUE(op_result && *op_result);
 }
 
-TEST_F(GrpcOperationStateMachineTest, WaitToTerminateWithWaitingOperation) {
-    std::promise<void> op1_started_promise;
-    std::future<void> op1_started_future = op1_started_promise.get_future();
-    std::atomic<bool> op1_finished = false;
+TEST_F(GrpcOperationStateMachineTest, TryTerminateWithActiveOperation) {
+    std::promise<void> op_started;
+    std::future<void> op_started_future = op_started.get_future();
+    std::promise<void> op_done;
 
-    std::thread op1_thread([&]() {
-        auto guard = state_machine_.Lock();
-        state_machine_.RunOperation(guard, [&]() { op1_started_promise.set_value(); });
-        op1_finished = true;
-    });
-
-    op1_started_future.wait_for(100ms);
-
-    std::atomic<bool> op2_started = false;
-    std::atomic<bool> op2_returned_nullopt = false;
-    std::thread op2_thread([&]() {
-        auto guard = state_machine_.Lock();
-        auto result = state_machine_.RunOperation(guard, [&]() { op2_started = true; });
-        if (!result.has_value()) {
-            op2_returned_nullopt = true;
+    std::jthread op_thread([&]() {
+        {
+            auto guard = state_machine_.Lock();
+            state_machine_.RunOperation(guard, [&]() { op_started.set_value(); });
         }
+        op_done.set_value();
     });
 
-    // Give op2 a chance to block.
-    std::this_thread::sleep_for(20ms);
+    ASSERT_EQ(op_started_future.wait_for(100ms), std::future_status::ready);
 
-    std::thread terminate_thread([&]() { state_machine_.WaitToTerminate(); });
+    ASSERT_FALSE(state_machine_.TryTerminate());
 
-    // Give terminate a chance to block.
-    std::this_thread::sleep_for(20ms);
+    // Now complete the operation and wait for RunOperation to complete.
+    state_machine_.ReportGrpcResult(true);
+    ASSERT_EQ(op_done.get_future().wait_for(200ms), std::future_status::ready);
 
-    // op1 is running, op2 is waiting, terminate is waiting.
-    // Now, complete op1.
+    ASSERT_TRUE(state_machine_.TryTerminate());
+}
+
+TEST_F(GrpcOperationStateMachineTest, TerminateWithWaitingOperation) {
+    std::promise<void> op1_started;
+    std::promise<std::optional<bool>> op1_result;
+    auto op1_result_future = op1_result.get_future();
+    std::promise<void> op1_terminate_ready;
+
+    std::jthread op1_thread([&]() {
+        auto guard = state_machine_.Lock();
+        op1_result.set_value(
+                state_machine_.RunOperation(guard, [&]() { op1_started.set_value(); }));
+
+        // Wait for main test to signal we can terminate.
+        op1_terminate_ready.get_future().get();
+
+        // op1 calls terminate without ever releasing guard.
+        state_machine_.Terminate(guard);
+    });
+
+    ASSERT_EQ(op1_started.get_future().wait_for(100ms), std::future_status::ready);
+
+    std::promise<void> op2_started;
+    std::promise<std::optional<bool>> op2_result;
+    auto op2_result_future = op2_result.get_future();
+    std::jthread op2_thread([&]() {
+        op2_started.set_value();
+        auto guard = state_machine_.Lock();
+        op2_result.set_value(state_machine_.RunOperation(guard, [&]() {}));
+    });
+
+    // Wait for op2 thread to start.
+    ASSERT_EQ(op2_started.get_future().wait_for(100ms), std::future_status::ready);
+
+    // Now, report a result.
     state_machine_.ReportGrpcResult(true);
 
-    op1_thread.join();
-    EXPECT_TRUE(op1_finished);
+    // Now op1 completes.
+    ASSERT_EQ(op1_result_future.wait_for(100ms), std::future_status::ready);
+    ASSERT_EQ(*op1_result_future.get(), true);
 
-    // After op1 completes, op2's `RunOperation` should unblock, see the state is terminating,
-    // and return nullopt without running its `start_op`.
-    op2_thread.join();
-    EXPECT_FALSE(op2_started);
-    EXPECT_TRUE(op2_returned_nullopt);
+    // op2 still waiting for op1 thread to terminate and release lock
+    ASSERT_EQ(op2_result_future.wait_for(200ms), std::future_status::timeout);
 
-    // And terminate thread should complete.
-    terminate_thread.join();
+    op1_terminate_ready.set_value();
+
+    // Now op2 completes and returns no value due to termination.
+    ASSERT_EQ(op2_result_future.wait_for(200ms), std::future_status::ready);
+    EXPECT_FALSE(op2_result_future.get().has_value());
 }
 
-TEST_F(GrpcOperationStateMachineTest, RunOperationWhileTerminating) {
-    state_machine_.WaitToTerminate();
+TEST_F(GrpcOperationStateMachineTest, RunOperationWhileTerminated) {
+    ASSERT_TRUE(state_machine_.TryTerminate());
 
     auto guard = state_machine_.Lock();
-    auto result = state_machine_.RunOperation(guard, [] {});
-    EXPECT_FALSE(result.has_value());
-}
-
-TEST_F(GrpcOperationStateMachineTest, ForceTerminate) {
-    auto guard = state_machine_.Lock();
-    state_machine_.ForceTerminate(guard);
-    // Should not crash.
-
-    // After ForceTerminate, RunOperation should fail.
     auto result = state_machine_.RunOperation(guard, [] {});
     EXPECT_FALSE(result.has_value());
 }
