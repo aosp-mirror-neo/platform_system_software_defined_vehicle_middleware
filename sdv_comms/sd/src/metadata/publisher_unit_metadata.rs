@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::metadata::PublisherUnitMetadata::PublisherUnitMetadata as PublisherUnitMetadataAidl;
-use sdv_comms_id::names::ChannelName;
+use sdv_comms_id::names::TopicName;
 use sdv_status_rs::{derive, SdvStatus};
 use std::str::FromStr;
 
@@ -48,12 +48,12 @@ impl PublisherUnitMetadata {
         self.aidl.message_count = message_count as i32;
     }
 
-    pub fn get_channel_name(&self) -> &str {
-        &self.aidl.channel_name
+    pub fn get_topic_name(&self) -> &str {
+        &self.aidl.topic_name
     }
 
-    pub fn set_channel_name(&mut self, channel_name: ChannelName) {
-        self.aidl.channel_name = channel_name.into();
+    pub fn set_topic_name(&mut self, topic_name: TopicName) {
+        self.aidl.topic_name = topic_name.into();
     }
 }
 
@@ -61,11 +61,11 @@ impl TryFrom<PublisherUnitMetadataAidl> for PublisherUnitMetadata {
     type Error = SdvStatus;
 
     fn try_from(aidl: PublisherUnitMetadataAidl) -> Result<Self, Self::Error> {
-        // Validate channel name upon conversion.
-        ChannelName::from_str(&aidl.channel_name).map_err(|e| {
+        // Validate topic name upon conversion.
+        TopicName::from_str(&aidl.topic_name).map_err(|e| {
             SdvStatus::with_message(
                 sdv_status_rs::SdvStatusCode::InvalidArgument,
-                format!("Invalid channel name: {e}"),
+                format!("Invalid topic name: {e}"),
             )
         })?;
 

@@ -36,7 +36,7 @@ use std::sync::{Arc, Mutex};
 pub struct LocalPublisher {
     msg_q: Arc<Mutex<LocalMessageQueue>>,
     comms: Arc<LocalComms>,
-    channel_name: String,
+    topic_name: String,
     publisher_name: String,
 }
 
@@ -44,16 +44,16 @@ impl LocalPublisher {
     pub fn new(
         comms: Arc<LocalComms>,
         msg_q: Arc<Mutex<LocalMessageQueue>>,
-        channel_name: String,
+        topic_name: String,
         publisher_name: String,
     ) -> Self {
-        Self { comms, msg_q, channel_name, publisher_name }
+        Self { comms, msg_q, topic_name, publisher_name }
     }
 }
 
 impl Drop for LocalPublisher {
     fn drop(&mut self) {
-        self.comms.publisher_removed(&self.channel_name, &self.publisher_name);
+        self.comms.publisher_removed(&self.topic_name, &self.publisher_name);
     }
 }
 

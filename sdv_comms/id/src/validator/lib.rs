@@ -16,7 +16,7 @@
 //! the Service identity names
 
 pub mod alphanumhyphen_validation;
-pub mod channel_name_validation;
+pub mod topic_name_validation;
 
 pub mod instance_name_validation;
 
@@ -57,6 +57,6 @@ pub use unit_type_name_validation::{
 
 pub use vm_name_validation::{validate_vm_name, VmNameValidationError, VM_NAME_MAX_LENGTH_BYTES};
 
-pub use channel_name_validation::{
-    validate_channel_name, ChannelNameValidationError, CHANNEL_NAME_MAX_LENGTH_BYTES,
+pub use topic_name_validation::{
+    validate_topic_name, TopicNameValidationError, TOPIC_NAME_MAX_LENGTH_BYTES,
 };

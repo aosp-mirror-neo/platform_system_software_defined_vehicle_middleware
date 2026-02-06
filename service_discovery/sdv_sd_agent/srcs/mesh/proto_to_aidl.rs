@@ -160,7 +160,7 @@ impl TryToAidl<PublisherUnitMetadataAidl> for PublisherUnitMetadataProto {
             version: self.version as i32,
             message_size: self.message_size,
             message_count: self.message_count,
-            channel_name: self.channel_name.clone(),
+            topic_name: self.topic_name.clone(),
         })
     }
 }

@@ -165,36 +165,36 @@ public:
                                                IServiceUnitChangeListener>& in_listener),
                 (override));
 
-    MOCK_METHOD(ndk::ScopedAStatus, registerServiceUnitChangeListenerByChannel,
+    MOCK_METHOD(ndk::ScopedAStatus, registerServiceUnitChangeListenerByTopic,
                 (const ::aidl::google::sdv::service_discovery::common::UnitType& in_unitType,
-                 const std::string& in_channelName,
+                 const std::string& in_topicName,
                  const std::shared_ptr<::aidl::google::sdv::service_discovery::discovery::
                                                IServiceUnitChangeListener>& in_listener),
                 (override));
 
-    MOCK_METHOD(ndk::ScopedAStatus, unregisterServiceUnitChangeListenerByChannel,
+    MOCK_METHOD(ndk::ScopedAStatus, unregisterServiceUnitChangeListenerByTopic,
                 (const ::aidl::google::sdv::service_discovery::common::UnitType& in_unitType,
-                 const std::string& in_channelName,
+                 const std::string& in_topicName,
                  const std::shared_ptr<::aidl::google::sdv::service_discovery::discovery::
                                                IServiceUnitChangeListener>& in_listener),
                 (override));
 
-    MOCK_METHOD(ndk::ScopedAStatus, fetchPublishersByChannelName,
-                (const std::string& in_channelName,
+    MOCK_METHOD(ndk::ScopedAStatus, fetchPublishersByTopicName,
+                (const std::string& in_topicName,
                  const std::shared_ptr<aidl::google::sdv::service_discovery::discovery::
                                                IServiceUnitFetchListener>& in_listener),
                 (override));
 
-    MOCK_METHOD(ndk::ScopedAStatus, listChannels,
+    MOCK_METHOD(ndk::ScopedAStatus, listTopics,
                 (const std::shared_ptr<
-                        ::aidl::google::sdv::service_discovery::discovery::IChannelFetchListener>&
+                        ::aidl::google::sdv::service_discovery::discovery::ITopicFetchListener>&
                          in_listener),
                 (override));
 
-    MOCK_METHOD(ndk::ScopedAStatus, listChannelsByType,
+    MOCK_METHOD(ndk::ScopedAStatus, listTopicsByType,
                 (const aidl::google::sdv::service_discovery::common::UnitType& in_unitType,
                  const std::shared_ptr<
-                         ::aidl::google::sdv::service_discovery::discovery::IChannelFetchListener>&
+                         ::aidl::google::sdv::service_discovery::discovery::ITopicFetchListener>&
                          in_listener),
                 (override));
 

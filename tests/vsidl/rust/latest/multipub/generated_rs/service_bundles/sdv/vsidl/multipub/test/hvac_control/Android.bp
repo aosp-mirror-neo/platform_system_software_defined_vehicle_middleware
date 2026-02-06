@@ -32,9 +32,11 @@ genrule {
 rust_library {
     name: "libsdv_mw_rs_sdv_vsidl_multipub_test_hvac_control",
     crate_name: "sdv_mw_rs_sdv_vsidl_multipub_test_hvac_control",
+    crate_root: ":libsdv_mw_rs_sdv_vsidl_multipub_test_hvac_control_rs{service_bundle.rs}",
     srcs: [
-        ":libsdv_mw_rs_sdv_vsidl_multipub_test_hvac_control_rs{service_bundle.rs}",
+        ":libsdv_mw_rs_sdv_vsidl_multipub_test_hvac_control_rs",
     ],
+    use_expansive_default_srcs: false,
     rustlibs: [
         "libprotobuf",
         "liblog_rust",

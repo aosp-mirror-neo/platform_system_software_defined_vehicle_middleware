@@ -347,59 +347,59 @@ pub unsafe extern "C" fn ASDV_PublisherUnitMetadata_getMessageCount(
     SdvStatusCode::Ok.into_raw()
 }
 
-/// Sets channel name of the ASDV_PublisherUnitMetadata.
+/// Sets topic name of the ASDV_PublisherUnitMetadata.
 ///
-/// If the function is called multiple times, the channel name associated with the provided
+/// If the function is called multiple times, the topic name associated with the provided
 /// ASDV_PublisherUnitMetadata will be overwritten.
 ///
 /// Parameters:
 ///    [IN] metadata: A valid pointer to the ASDV_PublisherUnitMetadata object for which to set the
-//              channel name
-///    [IN] channel: The channel name to set for this PublisherUnitMetadata. Must be a valid
+//              topic name
+///    [IN] topic: The topic name to set for this PublisherUnitMetadata. Must be a valid
 ///                 ASCII string up to 127 bytes.
 ///
 /// Return Value: Returns SDV_STATUS_OK on success, otherwise one of the following error codes:
-///    ASDV_STATUS_INVALID_ARGUMENT in case if `channel` is not a valid pointer or the string
-///                                 is not a valid channel name.
+///    ASDV_STATUS_INVALID_ARGUMENT in case if `topic` is not a valid pointer or the string
+///                                 is not a valid topic name.
 ///
 /// # Safety
 ///
-/// The caller guarantees that `metadata` and `channel` are all valid pointers that live for
+/// The caller guarantees that `metadata` and `topic` are all valid pointers that live for
 /// at least the duration of the function call.
-/// - `channel` must point at a NUL-terminated string.
-/// - `channel` must abide by the safety requirements of CStr::from_ptr.
+/// - `topic` must point at a NUL-terminated string.
+/// - `topic` must abide by the safety requirements of CStr::from_ptr.
 #[comms_stack_ffi_fn]
 #[no_mangle]
-pub unsafe extern "C" fn ASDV_PublisherUnitMetadata_setChannel(
+pub unsafe extern "C" fn ASDV_PublisherUnitMetadata_setTopic(
     metadata: &mut ASDV_PublisherUnitMetadata,
-    #[allow_ptr] channel: *const std::os::raw::c_char,
+    #[allow_ptr] topic: *const std::os::raw::c_char,
 ) -> sdv_status_t {
     sdv_comms_common::try_status! {
-        // # SAFETY: The caller guarantees that `channel` is a valid pointer that lives for
+        // # SAFETY: The caller guarantees that `topic` is a valid pointer that lives for
         // at least the duration of the function call.
-        // cstr_pointer_to_str creates a new String which is then used in `set_channel_name`,
-        // therefore it's not necessary for `channel` to outlive the function call.
-        let channel_string = unsafe { ffi_str::cstr_pointer_to_str(channel as *const c_char)? };
-        metadata.0.set_channel_name(channel_string.try_into().map_err(|e| {
-            sdv_status_rs::SdvStatus::with_message(SdvStatusCode::InvalidArgument, format!("Invalid channel name: {e}"))
+        // cstr_pointer_to_str creates a new String which is then used in `set_topic_name`,
+        // therefore it's not necessary for `topic` to outlive the function call.
+        let topic_string = unsafe { ffi_str::cstr_pointer_to_str(topic as *const c_char)? };
+        metadata.0.set_topic_name(topic_string.try_into().map_err(|e| {
+            sdv_status_rs::SdvStatus::with_message(SdvStatusCode::InvalidArgument, format!("Invalid topic name: {e}"))
         })?);
         Ok(())
     }
 }
 
-/// Returns the channel name of the ASDV_PublisherUnitMetadata.
+/// Returns the topic name of the ASDV_PublisherUnitMetadata.
 ///
 /// Parameters:
 ///    [IN] ptr: A valid pointer to the ASDV_PublisherUnitMetadata object for which to get the
-///              channel name
+///              topic name
 ///    [IN/OUT] buf: Pointer to char buffer into which the string will be written as a UTF-8 encoded
 ///                  NUL-terminated C string. It's expected that the input buffer has a size of 128
-///                  bytes, which is the max size of channel.
+///                  bytes, which is the max size of topic.
 ///    [IN/OUT] buf_size: Represent the original size of the buffer pointed by `buf` and returns the number
 ///                       of bytes written to the provided buffer (including the NUL character)
 ///
 /// Return Value: Returns SDV_STATUS_OK on success, otherwise one of the following error codes:
-///    ASDV_STATUS_INVALID_ARGUMENT if the buf_size is not large enough to hold the channel name.
+///    ASDV_STATUS_INVALID_ARGUMENT if the buf_size is not large enough to hold the topic name.
 ///
 /// # Safety
 ///
@@ -409,27 +409,27 @@ pub unsafe extern "C" fn ASDV_PublisherUnitMetadata_setChannel(
 ///
 #[comms_stack_ffi_fn]
 #[no_mangle]
-pub unsafe extern "C" fn ASDV_PublisherUnitMetadata_getChannel(
+pub unsafe extern "C" fn ASDV_PublisherUnitMetadata_getTopic(
     metadata: &ASDV_PublisherUnitMetadata,
     #[allow_ptr] buf: *mut std::os::raw::c_char,
     buf_size: &mut usize,
 ) -> sdv_status_t {
     sdv_comms_common::try_status! {
-        let channel_str = metadata.0.get_channel_name();
-        let channel_bytes = channel_str.as_bytes();
-        // validate that the channel name fits in the provided buf_size
-        if channel_bytes.len() + 1 > *buf_size {
+        let topic_str = metadata.0.get_topic_name();
+        let topic_bytes = topic_str.as_bytes();
+        // validate that the topic name fits in the provided buf_size
+        if topic_bytes.len() + 1 > *buf_size {
             return Err(sdv_status_rs::SdvStatus::with_message(
                 SdvStatusCode::InvalidArgument,
-                "Buffer size is too small to hold the channel string",
+                "Buffer size is too small to hold the topic string",
             ));
         }
         // SAFETY: The caller guarantees that `buf` is a valid pointer to a buffer of at least
         // buf_size bytes that live for at least the duration of the function call.
         let output_slice: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(buf.cast::<u8>(), *buf_size) };
-        output_slice[..channel_bytes.len()].copy_from_slice(channel_bytes);
-        output_slice[channel_bytes.len()] = 0;
-        *buf_size = channel_bytes.len() + 1;
+        output_slice[..topic_bytes.len()].copy_from_slice(topic_bytes);
+        output_slice[topic_bytes.len()] = 0;
+        *buf_size = topic_bytes.len() + 1;
         Ok(())
     }
 }

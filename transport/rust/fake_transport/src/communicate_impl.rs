@@ -58,48 +58,48 @@ impl LocalComms {
         }
     }
 
-    pub fn send_availability_event(&self, channel_name: &str, availability: Availability) {
+    pub fn send_availability_event(&self, topic_name: &str, availability: Availability) {
         let mut registration_streams = self.registration_streams.lock().unwrap();
-        if let Some(streams) = registration_streams.get_mut(channel_name) {
+        if let Some(streams) = registration_streams.get_mut(topic_name) {
             streams.retain_mut(|tx| tx.try_send(availability.clone()).is_ok());
         }
     }
 
-    pub fn publisher_added(&self, channel_name: &str, publisher_name: &str) {
+    pub fn publisher_added(&self, topic_name: &str, publisher_name: &str) {
         let mut publishers = self.publishers.lock().unwrap();
-        publishers.entry(channel_name.to_string()).or_default().insert(publisher_name.to_string());
-        self.send_availability_event(channel_name, Availability::Available);
+        publishers.entry(topic_name.to_string()).or_default().insert(publisher_name.to_string());
+        self.send_availability_event(topic_name, Availability::Available);
     }
 
-    pub fn publisher_removed(&self, channel_name: &str, publisher_name: &str) {
+    pub fn publisher_removed(&self, topic_name: &str, publisher_name: &str) {
         let mut publishers = self.publishers.lock().unwrap();
         let mut channel_empty = false;
-        if let Some(channel_publishers) = publishers.get_mut(channel_name) {
+        if let Some(channel_publishers) = publishers.get_mut(topic_name) {
             channel_publishers.remove(publisher_name);
             if channel_publishers.is_empty() {
                 channel_empty = true;
             }
         }
 
-        self.send_availability_event(channel_name, Availability::Unavailable);
+        self.send_availability_event(topic_name, Availability::Unavailable);
         if channel_empty {
-            publishers.remove(channel_name);
+            publishers.remove(topic_name);
             let mut msg_queues = self.msg_queues.lock().unwrap();
-            msg_queues.remove(channel_name);
+            msg_queues.remove(topic_name);
         }
     }
 
     pub fn find_channel_queue_for_publisher(&self, publisher_name: &str) -> Option<String> {
         let publishers = self.publishers.lock().unwrap();
-        let mut channel_name = None;
+        let mut topic_name = None;
         for (channel, pubs) in publishers.iter() {
             if pubs.contains(publisher_name) {
-                channel_name = Some(channel.clone());
+                topic_name = Some(channel.clone());
                 break;
             }
         }
 
-        channel_name
+        topic_name
     }
 }
 
@@ -115,25 +115,25 @@ impl Communicate for LocalComms {
         &self,
         attributes: &PublisherAttributes,
     ) -> SdvResult<Box<dyn Publish>> {
-        let channel_name = attributes.get_channel_name().to_string();
+        let topic_name = attributes.get_topic_name().to_string();
         let publisher_name = attributes.get_publication_name().to_string();
 
         let mut msg_queues = self.msg_queues.lock().unwrap();
         let msg_q = msg_queues
-            .entry(channel_name.clone())
+            .entry(topic_name.clone())
             .or_insert_with(|| Arc::new(Mutex::new(LocalMessageQueue::new())));
 
         // Let's assume the first publisher sets the queue size.
-        if self.publishers.lock().unwrap().get(&channel_name).map_or(true, |s| s.is_empty()) {
+        if self.publishers.lock().unwrap().get(&topic_name).map_or(true, |s| s.is_empty()) {
             msg_q.lock().unwrap().register_publisher(attributes.get_metadata().get_message_count());
         }
 
-        self.publisher_added(&channel_name, &publisher_name);
+        self.publisher_added(&topic_name, &publisher_name);
 
         Ok(Box::new(LocalPublisher::new(
             Arc::new(self.clone()), // Clone the Arc to create a new reference
             msg_q.clone(),
-            channel_name,
+            topic_name,
             publisher_name,
         )))
     }
@@ -156,11 +156,11 @@ impl Communicate for LocalComms {
             }
         };
 
-        let channel_name = self.find_channel_queue_for_publisher(&publication_name);
+        let topic_name = self.find_channel_queue_for_publisher(&publication_name);
 
-        if let Some(channel_name) = channel_name {
+        if let Some(topic_name) = topic_name {
             let msg_queues = self.msg_queues.lock().unwrap();
-            match msg_queues.get(&channel_name) {
+            match msg_queues.get(&topic_name) {
                 Some(q) => Ok(Arc::new(LocalPublication::new(q.clone()))),
                 None => Err(SdvStatus::new(SdvStatusCode::Unavailable)),
             }
@@ -186,10 +186,10 @@ impl Communicate for LocalComms {
             }
         };
 
-        let mut channel_name = self.find_channel_queue_for_publisher(&publication_name);
+        let mut topic_name = self.find_channel_queue_for_publisher(&publication_name);
 
         let publishers = self.publishers.lock().unwrap();
-        let availability = if let Some(ref channel) = channel_name {
+        let availability = if let Some(ref channel) = topic_name {
             if publishers.get(channel).is_some_and(|s| !s.is_empty()) {
                 Availability::Available
             } else {
@@ -201,12 +201,12 @@ impl Communicate for LocalComms {
 
         let _ = tx.try_send(availability);
 
-        if channel_name.is_none() {
+        if topic_name.is_none() {
             // if the channel does not exist, let's register this on the test default channel
-            channel_name = Some("pressure-channel".to_string())
+            topic_name = Some("pressure-channel".to_string())
         }
-        let channel_name = channel_name.expect("Expecting channel name to be set");
-        self.registration_streams.lock().unwrap().entry(channel_name).or_default().push(tx);
+        let topic_name = topic_name.expect("Expecting channel name to be set");
+        self.registration_streams.lock().unwrap().entry(topic_name).or_default().push(tx);
 
         Ok(Box::pin(rx))
     }
@@ -228,11 +228,11 @@ impl Communicate for LocalComms {
     async fn create_subscribe_handle(
         &self,
         _type_name: &TypeName,
-        channel_name: &str,
+        topic_name: &str,
         options: &SubscribeOptions,
     ) -> SdvResult<Box<dyn Subscribe>> {
         let msg_queues = self.msg_queues.lock().unwrap();
-        match msg_queues.get(channel_name) {
+        match msg_queues.get(topic_name) {
             Some(msg_q_arc) => {
                 let id = msg_q_arc.lock().unwrap().subscribe(options);
                 Ok(Box::new(LocalSubscriber::new(msg_q_arc.clone(), id)))
@@ -291,7 +291,7 @@ mod test {
     const BUNDLE: &str = "Bundle";
     const TYPE: &str = "Pressure";
     static DEFAULT_PUBLISHER_NAME: &str = "pressure-publication";
-    static DEFAULT_CHANNEL_NAME: &str = "pressure-channel";
+    static DEFAULT_TOPIC_NAME: &str = "pressure-channel";
     const DEFAULT_COUNT: u32 = 10;
 
     fn get_pressure_unit_name() -> UnitName {
@@ -320,7 +320,7 @@ mod test {
             .publication_name(publisher_name)
             .type_name(get_pressure_type_name())
             .metadata(pub_metadata)
-            .channel_name(DEFAULT_CHANNEL_NAME)
+            .topic_name(DEFAULT_TOPIC_NAME)
             .build()
             .unwrap()
     }
@@ -349,7 +349,7 @@ mod test {
             comms
                 .create_subscribe_handle(
                     &get_pressure_type_name(),
-                    DEFAULT_CHANNEL_NAME,
+                    DEFAULT_TOPIC_NAME,
                     &SubscribeOptions::default(),
                 )
                 .await
@@ -380,7 +380,7 @@ mod test {
             comms
                 .create_subscribe_handle(
                     &get_pressure_type_name(),
-                    DEFAULT_CHANNEL_NAME,
+                    DEFAULT_TOPIC_NAME,
                     &SubscribeOptions::default(),
                 )
                 .await
@@ -521,7 +521,7 @@ mod test {
             comms
                 .create_subscribe_handle(
                     &get_pressure_type_name(),
-                    DEFAULT_CHANNEL_NAME,
+                    DEFAULT_TOPIC_NAME,
                     &SubscribeOptions::builder().read_on_subscribe(true).build().unwrap(),
                 )
                 .await
@@ -629,7 +629,7 @@ mod test {
             comms
                 .create_subscribe_handle(
                     &get_pressure_type_name(),
-                    DEFAULT_CHANNEL_NAME,
+                    DEFAULT_TOPIC_NAME,
                     &SubscribeOptions::default(),
                 )
                 .await
@@ -741,7 +741,7 @@ mod test {
             comms
                 .create_subscribe_handle(
                     &get_pressure_type_name(),
-                    DEFAULT_CHANNEL_NAME,
+                    DEFAULT_TOPIC_NAME,
                     &SubscribeOptions::default(),
                 )
                 .await

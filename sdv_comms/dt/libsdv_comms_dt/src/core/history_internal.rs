@@ -106,17 +106,22 @@ pub struct HistoryInternal {
 }
 
 impl HistoryInternal {
-    pub async fn subscribe_to_history(
-        ctx: &'static ContextImpl,
-        unit_identifier: &UnitIdentifier,
-        history_buffer_size: u32,
-    ) -> SdvResult<HistoryInternal> {
+    fn validate_history_buffer_size(history_buffer_size: u32) -> SdvResult<()> {
         if history_buffer_size == 0 {
             return Err(SdvStatus::with_message(
                 SdvStatusCode::InvalidArgument,
                 "History buffer size can't be 0",
             ));
         }
+        Ok(())
+    }
+
+    pub async fn subscribe_to_history(
+        ctx: &'static ContextImpl,
+        unit_identifier: &UnitIdentifier,
+        history_buffer_size: u32,
+    ) -> SdvResult<HistoryInternal> {
+        Self::validate_history_buffer_size(history_buffer_size)?;
 
         let subscriber = SubscriberInternal::subscribe_to_publication(
             ctx,
@@ -124,6 +129,31 @@ impl HistoryInternal {
             ffi_types::ASDV_SubscriptionFlags_None,
         )
         .await?;
+        Self::create_history_internal(subscriber, history_buffer_size)
+    }
+
+    pub async fn subscribe_to_topic(
+        ctx: &'static ContextImpl,
+        unit_type: &sdv_comms_sd::discovery::UnitType,
+        topic_name: &sdv_comms_id::names::TopicName,
+        history_buffer_size: u32,
+    ) -> SdvResult<HistoryInternal> {
+        Self::validate_history_buffer_size(history_buffer_size)?;
+
+        let subscriber = SubscriberInternal::subscribe_to_topic(
+            ctx,
+            unit_type,
+            topic_name,
+            ffi_types::ASDV_SubscriptionFlags_None,
+        )
+        .await?;
+        Self::create_history_internal(subscriber, history_buffer_size)
+    }
+
+    fn create_history_internal(
+        subscriber: SubscriberInternal,
+        history_buffer_size: u32,
+    ) -> SdvResult<HistoryInternal> {
         let metadata = subscriber.get_publisher_unit_metadata().clone();
         let message_size = metadata.get_message_size() as usize;
 

@@ -20,7 +20,7 @@ use sdv_comms_common::callback::ffi::OnceCallback;
 use sdv_comms_common::try_status;
 use sdv_comms_ctx::ffi::ASDV_Context;
 use sdv_comms_id::ffi::ASDV_UnitIdentifier;
-use sdv_comms_id::names::ChannelName;
+use sdv_comms_id::names::TopicName;
 use sdv_comms_id::UnitIdentifier;
 use sdv_comms_sd::discovery::UnitType;
 use sdv_comms_sd::ffi::{ASDV_PublisherUnitMetadata, ASDV_UnitRegistrationArgs, ASDV_UnitType};
@@ -218,41 +218,41 @@ pub fn subscribe_to_unit_type(
     }
 }
 
-/// FFI implementation for `ASDV_SubscribeToChannel`
-/// Subscribes to all the publications with the specified unit type and channel name using provided
-/// ASDV_UnitType and channel_name *.
+/// FFI implementation for `ASDV_SubscribeToTopic`
+/// Subscribes to all the publications with the specified unit type and topic name using provided
+/// ASDV_UnitType and topic_name *.
 /// Returns the newly created subscription as a pointer to ASDV_SubscriptionHandle via callback.
 ///
 /// SAFETY:
 ///   `context` is a pointer to a valid Context object
 ///   `unit_identifier` is a pointer to a valid ASDV_UnitIdentifier object
-///   `channel_name` is a pointer to a valid NUL-terminated string
+///   `topic_name` is a pointer to a valid NUL-terminated string
 ///   `callback` is a pointer to a valid OnceCallback<Box<ASDV_SubscriptionHandle>> object
-pub unsafe fn subscribe_to_channel(
+pub unsafe fn subscribe_to_topic(
     context: &'static ASDV_Context,
     unit_type: &ASDV_UnitType,
-    channel_name: *const std::ffi::c_char,
+    topic_name: *const std::ffi::c_char,
     subscription_flags: u64,
     callback: OnceCallback<Box<ffi_types::ASDV_SubscriptionHandle>>,
 ) -> sdv_status_t {
     try_status! {
         let context = ASDV_Context::peel_ref(context);
         let unit_type: UnitType = unit_type.try_into()?;
-        // SAFETY: `channel_name` is a pointer to a valid NUL-terminated string
-        let channel_name = unsafe { std::ffi::CStr::from_ptr(channel_name) }
+        // SAFETY: `topic_name` is a pointer to a valid NUL-terminated string
+        let topic_name = unsafe { std::ffi::CStr::from_ptr(topic_name) }
             .to_str()
             .map_err(|e| {
-                SdvStatus::with_message(SdvStatusCode::InvalidArgument, format!("Invalid channel name: {e}"))
+                SdvStatus::with_message(SdvStatusCode::InvalidArgument, format!("Invalid topic name: {e}"))
             })?;
-        let channel_name = ChannelName::from_str(channel_name).map_err(|e| {
-            SdvStatus::with_message(SdvStatusCode::InvalidArgument, format!("Invalid channel name: {e}"))
+        let topic_name = TopicName::from_str(topic_name).map_err(|e| {
+            SdvStatus::with_message(SdvStatusCode::InvalidArgument, format!("Invalid topic name: {e}"))
         })?;
 
         context.get_executor().spawn(Box::pin(async move {
-            let res = SubscriberInternal::subscribe_to_channel(
+            let res = SubscriberInternal::subscribe_to_topic(
                 context,
                 &unit_type,
-                &channel_name,
+                &topic_name,
                 subscription_flags,
             )
             .await;
@@ -370,6 +370,46 @@ pub fn subscribe_to_history(
         context.get_executor().spawn(Box::pin(async move {
             let res =
                 HistoryInternal::subscribe_to_history(context, &unit_identifier, history_buffer_size).await;
+            callback.invoke(res.map(|history| Box::new(ASDV_HistoryHandle { history })));
+        }));
+
+        Ok(())
+    }
+}
+
+/// FFI implementation for `ASDV_SubscribeToHistoryByTopic`
+/// Creates a "history_buffer_size"-size history aggregator for all publications of the given
+/// unit type and topic and subscribes to it. Stores the newly created history handle.
+///
+/// SAFETY:
+///   `context` is a pointer to a valid Context object
+///   `unit_type` is a pointer to a valid ASDV_UnitType object
+///   `topic_name` is a pointer to a valid NUL-terminated string
+///   `callback` is a pointer to a valid OnceCallback<Box<ffi_types::ASDV_HistoryHandle>> object
+pub unsafe fn subscribe_to_history_by_topic(
+    context: &'static ASDV_Context,
+    unit_type: &ASDV_UnitType,
+    topic_name: *const std::ffi::c_char,
+    history_buffer_size: u32,
+    callback: OnceCallback<Box<ffi_types::ASDV_HistoryHandle>>,
+) -> sdv_status_t {
+    try_status! {
+        let context = ASDV_Context::peel_ref(context);
+        let unit_type: UnitType = unit_type.try_into()?;
+        // SAFETY: `topic_name` is a pointer to a valid NUL-terminated string
+        let topic_name = unsafe { std::ffi::CStr::from_ptr(topic_name)}
+            .to_str()
+            .map_err(|e| {
+                SdvStatus::with_message(SdvStatusCode::InvalidArgument, format!("Invalid topic name: {e}"))
+            })?;
+
+        let topic_name = TopicName::from_str(topic_name).map_err(|e| {
+            SdvStatus::with_message(SdvStatusCode::InvalidArgument, format!("Invalid topic name: {e}"))
+        })?;
+
+        context.get_executor().spawn(Box::pin(async move {
+            let res =
+                HistoryInternal::subscribe_to_topic(context, &unit_type, &topic_name, history_buffer_size).await;
             callback.invoke(res.map(|history| Box::new(ASDV_HistoryHandle { history })));
         }));
 
