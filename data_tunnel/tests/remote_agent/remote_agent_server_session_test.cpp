@@ -284,20 +284,17 @@ TEST_F(RemoteAgentServerSessionTest, Subscription_FullFlow) {
 
     connection_->EnqueueParcelForReceive(1234, Payload_SubscribeRequest(kTestTopicName));
 
+    // Get a subscribe result including the last message content.
     auto sub_result_payload = connection_->GetNextSentDataIfPayload<Payload_SubscribeResult>();
     ASSERT_TRUE(sub_result_payload);
     EXPECT_EQ(sub_result_payload->topic_name_, kTestTopicName);
     EXPECT_EQ(sub_result_payload->result_, Payload_SubscribeResult::Result_Ok);
     EXPECT_EQ(sub_result_payload->message_size_, kTestMessageSize);
     EXPECT_EQ(sub_result_payload->message_count_, kTestMessageCount);
-
-    // A new reader has its pointer positioned on the last message, so we only get one.
-    auto data_payload = connection_->GetNextSentDataIfPayload<Payload_TopicRawData>();
-    ASSERT_TRUE(data_payload);
-    EXPECT_EQ(data_payload->topic_name_, kTestTopicName);
-    EXPECT_EQ(data_payload->data_size_, 1 * kTestMessageSize);
-    EXPECT_GE(data_payload->buffer_.Size(), 1 * kTestMessageSize);
-    const auto* messages = reinterpret_cast<const TestMessageType*>(data_payload->buffer_.Ptr());
+    EXPECT_EQ(sub_result_payload->has_last_message_, 1);
+    EXPECT_GE(sub_result_payload->last_message_content_.Size(), 1 * kTestMessageSize);
+    const auto* messages = reinterpret_cast<const TestMessageType*>(
+            sub_result_payload->last_message_content_.Ptr());
     EXPECT_EQ(messages[0], 25);
 
     // Brief sleep to ensure Exporter processing thread returns to waiting and doesn't

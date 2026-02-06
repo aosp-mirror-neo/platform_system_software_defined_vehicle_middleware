@@ -18,6 +18,8 @@
 
 #include "dt_buffer.h"
 
+#include <log/log.h>
+
 #include <string>
 #include <vector>
 
@@ -60,6 +62,8 @@ struct Payload {
         return true;
     }
 
+    // Overrides should fail if deserialization is not possible, typically due to insufficient
+    // data available.
     virtual bool Deserialize(BufferReader& br) {
         (void)br;
         return true;
@@ -141,27 +145,51 @@ struct Payload_SubscribeResult : public Payload {
     uint32_t message_size_;
     uint32_t message_count_;
     std::string topic_name_;
+    uint8_t has_last_message_ = 0;
+    RawBuffer last_message_content_;
 
     Payload_SubscribeResult() : Payload(SubscribeResult) {}
 
     uint32_t Size() const override {
         return Payload::Size() +
-                static_cast<uint32_t>(sizeof(uint16_t) +  // result_
-                                      sizeof(uint32_t) +  // message_size_
-                                      sizeof(uint32_t) +  // message_count_
-                                      sizeof(uint16_t) +  // topic_name_
-                                      topic_name_.length());
+                static_cast<uint32_t>(
+                        sizeof(result_) +                          // result_
+                        sizeof(message_size_) +                    // message_size_
+                        sizeof(message_count_) +                   // message_count_
+                        sizeof(uint16_t) +                         // topic_name_.length()
+                        topic_name_.length() +                     // topic_name_.data()
+                        sizeof(has_last_message_) +                // has_last_message_
+                        (has_last_message_ ? message_size_ : 0));  // last_message_content_
     }
 
     bool Serialize(BufferWriter& bw) const override {
         // TODO: don't modify write pointer in case of failure
+        if (has_last_message_ && last_message_content_.Size() != message_size_) {
+            ALOGE("Error serializing SubscribeResult for %s:  last_message_content_ size %zu does "
+                  "not match message_size_ %u",
+                  topic_name_.c_str(), last_message_content_.Size(), message_size_);
+            return false;
+        }
         return bw.Write(result_) && bw.Write(message_size_) && bw.Write(message_count_) &&
-                bw.Write(topic_name_);
+                bw.Write(topic_name_) && bw.Write(has_last_message_) &&
+                (has_last_message_ ? bw.Write(last_message_content_.Ptr(), message_size_) : true);
     }
 
     bool Deserialize(BufferReader& br) override {
-        return br.Read(result_) && br.Read(message_size_) && br.Read(message_count_) &&
-                br.Read(topic_name_);
+        if (!(br.Read(result_) && br.Read(message_size_) && br.Read(message_count_) &&
+              br.Read(topic_name_) && br.Read(has_last_message_))) {
+            return false;
+        }
+        if (!has_last_message_) {
+            return true;
+        }
+        if (br.AvailableToRead() < message_size_) {
+            return false;
+        }
+        if (last_message_content_.Size() < message_size_) {
+            last_message_content_.Resize(message_size_, false);
+        }
+        return br.Read(last_message_content_.Ptr(), message_size_);
     }
 };
 

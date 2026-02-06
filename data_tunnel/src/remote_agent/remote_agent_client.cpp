@@ -18,6 +18,7 @@
 
 #include "remote_agent/remote_agent_client.h"
 
+#include <android-base/scopeguard.h>
 #include <log/log.h>
 
 using ::aidl::google::sdv::identity::ServiceIdentity;
@@ -242,9 +243,11 @@ void RemoteAgentClient::HandleLastMessageResult(
 }
 
 void RemoteAgentClient::HandleSubscribeResult(const Payload_SubscribeResult& subscribe_result) {
-    ALOGD("RemoteAgentClient(%s): Subscribe result for %s, Result: %u, size: %u, count %u",
+    ALOGD("RemoteAgentClient(%s): Subscribe result for %s, Result: %u, message size: %u, message "
+          "count %u, has_last_message: %u",
           peer_vm_name_.c_str(), subscribe_result.topic_name_.c_str(), subscribe_result.result_,
-          subscribe_result.message_size_, subscribe_result.message_count_);
+          subscribe_result.message_size_, subscribe_result.message_count_,
+          subscribe_result.has_last_message_);
 
     const auto& topic_name = subscribe_result.topic_name_;
 
@@ -254,48 +257,69 @@ void RemoteAgentClient::HandleSubscribeResult(const Payload_SubscribeResult& sub
     if (subscription_it == subscriptions_.end()) {
         ALOGE("RemoteAgentClient(%s): Subscribe result for unrequested topic %s. Ignoring.",
               topic_name.c_str(), peer_vm_name_.c_str());
-        guard.unlock();
         // TODO(b/432280220): Send unsubscribe request
         return;
     }
 
     auto& subscription = subscription_it->second;
     auto& topic = subscription.topic;
-    if (!topic.IsActive()) {
-        ALOGW("RemoteAgentClient(%s): Subscribe result for inactive topic %s. Ignoring.",
-              peer_vm_name_.c_str(), topic_name.c_str());
+
+    // This cleanup will run any time we return without disabling it, which happens upon success.
+    // This lets us early return from any failure without having to duplicate cleanup steps at each.
+    android::base::ScopeGuard cleanup_on_failure_guard([&]() {
         subscriptions_.erase(subscription_it);
         guard.unlock();
         // TODO(b/432280220): Send unsubscribe request
+        if (topic.IsActive()) {
+            topic_manager_.UnregisterRemoteTopic(subscribe_result.topic_name_);
+        }
+    });
+
+    if (!topic.IsActive()) {
+        ALOGW("RemoteAgentClient(%s): Subscribe result for inactive topic %s. Ignoring.",
+              peer_vm_name_.c_str(), topic_name.c_str());
         return;
     }
 
     if (subscribe_result.result_ != Payload_SubscribeResult::Result_Ok) {
         ALOGE("RemoteAgentClient(%s): Subscribe to %s failed.  Destroying local topic.",
               peer_vm_name_.c_str(), topic_name.c_str());
-        subscriptions_.erase(subscription_it);
-        guard.unlock();
-        topic_manager_.UnregisterRemoteTopic(subscribe_result.topic_name_);
         return;
     }
 
     auto& metadata = topic.GetMetadata();
     if (subscribe_result.message_size_ != metadata.message_size ||
         subscribe_result.message_count_ != metadata.message_count) {
-        subscriptions_.erase(subscription_it);
-        guard.unlock();
         ALOGE("RemoteAgentClient(%s): %s metadata mismatch: Local: %zu bytes x %zu msgs; "
               "Remote: %u bytes x %u msgs.  Destroying local topic.",
               peer_vm_name_.c_str(), topic_name.c_str(), metadata.message_size,
               metadata.message_count, subscribe_result.message_size_,
               subscribe_result.message_count_);
-        topic_manager_.UnregisterRemoteTopic(subscribe_result.topic_name_);
-        // TODO(b/432280220): Send unsubscribe request
         return;
+    }
+
+    if (subscribe_result.has_last_message_) {
+        if (subscribe_result.last_message_content_.Size() != metadata.message_size) {
+            ALOGE("RemoteAgentClient(%s): Deserialization assertion failure!  Received "
+                  "SubscribeResult with has_last_message_ true but wrong "
+                  "last_message_content_.Size()!",
+                  peer_vm_name_.c_str());
+            return;
+        }
+        if (!topic.Write(subscribe_result.last_message_content_.Ptr(),
+                         subscribe_result.message_size_)) {
+            ALOGE("RemoteAgentClient(%s): Unable to write data to %s!", peer_vm_name_.c_str(),
+                  topic_name.c_str());
+            return;
+        }
+        topic.NotifyWritten(1);
     }
 
     subscription.is_active = true;
     guard.unlock();
+
+    // We're succeeding, so we don't want the failure cleanup to run.
+    cleanup_on_failure_guard.Disable();
 
     topic.ReportReady();
 }
