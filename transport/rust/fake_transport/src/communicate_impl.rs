@@ -246,7 +246,39 @@ impl Communicate for LocalComms {
         _type_name: &TypeName,
         _options: &SubscribeOptions,
     ) -> SdvResult<ByteBuffersStream> {
-        unimplemented!("subscribe by type not implemented")
+        unimplemented!("observe by type not implemented")
+    }
+
+    async fn create_message_stream(
+        &self,
+        _type_name: &TypeName,
+        topic_name: &str,
+        _options: &SubscribeOptions,
+    ) -> SdvResult<ByteBuffersStream> {
+        let msg_queues = self.msg_queues.lock().unwrap();
+        match msg_queues.get(topic_name) {
+            Some(msg_q_arc) => {
+                let stream = msg_q_arc.lock().unwrap().observe();
+                Ok(stream)
+            }
+            None => Err(SdvStatus::new(SdvStatusCode::Unavailable)),
+        }
+    }
+
+    async fn create_history_handle(
+        &self,
+        _type_name: &TypeName,
+        topic_name: &str,
+        options: &SubscribeOptions,
+    ) -> SdvResult<Box<dyn sdv_mw_rs_comms::ReadHistory>> {
+        let msg_queues = self.msg_queues.lock().unwrap();
+        match msg_queues.get(topic_name) {
+            Some(msg_q_arc) => {
+                let id = msg_q_arc.lock().unwrap().enable_history(options.get_message_count());
+                Ok(Box::new(crate::pubsub_impl::LocalHistory::new(msg_q_arc.clone(), id)))
+            }
+            None => Err(SdvStatus::new(SdvStatusCode::Unavailable)),
+        }
     }
 
     async fn create_server_transport(
@@ -748,21 +780,81 @@ mod test {
                 .unwrap(),
         );
 
+        // AND WHEN an observer is created
+        let mut observer = observe::<Pressure>(
+            comms
+                .create_message_stream(
+                    &get_pressure_type_name(),
+                    DEFAULT_TOPIC_NAME,
+                    &SubscribeOptions::default(),
+                )
+                .await
+                .unwrap(),
+        );
+
+        // AND WHEN an history reader is created
+        const HISTORY_MESSAGE_COUNT: u32 = 3;
+        let history = History::<Pressure>::new(
+            comms
+                .create_history_handle(
+                    &get_pressure_type_name(),
+                    DEFAULT_TOPIC_NAME,
+                    &SubscribeOptions::builder()
+                        .message_count(HISTORY_MESSAGE_COUNT)
+                        .build()
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+
         // WHEN publisher1 publishes a message
         let mut pressure_msg_1 = Pressure::new();
         pressure_msg_1.pressure = 1234;
         let _ = publisher1.publish(&pressure_msg_1);
+
+        // THEN the subscriber can read the message
+        let messages = subscriber.read_next_messages(1).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].pressure, 1234);
+
+        // THEN the observer can receive the message
+        let messages = observer.next().await.unwrap().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].pressure, 1234);
 
         // AND WHEN publisher2 publishes a message
         let mut pressure_msg_2 = Pressure::new();
         pressure_msg_2.pressure = 5678;
         let _ = publisher2.publish(&pressure_msg_2);
 
-        // THEN the subscriber can read both messages
-        let messages = subscriber.read_next_messages(2).unwrap();
+        // THEN the subscriber can read the message
+        let messages = subscriber.read_next_messages(1).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].pressure, 5678);
+
+        // THEN the observer can receive the message
+        let messages = observer.next().await.unwrap().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].pressure, 5678);
+
+        // THEN we can read 2 messages from history;
+        let messages = history.read_from_history(HISTORY_MESSAGE_COUNT).unwrap();
         assert_eq!(messages.len(), 2);
-        let mut pressures: Vec<u32> = messages.iter().map(|m| m.pressure).collect();
-        pressures.sort();
-        assert_eq!(pressures, vec![1234, 5678]);
+        assert_eq!(messages[0].pressure, 1234);
+        assert_eq!(messages[1].pressure, 5678);
+
+        pressure_msg_2.pressure = 9012;
+        let _ = publisher2.publish(&pressure_msg_2);
+
+        pressure_msg_1.pressure = 3456;
+        let _ = publisher1.publish(&pressure_msg_1);
+
+        // THEN we can read 3 messages from history;
+        let messages = history.read_from_history(HISTORY_MESSAGE_COUNT).unwrap();
+        assert_eq!(messages.len(), HISTORY_MESSAGE_COUNT as usize);
+        assert_eq!(messages[0].pressure, 5678);
+        assert_eq!(messages[1].pressure, 9012);
+        assert_eq!(messages[2].pressure, 3456);
     }
 }

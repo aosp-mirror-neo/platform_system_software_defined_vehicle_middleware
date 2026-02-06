@@ -68,11 +68,33 @@ pub trait Communicate: Send + Sync {
     ) -> SdvResult<Box<dyn Subscribe>>;
 
     /// Create a subscriber-side Stream for a message type, published by zero to many publishers.
+    #[allow(useless_deprecated)]
+    #[allow(unused_attributes)]
+    #[deprecated(
+        since = "2.0.0",
+        note = "Channel-based observe methods are called instead, e.g. `create_message_stream`"
+    )]
     async fn observe_by_type(
         &self,
         type_name: &TypeName,
         options: &SubscribeOptions,
     ) -> SdvResult<ByteBuffersStream>;
+
+    /// Create a subscriber-side Stream for a message type on a specific topic, published by zero to many publishers.
+    async fn create_message_stream(
+        &self,
+        type_name: &TypeName,
+        topic_name: &str,
+        options: &SubscribeOptions,
+    ) -> SdvResult<ByteBuffersStream>;
+
+    /// Create a History for a message type on a specific topic.
+    async fn create_history_handle(
+        &self,
+        type_name: &TypeName,
+        topic_name: &str,
+        options: &SubscribeOptions,
+    ) -> SdvResult<Box<dyn crate::ReadHistory>>;
 
     /// create an object implementing ServerTransport with the specified attributes
     /// only for UnaryRpcMethod

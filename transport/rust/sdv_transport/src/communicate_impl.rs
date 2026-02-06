@@ -191,6 +191,47 @@ impl Communicate for SdvComms {
         Ok(Box::pin(dt_stream))
     }
 
+    async fn create_message_stream(
+        &self,
+        type_name: &TypeName,
+        topic_name: &str,
+        options: &SubscribeOptions,
+    ) -> SdvResult<ByteBuffersStream> {
+        let unit_type = UnitType::builder()
+            .set_sdv_package_name(type_name.get_package_name())
+            .set_unit_type_name(type_name.get_type_name())
+            .build()?;
+        let dt_stream = DtStream::create_for_topic(
+            self.context,
+            &unit_type,
+            topic_name,
+            options.get_min_interval(),
+            DtSubscriberOptions { fetch_last_message: options.read_on_subscribe() },
+        )
+        .await?;
+        Ok(Box::pin(dt_stream))
+    }
+
+    async fn create_history_handle(
+        &self,
+        type_name: &TypeName,
+        topic_name: &str,
+        options: &SubscribeOptions,
+    ) -> SdvResult<Box<dyn sdv_mw_rs_comms::ReadHistory>> {
+        let unit_type = UnitType::builder()
+            .set_sdv_package_name(type_name.get_package_name())
+            .set_unit_type_name(type_name.get_type_name())
+            .build()?;
+        let dt_history = sdv_comms::dt::HistoryReader::create_for_topic(
+            self.context,
+            &unit_type,
+            topic_name,
+            options.get_message_count(),
+        )
+        .await?;
+        Ok(Box::new(crate::pubsub_impl::SdvHistory::new(dt_history)))
+    }
+
     async fn create_client_transport(
         &self,
         attributes: &ClientAttributes,
@@ -2183,11 +2224,38 @@ mod test {
                 .unwrap(),
         );
 
+        // AND GIVEN an observer on the same topic.
+        let mut observer = observe::<Pressure>(
+            comms
+                .create_message_stream(&fq_type_name, topic_name, &SubscribeOptions::default())
+                .await
+                .unwrap(),
+        );
+
+        // AND GIVEN a history on the same topic.
+        const HISTORY_BUFFER_SIZE: u32 = 2;
+        let history = History::<Pressure>::new(
+            comms
+                .create_history_handle(
+                    &fq_type_name,
+                    topic_name,
+                    &SubscribeOptions::builder()
+                        .message_count(HISTORY_BUFFER_SIZE)
+                        .build()
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+
         // Needed for the topic reader to be created on a separate process.
         tokio::time::sleep(TOPIC_CREATION_DURATION).await;
 
         // WHEN messages are published from both publishers.
         pub_one.publish(&Pressure { pressure: 1234, ..Default::default() }).unwrap();
+
+        // Make sure History copy data in the same order
+        tokio::time::sleep(TOPIC_CREATION_DURATION).await;
         pub_two.publish(&Pressure { pressure: 5678, ..Default::default() }).unwrap();
 
         // THEN the subscriber can read messages from both publishers.
@@ -2197,5 +2265,30 @@ mod test {
         read.sort_by_key(|x| x.pressure);
         assert_eq!(read[0].pressure, 1234);
         assert_eq!(read[1].pressure, 5678);
+
+        // AND THEN the observer can receive messages from both publishers.
+        let mut received = observer.next().await.unwrap().unwrap();
+        assert_eq!(received.len(), 2);
+        received.sort_by_key(|x| x.pressure);
+        assert_eq!(received[0].pressure, 1234);
+        assert_eq!(received[1].pressure, 5678);
+
+        // THEN one can read from history.
+        // SLEEP to ensure the message is forwarded to the history buffer.
+        tokio::time::sleep(HISTORY_PROCESSING_DURATION).await;
+        let history_read_batch = history.read_from_history(HISTORY_BUFFER_SIZE).unwrap();
+        assert_eq!(history_read_batch.len(), HISTORY_BUFFER_SIZE as usize);
+        assert_eq!(history_read_batch[0].pressure, 1234);
+        assert_eq!(history_read_batch[1].pressure, 5678);
+
+        // WHEN a new message is published
+        pub_two.publish(&Pressure { pressure: 5678, ..Default::default() }).unwrap();
+
+        // SLEEP to ensure the message is forwarded to the history buffer.
+        tokio::time::sleep(HISTORY_PROCESSING_DURATION).await;
+        let history_read_batch = history.read_from_history(HISTORY_BUFFER_SIZE + 1).unwrap();
+        assert_eq!(history_read_batch.len(), HISTORY_BUFFER_SIZE as usize);
+        assert_eq!(history_read_batch[0].pressure, 5678);
+        assert_eq!(history_read_batch[1].pressure, 5678);
     }
 }
