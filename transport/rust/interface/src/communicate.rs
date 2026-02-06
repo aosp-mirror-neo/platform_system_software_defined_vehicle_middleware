@@ -88,6 +88,14 @@ pub trait Communicate: Send + Sync {
         options: &SubscribeOptions,
     ) -> SdvResult<ByteBuffersStream>;
 
+    /// Create a History for a message type on a specific topic.
+    async fn create_history_handle(
+        &self,
+        type_name: &TypeName,
+        topic_name: &str,
+        options: &SubscribeOptions,
+    ) -> SdvResult<Box<dyn crate::ReadHistory>>;
+
     /// create an object implementing ServerTransport with the specified attributes
     /// only for UnaryRpcMethod
     #[allow(useless_deprecated)]

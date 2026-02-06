@@ -296,7 +296,7 @@ impl LocalMessageQueue {
         }
     }
 
-    fn enable_history(&mut self, _message_count: u32) -> usize {
+    pub fn enable_history(&mut self, _message_count: u32) -> usize {
         //TODO(b/352248016): Limit cache to message_count
         self.subscriber_cache.push(VecDeque::new());
         self.subscriber_cache.len() - 1
