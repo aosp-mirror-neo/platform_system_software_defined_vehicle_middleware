@@ -54,7 +54,7 @@ RemoteAgentClient::RemoteAgentClient(const ServiceIdentity& peer_identity,
 
 RemoteAgentClient::~RemoteAgentClient() {
     RequestTerminate();
-    // Implicit wait for connection_thread_ join.
+    connection_thread_.join();
 }
 
 void RemoteAgentClient::RequestTerminate() {
@@ -62,6 +62,14 @@ void RemoteAgentClient::RequestTerminate() {
     if (client_state_ == ClientState::TERMINATING || client_state_ == ClientState::TERMINATED) {
         return;
     }
+
+    // Immediately unregister any publications imported from this peer to prevent would-be
+    // subscribers from connecting to them.
+    for (const auto& subscription : subscriptions_) {
+        topic_manager_.UnregisterRemoteTopic(subscription.first);
+    }
+    subscriptions_.clear();
+
     client_state_ = ClientState::TERMINATING;
     if (connection_) {
         // Make sure connection thread exits any receive wait.
@@ -471,11 +479,6 @@ void RemoteAgentClient::ConnectionThread(ConnectionManager& connection_manager,
 
     std::lock_guard guard(lock_);
 
-    // Clean up any publications imported from this peer.
-    for (const auto& subscription : subscriptions_) {
-        topic_manager_.UnregisterRemoteTopic(subscription.first);
-    }
-    subscriptions_.clear();
     client_state_ = ClientState::TERMINATED;
     ALOGD("RemoteAgentClient(%s): ConnectionThread exiting", peer_vm_name_.c_str());
 }
