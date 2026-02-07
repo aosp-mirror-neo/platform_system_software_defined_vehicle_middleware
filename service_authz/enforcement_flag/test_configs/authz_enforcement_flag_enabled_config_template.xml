@@ -35,6 +35,9 @@
         <option name="set-property" key="sdv.authz.enable" value="true" />
         <!-- Restore default authz setting on teardown -->
         <option name="restore-properties" value="true" />
+        <!-- Needed to prevent DeviceSetup from trying to list device features,
+             unsupported on minimal SDV device. -->
+        <option name="screen-always-on" value="IGNORE" />
     </target_preparer>
 
     <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">

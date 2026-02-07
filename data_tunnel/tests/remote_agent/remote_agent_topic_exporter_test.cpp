@@ -156,15 +156,25 @@ TEST_F(RemoteAgentTopicExporterTest, HandleSubscribeRequest_SendsSuccessAndAlrea
     EXPECT_EQ(sub_result_payload->result_, Payload_SubscribeResult::Result_Ok);
     EXPECT_EQ(sub_result_payload->message_size_, kTestMessageSize);
     EXPECT_EQ(sub_result_payload->message_count_, kTestMessageCount);
-
-    // A new reader has its pointer positioned on the last message, so we only get one.
-    auto data_payload = connection_.GetNextSentDataIfPayload<Payload_TopicRawData>();
-    ASSERT_TRUE(data_payload);
-    EXPECT_EQ(data_payload->topic_name_, kTestTopicName);
-    EXPECT_EQ(data_payload->data_size_, 1 * kTestMessageSize);
-    EXPECT_GE(data_payload->buffer_.Size(), 1 * kTestMessageSize);
-    const auto* messages = reinterpret_cast<const TestMessageType*>(data_payload->buffer_.Ptr());
+    ASSERT_EQ(sub_result_payload->has_last_message_, 1);
+    ASSERT_EQ(sub_result_payload->last_message_content_.Size(), kTestMessageSize);
+    const auto* messages = reinterpret_cast<const TestMessageType*>(
+            sub_result_payload->last_message_content_.Ptr());
     EXPECT_EQ(messages[0], 25);
+}
+
+TEST_F(RemoteAgentTopicExporterTest, HandleSubscribeRequest_SendsSuccessAndNoDataForEmptyTopic) {
+    CreateTestTopic(/* is_remote= */ false);
+
+    SimulateSubscribeRequest();
+
+    auto sub_result_payload = connection_.GetNextSentDataIfPayload<Payload_SubscribeResult>();
+    ASSERT_TRUE(sub_result_payload);
+    EXPECT_EQ(sub_result_payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(sub_result_payload->result_, Payload_SubscribeResult::Result_Ok);
+    EXPECT_EQ(sub_result_payload->message_size_, kTestMessageSize);
+    EXPECT_EQ(sub_result_payload->message_count_, kTestMessageCount);
+    ASSERT_EQ(sub_result_payload->has_last_message_, 0);
 }
 
 TEST_F(RemoteAgentTopicExporterTest, ActiveSubscription_SendsNewlyWrittenDataAndTopicDestroyed) {
@@ -207,7 +217,13 @@ TEST_F(RemoteAgentTopicExporterTest, ActiveSubscription_RecoversFromOverflow) {
 }
 
 TEST_F(RemoteAgentTopicExporterTest, HandleSubscribeRequest_WorksForLargeMessages) {
+    BigMessageType big_messages[2];
+
     CreateTestTopic(/* is_remote= */ false, /* message_size= */ kBigMessageSize);
+
+    // Write a message to the topic to be included in SubscribeResult.
+    memset(&big_messages[0], 1, kBigMessageSize);
+    WriteTestTopicRawData(big_messages, sizeof(BigMessageType));
 
     SimulateSubscribeRequest();
 
@@ -217,9 +233,13 @@ TEST_F(RemoteAgentTopicExporterTest, HandleSubscribeRequest_WorksForLargeMessage
     EXPECT_EQ(sub_result_payload->result_, Payload_SubscribeResult::Result_Ok);
     EXPECT_EQ(sub_result_payload->message_size_, kBigMessageSize);
     EXPECT_EQ(sub_result_payload->message_count_, kTestMessageCount);
+    EXPECT_EQ(sub_result_payload->has_last_message_, 1);
+    EXPECT_EQ(sub_result_payload->last_message_content_.Size(), kBigMessageSize);
+    EXPECT_EQ(memcmp(sub_result_payload->last_message_content_.Ptr(), &big_messages[0],
+                     kBigMessageSize),
+              0);
 
     // Write two messages to the topic.
-    BigMessageType big_messages[2];
     memset(&big_messages[0], 3, kBigMessageSize);
     memset(&big_messages[1], 4, kBigMessageSize);
     WriteTestTopicRawData(big_messages, sizeof(big_messages));
@@ -278,16 +298,16 @@ TEST_F(RemoteAgentTopicExporterTest, ProcessTopicDataAvailable_BreaksUpLargeData
     CreateTestTopic(/*is_remote=*/false, /*message_size=*/kTestMessageSize,
                     /*message_count=*/messages_per_payload * 8);
 
-    // Write a single message to the topic.  By waiting for the TopicRawData that's sent because of
-    // this we can ensure that the large write below doesn't start before the ProcessingThread has
-    // done its initial poll of the FMQ, which can lead to spurious test failures.
-    WriteTestTopicMessages({19});
-
     SimulateSubscribeRequest();
 
     auto sub_result_payload = connection_.GetNextSentDataIfPayload<Payload_SubscribeResult>();
     ASSERT_TRUE(sub_result_payload);
     ASSERT_EQ(sub_result_payload->result_, Payload_SubscribeResult::Result_Ok);
+
+    // Write a single message to the topic.  By waiting for the TopicRawData that's sent because of
+    // this we can ensure that the large write below doesn't start before the ProcessingThread has
+    // done its initial poll of the FMQ, which can lead to spurious test failures.
+    WriteTestTopicMessages({19});
 
     // Wait for the first data packet; once we get this we know ProcessingThread is done with its
     // initial FMQ poll and waiting for a notification.

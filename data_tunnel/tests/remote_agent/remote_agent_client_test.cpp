@@ -616,11 +616,19 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_OkMakesSubscriptionActiveAndAccept
 
     ASSERT_EQ(topic_reader_->AvailableToRead(), 0);
 
+    // Set up handler for readiness notification.
+    std::optional<::sdv::SdvStatusCode> on_ready_result;
+    auto topic = topic_manager_.FindTopic(kTestTopicName, /*local_only*/ false);
+    ASSERT_TRUE(topic);
+    topic->RegisterOnReadyCallback([&](auto status) { on_ready_result = status; });
+    EXPECT_FALSE(on_ready_result);  // Not yet ready.
+
     Payload_SubscribeResult subscribe_result;
     subscribe_result.topic_name_ = kTestTopicName;
     subscribe_result.result_ = Payload_SubscribeResult::Result_Ok;
     subscribe_result.message_size_ = kTestMessageSize;
     subscribe_result.message_count_ = kTestMessageCount;
+    subscribe_result.has_last_message_ = 0;
     connection_->EnqueueParcelForReceive(242, subscribe_result);
 
     // Give ConnectionThread a chance to work.
@@ -629,14 +637,12 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_OkMakesSubscriptionActiveAndAccept
 
     EXPECT_TRUE(client_->Subscriptions().at(kTestTopicName).is_active);
 
-    // Verify that topic has been marked ready -- on-ready callback fires on
-    // registration.
-    std::optional<::sdv::SdvStatusCode> on_ready_result;
-    auto topic = topic_manager_.FindTopic(kTestTopicName, /*local_only*/ false);
-    ASSERT_TRUE(topic);
-    topic->RegisterOnReadyCallback([&](auto status) { on_ready_result = status; });
+    // Check that readiness callback fired.
     ASSERT_TRUE(on_ready_result);
     EXPECT_EQ(*on_ready_result, ::sdv::SdvStatusCode::kOk);
+
+    // No data available yet since has_last_message_ was false.
+    ASSERT_EQ(topic_reader_->AvailableToRead(), 0);
 
     EnqueueTestTopicMessagesForReceive({123, 456});
 
@@ -649,6 +655,38 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_OkMakesSubscriptionActiveAndAccept
                                     sizeof(received_messages)));
     EXPECT_EQ(received_messages[0], 123);
     EXPECT_EQ(received_messages[1], 456);
+}
+
+TEST_F(RemoteAgentClientTest, SubscribeResult_OkWithLastMessageWritesMessageToTopic) {
+    PrepareClientWithPendingSubscribeRequest();
+
+    ASSERT_EQ(topic_reader_->AvailableToRead(), 0);
+
+    TestMessageType sent_last_message = 912812;
+
+    Payload_SubscribeResult subscribe_result;
+    subscribe_result.topic_name_ = kTestTopicName;
+    subscribe_result.result_ = Payload_SubscribeResult::Result_Ok;
+    subscribe_result.message_size_ = kTestMessageSize;
+    subscribe_result.message_count_ = kTestMessageCount;
+    subscribe_result.has_last_message_ = 1;
+    subscribe_result.last_message_content_.Resize(kTestMessageSize, false);
+    memcpy(subscribe_result.last_message_content_.Ptr(), &sent_last_message, kTestMessageSize);
+    connection_->EnqueueParcelForReceive(242, subscribe_result);
+
+    // Give ConnectionThread a chance to work.
+    WaitForConditionOrTimeout(
+            [&]() { return client_->Subscriptions().at(kTestTopicName).is_active; });
+
+    EXPECT_TRUE(client_->Subscriptions().at(kTestTopicName).is_active);
+
+    // Last message available since provided in result.
+    ASSERT_EQ(topic_reader_->AvailableToRead(), kTestMessageSize);
+
+    TestMessageType received_last_message;
+    ASSERT_TRUE(topic_reader_->Read(reinterpret_cast<uint8_t*>(&received_last_message),
+                                    kTestMessageSize));
+    EXPECT_EQ(received_last_message, sent_last_message);
 }
 
 TEST_F(RemoteAgentClientTest, TopicRawData_IgnoredIfNoSubscription) {
@@ -776,6 +814,16 @@ TEST_F(RemoteAgentClientTest, TopicDestroyed_ProcessedForActiveSubscription) {
     EXPECT_FALSE(client_->Subscriptions().contains(kTestTopicName));
 
     // Topic was destroyed
+    EXPECT_FALSE(topic_manager_.FindTopic(kTestTopicName, /*local_only*/ false));
+}
+
+TEST_F(RemoteAgentClientTest, RequestTerminate_UnregistersTopics) {
+    PrepareClientWithActiveSubscription();
+
+    ASSERT_TRUE(topic_manager_.FindTopic(kTestTopicName, /*local_only*/ false));
+
+    client_->RequestTerminate();
+
     EXPECT_FALSE(topic_manager_.FindTopic(kTestTopicName, /*local_only*/ false));
 }
 
