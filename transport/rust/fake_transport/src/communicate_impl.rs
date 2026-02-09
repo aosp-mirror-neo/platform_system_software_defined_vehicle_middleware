@@ -175,18 +175,18 @@ impl Communicate for LocalComms {
     ) -> SdvResult<Pin<Box<dyn Stream<Item = Availability> + Send>>> {
         let (mut tx, rx): (mpsc::Sender<Availability>, mpsc::Receiver<Availability>) =
             mpsc::channel(1);
-        let publication_name = match attributes {
-            UnitQuery::Name(name) => name.get_service_unit_name().to_owned(),
-            UnitQuery::Type(name) => name.to_string(),
-            _ => {
+        let topic_name = match attributes {
+            UnitQuery::Name(name) => {
+                self.find_channel_queue_for_publisher(name.get_service_unit_name())
+            }
+            UnitQuery::Topic((_, topic)) => Some(topic.clone()),
+            UnitQuery::Type(_) | &_ => {
                 return Err(SdvStatus::with_message(
                     SdvStatusCode::Unimplemented,
-                    "UnitQuery variant not handled.",
+                    "UnitQuery::Type not handled for create_registration_event_stream.",
                 ))
             }
         };
-
-        let mut topic_name = self.find_channel_queue_for_publisher(&publication_name);
 
         let publishers = self.publishers.lock().unwrap();
         let availability = if let Some(ref channel) = topic_name {
@@ -201,12 +201,8 @@ impl Communicate for LocalComms {
 
         let _ = tx.try_send(availability);
 
-        if topic_name.is_none() {
-            // if the channel does not exist, let's register this on the test default channel
-            topic_name = Some("pressure-channel".to_string())
-        }
-        let topic_name = topic_name.expect("Expecting channel name to be set");
-        self.registration_streams.lock().unwrap().entry(topic_name).or_default().push(tx);
+        let topic_to_register = topic_name.unwrap_or_else(|| "pressure-channel".to_string());
+        self.registration_streams.lock().unwrap().entry(topic_to_register).or_default().push(tx);
 
         Ok(Box::pin(rx))
     }
@@ -606,7 +602,10 @@ mod test {
 
         // WHEN create registration event stream
         let mut registration_event_stream_created_at_start = comms
-            .create_registration_event_stream(&UnitQuery::Name(get_pressure_unit_name()))
+            .create_registration_event_stream(&UnitQuery::Topic((
+                get_pressure_type_name(),
+                DEFAULT_TOPIC_NAME.to_string(),
+            )))
             .await
             .unwrap();
         // THEN unavailable before the publisher was created
@@ -647,7 +646,10 @@ mod test {
 
         // WHEN create registration event stream after the publisher was created
         let mut registration_event_stream_created_after_publisher = comms
-            .create_registration_event_stream(&UnitQuery::Name(get_pressure_unit_name()))
+            .create_registration_event_stream(&UnitQuery::Topic((
+                get_pressure_type_name(),
+                DEFAULT_TOPIC_NAME.to_string(),
+            )))
             .await
             .unwrap();
         // THEN available
@@ -746,7 +748,10 @@ mod test {
 
         // WHEN create registration event stream after the publisher was dropped
         let mut registration_event_stream_created_after_publisher_dropped = comms
-            .create_registration_event_stream(&UnitQuery::Name(get_pressure_unit_name()))
+            .create_registration_event_stream(&UnitQuery::Topic((
+                get_pressure_type_name(),
+                DEFAULT_TOPIC_NAME.to_string(),
+            )))
             .await
             .unwrap();
         // THEN unavailable
