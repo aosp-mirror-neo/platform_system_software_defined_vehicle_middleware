@@ -207,18 +207,19 @@ void RemoteAgentTopicExporter::MaybeSendSubscribeResult(ExportedTopic& exported_
                                            metadata.message_size)) {
                 payload.has_last_message_ = 1;
                 break;
-            } else if (attempt_count > 0) {
+            } else {
                 ALOGW("RemoteAgentTopicExporter(%s): Overflow while reading last message for "
                       "SubscribeResult for topic %s!  %d attempts remaining.  Consider increasing "
                       "message_count.",
                       vm_name_.c_str(), exported_topic.topic.GetMetadata().name.c_str(),
-                      attempt_count);
-            } else {
-                ALOGE("RemoteAgentTopicExporter(%s): Complete failure to read last message for "
-                      "SubscribeResult for topic %s due to repeated overflows!  Consider "
-                      "increasing message_count.",
-                      vm_name_.c_str(), exported_topic.topic.GetMetadata().name.c_str());
+                      attempt_count - 1);
             }
+        }
+        if (!payload.has_last_message_) {
+            ALOGE("RemoteAgentTopicExporter(%s): Complete failure to read last message for "
+                  "SubscribeResult for topic %s due to repeated overflows!  Consider "
+                  "increasing message_count.",
+                  vm_name_.c_str(), exported_topic.topic.GetMetadata().name.c_str());
         }
     }
 
