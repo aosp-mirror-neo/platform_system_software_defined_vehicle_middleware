@@ -12,9 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use google_sdv_data_tunnel::aidl::google::sdv::data_tunnel::IAgentService::ERROR_ACCESS_DENIED;
-use google_sdv_data_tunnel::aidl::google::sdv::data_tunnel::PublicationDescriptor::PublicationDescriptor;
-use google_sdv_identity::aidl::google::sdv::identity::UnitIdentifier::UnitIdentifier as UnitIdentifierAidl;
+use google_sdv_data_tunnel::aidl::google::sdv::data_tunnel::{
+    IAgentService::ERROR_ACCESS_DENIED,
+    ISubscriptionReadinessListener::{
+        BnSubscriptionReadinessListener, ISubscriptionReadinessListener,
+    },
+    SubscriptionParams::SubscriptionParams,
+    SubscriptionResult::SubscriptionResult,
+};
+use google_sdv_identity::binder::{BinderFeatures, Interface, Result as BinderResult, Strong};
 use sdv_comms_common::callback::ffi::Callback;
 use sdv_comms_ctx::ContextImpl;
 use sdv_comms_id::names::TopicName;
@@ -27,9 +33,40 @@ use sdv_status_rs::{derive, SdvResult, SdvStatus, SdvStatusCode};
 use crate::core::multiplexer_internal::MultiplexerInternal;
 use crate::core::shared_internal;
 use crate::ffi::ffi_types;
+use futures::channel::oneshot;
 use log::error;
 use std::cmp::min;
 use std::option::Option;
+use std::sync::Mutex;
+
+struct SubscriptionReadinessListener {
+    sender: Mutex<Option<oneshot::Sender<i32>>>,
+}
+
+impl SubscriptionReadinessListener {
+    fn create() -> (Strong<dyn ISubscriptionReadinessListener>, oneshot::Receiver<i32>) {
+        let (sender, receiver) = oneshot::channel();
+        let listener = BnSubscriptionReadinessListener::new_binder(
+            SubscriptionReadinessListener { sender: Mutex::new(Some(sender)) },
+            BinderFeatures::default(),
+        );
+        (listener, receiver)
+    }
+}
+
+impl Interface for SubscriptionReadinessListener {}
+
+#[allow(non_snake_case)] // AIDL generated
+impl ISubscriptionReadinessListener for SubscriptionReadinessListener {
+    fn onSubscriptionReady(&self, status_code: i32) -> BinderResult<()> {
+        if let Some(sender) = self.sender.lock().unwrap().take() {
+            let _ = sender.send(status_code);
+        } else {
+            error!("Got multiple onSubscriptionReady notifications!");
+        }
+        Ok(())
+    }
+}
 
 pub struct RegularSubscriber {
     ctx: &'static ContextImpl,
@@ -56,11 +93,28 @@ impl RegularSubscriber {
     ) -> SdvResult<Self> {
         let dt_binder = ctx.get_agents().get_dt_binder();
         super::state::get_state(ctx)?;
-        let mut publication_descriptor: PublicationDescriptor = Default::default();
 
-        let unit_identifier_aidl: UnitIdentifierAidl = unit_identifier.into();
+        // We only set up a readiness listener for remote topics; local topics are always ready,
+        // and we want to avoid a possible increase in startup time due to waiting for a readiness
+        // notification we don't need in that case.
+        let publisher_is_remote = ctx.get_identity().fqin().vm_name()
+            != unit_identifier.service_identity().fqin().vm_name();
+        let (opt_readiness_listener, opt_readiness_result) = if publisher_is_remote {
+            let (listener, result) = SubscriptionReadinessListener::create();
+            (Some(listener), Some(result))
+        } else {
+            (None, None)
+        };
+
+        let mut sub_result: SubscriptionResult = Default::default();
         dt_binder
-            .SubscribeToPublication(&unit_identifier_aidl, &mut publication_descriptor)
+            .SubscribeToPublicationExtended(
+                &SubscriptionParams {
+                    unit_identifier: unit_identifier.into(),
+                    readiness_listener: opt_readiness_listener,
+                },
+                &mut sub_result,
+            )
             .map_err(|err| {
                 if err.service_specific_error() == ERROR_ACCESS_DENIED {
                     SdvStatus::with_cause(SdvStatusCode::PermissionDenied, err)
@@ -68,6 +122,15 @@ impl RegularSubscriber {
                     SdvStatus::with_cause(SdvStatusCode::Unknown, err)
                 }
             })?;
+
+        // Wait for subscription to be ready for correct fetch_last_message behavior.
+        if let Some(readiness_result) = opt_readiness_result {
+            let status_code =
+                readiness_result.await.map_err(|_| SdvStatus::new(SdvStatusCode::Unavailable))?;
+            SdvResult::from(SdvStatus::new(SdvStatusCode::from(status_code)))?;
+        }
+
+        let publication_descriptor = &sub_result.publication_descriptor;
 
         let mut metadata = PublisherUnitMetadata::default();
         metadata.set_version(1);

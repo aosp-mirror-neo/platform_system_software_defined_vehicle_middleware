@@ -31,6 +31,7 @@ rust_defaults {
         "liblazy_static",
         "liblog_rust",
         "libbytemuck",
+        "libfutures",
         "libparking_lot",
         "libsdv_comms_common",
         "libsdv_comms_ctx_impl",
