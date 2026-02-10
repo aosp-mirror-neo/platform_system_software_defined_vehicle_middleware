@@ -82,26 +82,32 @@ bool RemoteAgentClientManager::Startup(
     std::unique_lock guard(lock_);
     CHECK(!connection_manager_);
 
-    guard.unlock();
-
-    auto call_status =
-            service_discovery_agent->registerServiceUnitChangeListenerByType(kDtAgentUnitType,
-                                                                             listener_);
-    if (!call_status.isOk()) {
-        ALOGE("IServiceDiscoveryAgent::registerServiceUnitChangeListenerByName() failed! %s",
-              call_status.getDescription().c_str());
-        return false;
-    }
-
-    guard.lock();
-
     // Hold on to agent binder interfaces and connection manager we'll need later.
     service_discovery_agent_ = std::move(service_discovery_agent);
     transport_support_agent_ = std::move(transport_support_agent);
+
+    // Setting this (and then releasing lock_) means we'll accept subscription requests,
+    // so any failure after guard.unlock() below will require a Shutdown() for cleanup.
+    // We need to do this before we set up the SD listener so that we're prepared to
+    // handle any registration events it sends us.
     connection_manager_ = &connection_manager;
 
-    // Finally garbage-collect any clients that finished terminating.
+    // Garbage-collect any clients that finished terminating since any previous Shutdown().
     ClearTerminatedClients(guard);
+
+    guard.unlock();
+
+    auto call_status =
+            service_discovery_agent_->registerServiceUnitChangeListenerByType(kDtAgentUnitType,
+                                                                              listener_);
+    if (!call_status.isOk()) {
+        ALOGE("IServiceDiscoveryAgent::registerServiceUnitChangeListenerByName() failed: %s.  "
+              "Aborting startup.",
+              call_status.getDescription().c_str());
+        // Need to do a Shutdown() to ensure all required cleanup happens.
+        Shutdown();
+        return false;
+    }
 
     return true;
 }
