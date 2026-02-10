@@ -144,7 +144,7 @@ impl HistoryInternal {
             ctx,
             unit_type,
             topic_name,
-            ffi_types::ASDV_SubscriptionFlags_None,
+            ffi_types::ASDV_SubscriptionFlags_FetchLastMessage,
         )
         .await?;
         Self::create_history_internal(subscriber, history_buffer_size)
