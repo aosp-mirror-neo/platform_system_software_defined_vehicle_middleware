@@ -87,6 +87,9 @@ rust_defaults {
         "libasync_trait",
         "libpaste",
     ],
+    // This is needed to prevent linker errors from libsdv_comms_rs, which is
+    // used by libsdv_authz.
+    ld_flags: ["-Wl,--no-as-needed"],
 }
 
 rust_defaults {
