@@ -322,6 +322,9 @@ void RemoteAgentClientManager::ClearTerminatedClients(const std::unique_lock<std
 ::ndk::ScopedAStatus RemoteAgentClientManager::onServiceUnitUnregistered(
         const ServiceUnitDefinition& unit_def) {
     const auto& identity = unit_def.identity;
+    ALOGD("RemoteAgentClientManager: onServiceUnitUnregistered(%s)",
+          unit_def.identity.toString().c_str());
+
     if (identity == self_identity_) {
         return ::ndk::ScopedAStatus::ok();
     }

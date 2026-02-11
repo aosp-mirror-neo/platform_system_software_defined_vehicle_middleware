@@ -108,24 +108,28 @@ impl AclPolicyModel {
         self.unit_types_acls.get(unit_type_name)
     }
 
+    /// Returns whether there is permission to publishto the given topic.
     #[cfg(feature = "permissions")]
     pub fn can_publish(&self, publication_type: &UnitType, topic: &TopicName) -> bool {
         self.publish_permissions.contains(&(publication_type.clone(), Some(topic.clone())))
             || self.publish_permissions.contains(&(publication_type.clone(), None))
     }
 
+    /// Returns whether there is permission to subscribe to the given topic.
     #[cfg(feature = "permissions")]
     pub fn can_subscribe(&self, publication_type: &UnitType, topic: &TopicName) -> bool {
         self.subscribe_permissions.contains(&(publication_type.clone(), Some(topic.clone())))
             || self.subscribe_permissions.contains(&(publication_type.clone(), None))
     }
 
+    /// Returns whether there is permission to serve the given service unit.
     #[cfg(feature = "permissions")]
     pub fn can_serve(&self, server_type: &UnitType, service_unit: &ServiceUnitName) -> bool {
         self.serve_permissions.contains(&(server_type.clone(), Some(service_unit.clone())))
             || self.serve_permissions.contains(&(server_type.clone(), None))
     }
 
+    /// Returns whether there is permission to call the given service unit.
     #[cfg(feature = "permissions")]
     pub fn can_call(&self, server_type: &UnitType, service_unit: &ServiceUnitName) -> bool {
         self.call_permissions.contains(&(server_type.clone(), Some(service_unit.clone())))
