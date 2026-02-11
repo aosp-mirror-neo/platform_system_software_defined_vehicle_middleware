@@ -636,12 +636,12 @@ mod tests {
     use std::sync::Arc;
     use std::sync::Mutex;
 
-    static SERVER_FQIN_STR: &str = "vm-cdc:com.google.sdv.rpc.Server/default";
-    static CLIENT_FQIN_STR: &str = "vm-cdc:com.google.sdv.rpc.Client/default";
+    static SERVER_FQIN_STR: &str = "vm-cdc:com.android.sdv.rpc.Server/default";
+    static CLIENT_FQIN_STR: &str = "vm-cdc:com.android.sdv.rpc.Client/default";
     static ANOTHER_SERVER_FQIN_STR: &str = "vm-cdc:com.google.sdv.another.rpc.Server/default";
     static ANOTHER_CLIENT_FQIN_STR: &str = "vm-cdc:com.google.sdv.another.rpc.Client/default";
-    static ANOTHER_VM_SERVER_FQIN_STR: &str = "vm2:com.google.sdv.rpc.Server/default";
-    static ANOTHER_VM_CLIENT_FQIN_STR: &str = "vm2:com.google.sdv.rpc.Client/default";
+    static ANOTHER_VM_SERVER_FQIN_STR: &str = "vm2:com.android.sdv.rpc.Server/default";
+    static ANOTHER_VM_CLIENT_FQIN_STR: &str = "vm2:com.android.sdv.rpc.Client/default";
 
     // This module contains functions that return the default and most used
     // values in the unit tests.

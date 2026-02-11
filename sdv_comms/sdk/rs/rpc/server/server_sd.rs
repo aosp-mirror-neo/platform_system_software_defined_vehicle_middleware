@@ -211,7 +211,7 @@ mod tests {
 
     /// The first part of a service's FQIN. Each test should compose their own service FQIN to avoid
     /// interfering with each other, given that they all access the same sdv_sd_agent.
-    static FQIN_PREFIX: &str = "vm-name:com.google.sdv.RpcTest";
+    static FQIN_PREFIX: &str = "vm-name:com.android.sdv.RpcTest";
 
     lazy_static! {
         static ref UNIT_TYPE: UnitType = UnitType::from_str(UNIT_TYPE_STR).expect("Valid UnitType");
