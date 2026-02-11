@@ -219,6 +219,11 @@ TEST_F(RemoteAgentClientManagerTest, Startup_FailsOnListenerRegistrationFailure)
                 registerServiceUnitChangeListenerByType(Eq(kDtAgentUnitType), _))
             .WillOnce(Return(ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT)));
 
+    // We'll also get an unregister call from the Shutdown() after the registration  fails.
+    EXPECT_CALL(*service_discovery_agent_,
+                unregisterServiceUnitChangeListenerByType(Eq(kDtAgentUnitType), _))
+            .WillOnce(Return(ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT)));
+
     ASSERT_FALSE(client_manager_.Startup(connection_manager_, service_discovery_agent_,
                                          transport_support_agent_));
 }
