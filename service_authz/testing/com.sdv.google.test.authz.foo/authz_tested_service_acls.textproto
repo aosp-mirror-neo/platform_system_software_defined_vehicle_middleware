@@ -30,7 +30,7 @@ unit_types {
 
 acls {
     name: "ping-dt-publisher-acl"
-    include: "com.sdv.google.test.authz.bar.AuthzTestDriver"
+    include: "com.android.sdv.test.authz.bar.AuthzTestDriver"
 }
 
 service_units {
@@ -67,7 +67,7 @@ unit_types {
 
 acls {
     name: "echo-rpc-server-acl"
-    include: "com.sdv.google.test.authz.bar.AuthzTestDriver"
+    include: "com.android.sdv.test.authz.bar.AuthzTestDriver"
 }
 
 service_units {

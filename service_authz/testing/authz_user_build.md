@@ -156,9 +156,9 @@ adb -s $SERIAL1 shell sdv_service_bundle start instance1:com.sdv.google.test.aut
 Run the following command to start test driver:
 
 ```shell
-adb -s $SERIAL1 shell sdv_service_bundle create instance1:com.sdv.google.test.authz.bar.AuthzTestDriver/instance
+adb -s $SERIAL1 shell sdv_service_bundle create instance1:com.android.sdv.test.authz.bar.AuthzTestDriver/instance
 
-adb -s $SERIAL1 shell sdv_service_bundle start instance1:com.sdv.google.test.authz.bar.AuthzTestDriver/instance
+adb -s $SERIAL1 shell sdv_service_bundle start instance1:com.android.sdv.test.authz.bar.AuthzTestDriver/instance
 ```
 
 ## 8. Verify logs
@@ -166,14 +166,14 @@ adb -s $SERIAL1 shell sdv_service_bundle start instance1:com.sdv.google.test.aut
 Run the following command to retrieve logs:
 
 ```shell
-adb -s $SERIAL1 shell logcat -d *:F com_sdv_google_test_authz_bar_AuthzTestDriver_instance | grep "Non-connectable.*as it was expected."
+adb -s $SERIAL1 shell logcat -d *:F com_android_sdv_test_authz_bar_AuthzTestDriver_instance | grep "Non-connectable.*as it was expected."
 ```
 
 Expected logs:
 
 ```shell
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable RPC server was not discovered due to ACLs configuration as it was expected.
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable RPC server denied connection due to ACLs configuration as it was expected.
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable DT publisher was not discovered due to ACLs configuration as it was expected.
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable DT publisher denied connection due to ACLs configuration as it was expected.
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable RPC server was not discovered due to ACLs configuration as it was expected.
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable RPC server denied connection due to ACLs configuration as it was expected.
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable DT publisher was not discovered due to ACLs configuration as it was expected.
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable DT publisher denied connection due to ACLs configuration as it was expected.
 ```

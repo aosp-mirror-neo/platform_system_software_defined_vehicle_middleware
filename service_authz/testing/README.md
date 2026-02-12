@@ -88,9 +88,9 @@ adb -s $SERIAL1 shell sdv_service_bundle start instance1:com.sdv.google.test.aut
 Run the following command and expect logs "Received response: hello_world":
 
 ```shell
-adb -s $SERIAL2 shell sdv_service_bundle create instance1:com.sdv.google.test.authz.bar.AuthzTestDriver/instance
+adb -s $SERIAL2 shell sdv_service_bundle create instance1:com.android.sdv.test.authz.bar.AuthzTestDriver/instance
 
-adb -s $SERIAL2 shell sdv_service_bundle start instance1:com.sdv.google.test.authz.bar.AuthzTestDriver/instance
+adb -s $SERIAL2 shell sdv_service_bundle start instance1:com.android.sdv.test.authz.bar.AuthzTestDriver/instance
 ```
 
 ## 5. Check logs
@@ -98,7 +98,7 @@ adb -s $SERIAL2 shell sdv_service_bundle start instance1:com.sdv.google.test.aut
 ```shell
 adb -s $SERIAL1 shell logcat -d *:F com_sdv_google_test_authz_foo_AuthzTestedService_instance | grep authz_test
 
-adb -s $SERIAL2 shell logcat -d *:F com_sdv_google_test_authz_bar_AuthzTestDriver_instance | grep authz_test
+adb -s $SERIAL2 shell logcat -d *:F com_android_sdv_test_authz_bar_AuthzTestDriver_instance | grep authz_test
 ```
 
 Expected logs on VM 1 (SID will be different on every run):
@@ -116,20 +116,20 @@ com_sdv_google_test_authz_foo_AuthzTestedService_instance: authz_tested_service:
 Expected logs on VM 2 (SID will be different on every run):
 
 ```logs
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable RPC server was not discovered due to ACLs configuration as it was expected.
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Connectable RPC server identifiers: SID 9264256277222008612, UnitName echo-rpc-server
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::certificate_provider: TLS is enabled
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::certificate_provider: New root certs received
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Received response from connectable RPC server: 9264256277222008612$instance1:com.sdv.google.test.authz.foo.AuthzTestedService/instance
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::certificate_provider: TLS is enabled
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::certificate_provider: New root certs received
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::client: Could not obtain unary response: ACL check didn't allow this operation
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable RPC server denied connection due to ACLs configuration as it was expected.
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable DT publisher was not discovered due to ACLs configuration as it was expected.
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Connectable DT publisher identifiers: SID 9264256277222008612, UnitName ping-dt-publisher
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Received non-connectable DT publisher SID: 9264256277222008612
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable DT publisher was not discovered due to ACLs configuration as it was expected.
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Connectable DT publisher identifiers: SID 9264256277222008612, UnitName ping-dt-publisher
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable DT publisher identifiers: SID 9264256277222008612, UnitName ping-dt-publisher-non-connectable
-com_sdv_google_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable DT publisher denied connection due to ACLs configuration as it was expected.
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable RPC server was not discovered due to ACLs configuration as it was expected.
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Connectable RPC server identifiers: SID 9264256277222008612, UnitName echo-rpc-server
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::certificate_provider: TLS is enabled
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::certificate_provider: New root certs received
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Received response from connectable RPC server: 9264256277222008612$instance1:com.sdv.google.test.authz.foo.AuthzTestedService/instance
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::certificate_provider: TLS is enabled
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::certificate_provider: New root certs received
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::client: Could not obtain unary response: ACL check didn't allow this operation
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable RPC server denied connection due to ACLs configuration as it was expected.
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable DT publisher was not discovered due to ACLs configuration as it was expected.
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Connectable DT publisher identifiers: SID 9264256277222008612, UnitName ping-dt-publisher
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Received non-connectable DT publisher SID: 9264256277222008612
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable DT publisher was not discovered due to ACLs configuration as it was expected.
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Connectable DT publisher identifiers: SID 9264256277222008612, UnitName ping-dt-publisher
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable DT publisher identifiers: SID 9264256277222008612, UnitName ping-dt-publisher-non-connectable
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-connectable DT publisher denied connection due to ACLs configuration as it was expected.
 ```
