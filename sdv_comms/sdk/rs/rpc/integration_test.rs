@@ -135,7 +135,7 @@ static LARGE_MESSAGE_SIZE: usize = 25_000_000;
 
 #[tokio::test]
 async fn test_simple_echo_server() {
-    let fqin_str: &str = "vm-cdc:com.google.sdv.rpc.TestEcho/default";
+    let fqin_str: &str = "vm-cdc:com.android.sdv.rpc.TestEcho/default";
     let fqin = ServiceFqin::from_str(fqin_str).expect("Valid ServiceFqin is expected");
     let context = ContextRef::create(fqin);
 
@@ -166,7 +166,7 @@ async fn test_simple_echo_server() {
 
 #[tokio::test]
 async fn test_unary_large_data() {
-    let fqin_str: &str = "vm-cdc:com.google.sdv.rpc.UnaryLarge/default";
+    let fqin_str: &str = "vm-cdc:com.android.sdv.rpc.UnaryLarge/default";
     let fqin = ServiceFqin::from_str(fqin_str).expect("Valid ServiceFqin is expected");
     let context = ContextRef::create(fqin);
 
@@ -198,7 +198,7 @@ async fn test_unary_large_data() {
 
 #[tokio::test]
 async fn test_unary_timeout() {
-    let fqin_str: &str = "vm-cdc:com.google.sdv.rpc.UnaryTimeout/default";
+    let fqin_str: &str = "vm-cdc:com.android.sdv.rpc.UnaryTimeout/default";
     let fqin = ServiceFqin::from_str(fqin_str).expect("Valid ServiceFqin is expected");
     let context = ContextRef::create(fqin);
 
@@ -232,7 +232,7 @@ async fn test_unary_timeout() {
 
 #[tokio::test]
 async fn test_streaming_echo_server() {
-    let fqin = ServiceFqin::from_str("fm-cdc:com.google.sdv.rpc.TestStreamingEchoServer/default")
+    let fqin = ServiceFqin::from_str("fm-cdc:com.android.sdv.rpc.TestStreamingEchoServer/default")
         .expect("Valid ServiceFqin is expected");
     let context = ContextRef::create(fqin);
     let fqin = context.get_self_fqin(); // VM name might have changed
@@ -294,7 +294,7 @@ impl Stream for LargeDataStreamServer {
 
 #[tokio::test]
 async fn test_server_streaming_large_data() {
-    let fqin = ServiceFqin::from_str("fm-cdc:com.google.sdv.rpc.TestServerStreamingLarge/default")
+    let fqin = ServiceFqin::from_str("fm-cdc:com.android.sdv.rpc.TestServerStreamingLarge/default")
         .expect("Valid ServiceFqin is expected");
     let context = ContextRef::create(fqin);
     let fqin = context.get_self_fqin(); // VM name might have changed
@@ -329,7 +329,7 @@ async fn test_server_streaming_large_data() {
 
 #[tokio::test]
 async fn test_client_streaming() {
-    let fqin = ServiceFqin::from_str("fm-cdc:com.google.sdv.rpc.TestClientStreaming/default")
+    let fqin = ServiceFqin::from_str("fm-cdc:com.android.sdv.rpc.TestClientStreaming/default")
         .expect("Valid ServiceFqin is expected");
     let context = ContextRef::create(fqin);
     let fqin = context.get_self_fqin(); // VM name might have changed
@@ -399,7 +399,7 @@ impl Stream for LargeDataStreamClient {
 
 #[tokio::test]
 async fn test_client_streaming_large_data() {
-    let fqin = ServiceFqin::from_str("fm-cdc:com.google.sdv.rpc.TestClinetStreamingLarge/default")
+    let fqin = ServiceFqin::from_str("fm-cdc:com.android.sdv.rpc.TestClinetStreamingLarge/default")
         .expect("Valid ServiceFqin is expected");
     let context = ContextRef::create(fqin);
     let fqin = context.get_self_fqin(); // VM name might have changed
@@ -459,7 +459,7 @@ async fn test_client_streaming_large_data() {
 /// The test verifies that the server can still process a fast call from
 /// another client ("ImmediateRespond") while the first call is waiting.
 async fn test_concurrent_calls_and_waiting() {
-    let fqin_str: &str = "vm-cdc:com.google.sdv.rpc.TestConcurrent/default";
+    let fqin_str: &str = "vm-cdc:com.android.sdv.rpc.TestConcurrent/default";
     let fqin = ServiceFqin::from_str(fqin_str).expect("Valid ServiceFqin");
 
     let (tx, rx) = watch::channel(());
@@ -525,7 +525,7 @@ async fn test_concurrent_calls_and_waiting() {
 /// - New requests from existing clients are rejected.
 /// - In-progress requests are allowed to complete.
 async fn test_server_destruction() {
-    let fqin_str: &str = "vm-cdc:com.google.sdv.rpc.TestDestruction/default";
+    let fqin_str: &str = "vm-cdc:com.android.sdv.rpc.TestDestruction/default";
     let fqin = ServiceFqin::from_str(fqin_str).expect("Valid ServiceFqin");
 
     let simple_method: UnaryRpcMethod = Arc::new(move |_fqin: ServiceFqin, _data: &[u8]| {
@@ -591,7 +591,7 @@ async fn test_server_destruction() {
 // Tests that the client can connect as soon as the server is discoverable through SD.
 // Connections should not be rejected on server startup.
 async fn test_client_early_creation() {
-    let fqin_str: &str = "vm-cdc:com.google.sdv.rpc.TestEarlyClient/default";
+    let fqin_str: &str = "vm-cdc:com.android.sdv.rpc.TestEarlyClient/default";
     let fqin = ServiceFqin::from_str(fqin_str).expect("Valid ServiceFqin is expected");
     let context = Arc::new(ContextRef::create(fqin));
 

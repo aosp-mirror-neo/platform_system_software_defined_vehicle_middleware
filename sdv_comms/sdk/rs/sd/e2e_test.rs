@@ -34,7 +34,7 @@ use crate::sd::{
 };
 use crate::ContextRef;
 
-static UNIT_TYPE_STR: &str = "com.google.sdv.samples.SampleBundle1#HelloWorldTopic";
+static UNIT_TYPE_STR: &str = "com.android.sdv.samples.SampleBundle1#HelloWorldTopic";
 static SERVICE_FQIN_STR: &str = "vm-name:com.google.comms_stack_tests.SDE2Etests";
 
 lazy_static! {
@@ -206,7 +206,7 @@ async fn subscribe_unit_by_type_success() {
         let ctx = ContextRef::create(fqin);
 
         let unit_type: UnitType =
-            UnitType::from_str("com.google.sdv.samples.SampleBundle1#SubscribeByType")
+            UnitType::from_str("com.android.sdv.samples.SampleBundle1#SubscribeByType")
                 .expect("Valid UnitType");
 
         // Subscribe before we register a specific unit.
@@ -244,7 +244,7 @@ async fn subscribe_unit_by_type_notifies_existing_units() {
         let ctx = ContextRef::create(fqin);
 
         let unit_type: UnitType =
-            UnitType::from_str("com.google.sdv.samples.SampleBundle1#ExistingByType")
+            UnitType::from_str("com.android.sdv.samples.SampleBundle1#ExistingByType")
                 .expect("Valid UnitType");
 
         // Create and register publisher before we subscribe.
