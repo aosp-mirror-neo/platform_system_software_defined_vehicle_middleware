@@ -15,8 +15,5 @@
 //! SDV SD Identity service.
 
 pub(crate) mod id_gen;
-#[cfg(feature = "verified_fqin")]
 pub(crate) mod lazy_identity_verifier;
-#[cfg(feature = "verified_fqin")]
-pub(crate) mod native_services_names;
 pub(crate) mod service_v2;

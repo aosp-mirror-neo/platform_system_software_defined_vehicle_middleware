@@ -16,7 +16,7 @@ use anyhow::anyhow;
 use binder::{DeathRecipient, IBinder};
 use std::sync::{Arc, Mutex};
 
-use google_sdv_service_bundles_identity::aidl::google::sdv::service_bundles::identity::IIdentityVerifier::{
+use google_sdv_identity_internal::aidl::google::sdv::identity::internal::IIdentityVerifier::{
     BpIdentityVerifier, IIdentityVerifier,
 };
 

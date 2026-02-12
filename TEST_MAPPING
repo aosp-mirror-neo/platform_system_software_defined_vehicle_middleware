@@ -108,6 +108,9 @@
       "name": "sdv_core_middleware_unit_middleware_local_comms_test"
     },
     {
+      "name": "sdv_core_middleware_unit_native_services_names_test"
+    },
+    {
       "name": "sdv_core_middleware_unit_middleware_sdv_comms_test"
     },
     {
