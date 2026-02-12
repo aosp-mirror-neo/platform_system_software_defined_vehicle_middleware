@@ -139,7 +139,7 @@ async fn service_main(context: ContextRef) -> SdvResult<()> {
 }
 
 static TESTED_SERVER_UNIT_TYPE_STR: &str =
-    "com.sdv.google.test.authz.foo.AuthzTestedService#EchoRpcServerUnitType";
+    "com.android.sdv.test.authz.foo.AuthzTestedService#EchoRpcServerUnitType";
 
 lazy_static! {
     static ref TESTED_SERVER_UNIT_TYPE: UnitType =
@@ -270,7 +270,7 @@ async fn create_non_connectable_client(
 }
 
 static TESTED_PUBLISHER_UNIT_TYPE_STR: &str =
-    "com.sdv.google.test.authz.foo.AuthzTestedService#PingDtPublisherUnitType";
+    "com.android.sdv.test.authz.foo.AuthzTestedService#PingDtPublisherUnitType";
 
 lazy_static! {
     static ref TESTED_PUBLISHER_UNIT_TYPE: UnitType =

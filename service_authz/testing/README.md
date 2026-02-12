@@ -78,9 +78,9 @@ until adb -s $SERIAL2 root; do :; done
 Run the following command and expect logs "RPC Server is running":
 
 ```shell
-adb -s $SERIAL1 shell sdv_service_bundle create instance1:com.sdv.google.test.authz.foo.AuthzTestedService/instance
+adb -s $SERIAL1 shell sdv_service_bundle create instance1:com.android.sdv.test.authz.foo.AuthzTestedService/instance
 
-adb -s $SERIAL1 shell sdv_service_bundle start instance1:com.sdv.google.test.authz.foo.AuthzTestedService/instance
+adb -s $SERIAL1 shell sdv_service_bundle start instance1:com.android.sdv.test.authz.foo.AuthzTestedService/instance
 ```
 
 ## 4. Start Bar
@@ -96,7 +96,7 @@ adb -s $SERIAL2 shell sdv_service_bundle start instance1:com.android.sdv.test.au
 ## 5. Check logs
 
 ```shell
-adb -s $SERIAL1 shell logcat -d *:F com_sdv_google_test_authz_foo_AuthzTestedService_instance | grep authz_test
+adb -s $SERIAL1 shell logcat -d *:F com_android_sdv_test_authz_foo_AuthzTestedService_instance | grep authz_test
 
 adb -s $SERIAL2 shell logcat -d *:F com_android_sdv_test_authz_bar_AuthzTestDriver_instance | grep authz_test
 ```
@@ -104,13 +104,13 @@ adb -s $SERIAL2 shell logcat -d *:F com_android_sdv_test_authz_bar_AuthzTestDriv
 Expected logs on VM 1 (SID will be different on every run):
 
 ```logs
-com_sdv_google_test_authz_foo_AuthzTestedService_instance: sdv_comms::rpc::certificate_provider: New root certs received
-com_sdv_google_test_authz_foo_AuthzTestedService_instance: authz_tested_service: Non-connectable RPC server identifiers: SID 9264256277222008612
-com_sdv_google_test_authz_foo_AuthzTestedService_instance: sdv_comms::rpc::certificate_provider: TLS is enabled
-com_sdv_google_test_authz_foo_AuthzTestedService_instance: sdv_comms::rpc::certificate_provider: New root certs received
-com_sdv_google_test_authz_foo_AuthzTestedService_instance: authz_tested_service: Non-connectable DT publisher identifiers: SID 9264256277222008612
-com_sdv_google_test_authz_foo_AuthzTestedService_instance: authz_tested_service: RPC Servers are running
-com_sdv_google_test_authz_foo_AuthzTestedService_instance: authz_tested_service: Processing request
+com_android_sdv_test_authz_foo_AuthzTestedService_instance: sdv_comms::rpc::certificate_provider: New root certs received
+com_android_sdv_test_authz_foo_AuthzTestedService_instance: authz_tested_service: Non-connectable RPC server identifiers: SID 9264256277222008612
+com_android_sdv_test_authz_foo_AuthzTestedService_instance: sdv_comms::rpc::certificate_provider: TLS is enabled
+com_android_sdv_test_authz_foo_AuthzTestedService_instance: sdv_comms::rpc::certificate_provider: New root certs received
+com_android_sdv_test_authz_foo_AuthzTestedService_instance: authz_tested_service: Non-connectable DT publisher identifiers: SID 9264256277222008612
+com_android_sdv_test_authz_foo_AuthzTestedService_instance: authz_tested_service: RPC Servers are running
+com_android_sdv_test_authz_foo_AuthzTestedService_instance: authz_tested_service: Processing request
 ```
 
 Expected logs on VM 2 (SID will be different on every run):
@@ -120,7 +120,7 @@ com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Non-
 com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Connectable RPC server identifiers: SID 9264256277222008612, UnitName echo-rpc-server
 com_android_sdv_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::certificate_provider: TLS is enabled
 com_android_sdv_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::certificate_provider: New root certs received
-com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Received response from connectable RPC server: 9264256277222008612$instance1:com.sdv.google.test.authz.foo.AuthzTestedService/instance
+com_android_sdv_test_authz_bar_AuthzTestDriver_instance: authz_test_driver: Received response from connectable RPC server: 9264256277222008612$instance1:com.android.sdv.test.authz.foo.AuthzTestedService/instance
 com_android_sdv_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::certificate_provider: TLS is enabled
 com_android_sdv_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::certificate_provider: New root certs received
 com_android_sdv_test_authz_bar_AuthzTestDriver_instance: sdv_comms::rpc::client: Could not obtain unary response: ACL check didn't allow this operation

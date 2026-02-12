@@ -146,9 +146,9 @@ adb -s $SERIAL1 shell getprop sdv.authz.enable
 Run the following command to start tested service:
 
 ```shell
-adb -s $SERIAL1 shell sdv_service_bundle create instance1:com.sdv.google.test.authz.foo.AuthzTestedService/instance
+adb -s $SERIAL1 shell sdv_service_bundle create instance1:com.android.sdv.test.authz.foo.AuthzTestedService/instance
 
-adb -s $SERIAL1 shell sdv_service_bundle start instance1:com.sdv.google.test.authz.foo.AuthzTestedService/instance
+adb -s $SERIAL1 shell sdv_service_bundle start instance1:com.android.sdv.test.authz.foo.AuthzTestedService/instance
 ```
 
 ## 7. Start Bar
