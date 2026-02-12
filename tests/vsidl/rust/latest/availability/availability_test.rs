@@ -179,7 +179,7 @@ mod test {
         // AND GIVEN an availability stream.
         let mut availability_stream = sdv::mw::clientlib::create_registration_event_stream(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::UNIQUE,
+            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
         .await
@@ -188,7 +188,7 @@ mod test {
         // WHEN trying to create an observer.
         let result = sdv::mw::clientlib::create_observer(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::UNIQUE,
+            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
         .await;
@@ -214,7 +214,7 @@ mod test {
 
         let mut observer = sdv::mw::clientlib::create_observer(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::UNIQUE,
+            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
         .await
@@ -224,7 +224,7 @@ mod test {
         thread::sleep(MULTIPUB_PROCESSING_DURATION);
 
         let cabin_pub = cabin_sensor
-            .take_publisher(cabin_publisher::Channel::<CabinTemperature>::UNIQUE)
+            .take_publisher(cabin_publisher::Channel::<CabinTemperature>::MULTIPUB)
             .expect("taking cabin pub failed.");
         cabin_pub
             .publish(&CabinTemperature { temperature: cabin_temp, ..Default::default() })

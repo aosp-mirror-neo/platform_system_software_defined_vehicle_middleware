@@ -20,7 +20,8 @@ service_bundle {
     name: "SampleBundle"
     publisher {
         message: "SampleMessage"
-        channel: "FOO"
+        channel: "foo"
+        capacity: 8
     }
 
     register_reflection_metadata: true
@@ -30,6 +31,7 @@ service_bundle {
     name: "SampleBundleWithout"
     publisher {
         message: "SampleMessage"
-        channel: "BAR"
+        channel: "bar"
+        capacity: 8
     }
 }

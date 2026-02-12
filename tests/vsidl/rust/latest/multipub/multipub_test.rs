@@ -56,7 +56,7 @@ mod test {
             .take_publisher(
                 sdv_mw_rs_sdv_vsidl_multipub_test_cabin_sensor::publisher::Channel::<
                     CabinTemperature,
-                >::UNIQUE,
+                >::MULTIPUB,
             )
             .expect("taking cabin pub failed.");
         // AND GIVEN a second 'mutlipub' publisher.
@@ -69,21 +69,21 @@ mod test {
             .take_publisher(
                 sdv_mw_rs_sdv_vsidl_multipub_test_footwell_sensor::publisher::Channel::<
                     CabinTemperature,
-                >::UNIQUE,
+                >::MULTIPUB,
             )
             .expect("taking footwell pub failed.");
 
         // AND GIVEN a 'multipub' subscriber and observer (see VSIDL declaration).
         let subscriber = sdv::mw::clientlib::create_subscriber(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::UNIQUE,
+            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
         .await
         .expect("Create CabinTemperature subscriber failed.");
         let mut observer = sdv::mw::clientlib::create_observer(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::UNIQUE,
+            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
         .await
@@ -133,7 +133,7 @@ mod test {
         // WHEN trying to get history on a multipub message.
         let result = sdv::mw::clientlib::create_history(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::UNIQUE,
+            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
         .await;
@@ -145,7 +145,7 @@ mod test {
         // WHEN trying to instant read a multipub message.
         let result = sdv::mw::clientlib::create_instant_reader(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::UNIQUE,
+            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
         .await;
@@ -184,7 +184,7 @@ mod test {
             .take_publisher(
                 sdv_mw_rs_sdv_vsidl_multipub_test_passenger_sensor::publisher::Channel::<
                     CabinTemperature,
-                >::UNIQUE,
+                >::MULTIPUB,
             )
             .expect("taking passenger pub failed.");
 

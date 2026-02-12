@@ -67,67 +67,67 @@ mod test {
         sdv::mw::InstantReader<TirePressure>,
     ) {
         let (pub_channel, sub_channel) = match channel_num {
-            "CHANNEL_ZERO" => (
+            "channel_zero" => (
                 publisher::Channel::<TirePressure>::CHANNEL_ZERO,
                 subscriber::Channel::<TirePressure>::CHANNEL_ZERO,
             ),
-            "CHANNEL_ONE" => (
+            "channel_one" => (
                 publisher::Channel::<TirePressure>::CHANNEL_ONE,
                 subscriber::Channel::<TirePressure>::CHANNEL_ONE,
             ),
-            "CHANNEL_TWO" => (
+            "channel_two" => (
                 publisher::Channel::<TirePressure>::CHANNEL_TWO,
                 subscriber::Channel::<TirePressure>::CHANNEL_TWO,
             ),
-            "CHANNEL_THREE" => (
+            "channel_three" => (
                 publisher::Channel::<TirePressure>::CHANNEL_THREE,
                 subscriber::Channel::<TirePressure>::CHANNEL_THREE,
             ),
-            "CHANNEL_FOUR" => (
+            "channel_four" => (
                 publisher::Channel::<TirePressure>::CHANNEL_FOUR,
                 subscriber::Channel::<TirePressure>::CHANNEL_FOUR,
             ),
-            "CHANNEL_FIVE" => (
+            "channel_five" => (
                 publisher::Channel::<TirePressure>::CHANNEL_FIVE,
                 subscriber::Channel::<TirePressure>::CHANNEL_FIVE,
             ),
-            "CHANNEL_SIX" => (
+            "channel_six" => (
                 publisher::Channel::<TirePressure>::CHANNEL_SIX,
                 subscriber::Channel::<TirePressure>::CHANNEL_SIX,
             ),
-            "CHANNEL_SEVEN" => (
+            "channel_seven" => (
                 publisher::Channel::<TirePressure>::CHANNEL_SEVEN,
                 subscriber::Channel::<TirePressure>::CHANNEL_SEVEN,
             ),
-            "CHANNEL_EIGHT" => (
+            "channel_eight" => (
                 publisher::Channel::<TirePressure>::CHANNEL_EIGHT,
                 subscriber::Channel::<TirePressure>::CHANNEL_EIGHT,
             ),
-            "CHANNEL_NINE" => (
+            "channel_nine" => (
                 publisher::Channel::<TirePressure>::CHANNEL_NINE,
                 subscriber::Channel::<TirePressure>::CHANNEL_NINE,
             ),
-            "CHANNEL_TEN" => (
+            "channel_ten" => (
                 publisher::Channel::<TirePressure>::CHANNEL_TEN,
                 subscriber::Channel::<TirePressure>::CHANNEL_TEN,
             ),
-            "CHANNEL_ELEVEN" => (
+            "channel_eleven" => (
                 publisher::Channel::<TirePressure>::CHANNEL_ELEVEN,
                 subscriber::Channel::<TirePressure>::CHANNEL_ELEVEN,
             ),
-            "CHANNEL_TWELVE" => (
+            "channel_twelve" => (
                 publisher::Channel::<TirePressure>::CHANNEL_TWELVE,
                 subscriber::Channel::<TirePressure>::CHANNEL_TWELVE,
             ),
-            "CHANNEL_THIRTEEN" => (
+            "channel_thirteen" => (
                 publisher::Channel::<TirePressure>::CHANNEL_THIRTEEN,
                 subscriber::Channel::<TirePressure>::CHANNEL_THIRTEEN,
             ),
-            "CHANNEL_FOURTEEN" => (
+            "channel_fourteen" => (
                 publisher::Channel::<TirePressure>::CHANNEL_FOURTEEN,
                 subscriber::Channel::<TirePressure>::CHANNEL_FOURTEEN,
             ),
-            "CHANNEL_FIFTEEN" | &_ => (
+            "channel_fifteen" | &_ => (
                 publisher::Channel::<TirePressure>::CHANNEL_FIFTEEN,
                 subscriber::Channel::<TirePressure>::CHANNEL_FIFTEEN,
             ),
@@ -198,7 +198,7 @@ mod test {
         let instance_name = "pubsub-observer-before-data";
 
         // GIVEN Publisher and all the different subscription option
-        let (_, publisher, mut observer, _, _, _) = setup(instance_name, "CHANNEL_ZERO").await;
+        let (_, publisher, mut observer, _, _, _) = setup(instance_name, "channel_zero").await;
 
         // WHEN we don't publish any data.
         // THEN observer does not get any data
@@ -213,7 +213,7 @@ mod test {
     async fn test_pub_sub_subscriber_before_publishing_data() {
         let instance_name = "pubsub-subscriber-before-data";
         // GIVEN Publisher and all the different subscription option
-        let (_, publisher, _, subscriber, _, _) = setup(instance_name, "CHANNEL_ONE").await;
+        let (_, publisher, _, subscriber, _, _) = setup(instance_name, "channel_one").await;
 
         // WHEN we don't publish any data.
         // THEN subscriber can't retrieve any message
@@ -228,7 +228,7 @@ mod test {
     async fn test_pub_sub_history_before_publishing_data() {
         let instance_name = "pubsub-history-before-data";
         // GIVEN Publisher and all the different subscription option
-        let (_, publisher, _, _, history, _) = setup(instance_name, "CHANNEL_TWO").await;
+        let (_, publisher, _, _, history, _) = setup(instance_name, "channel_two").await;
 
         // WHEN we don't publish any data.
         // THEN history can't retrieve any message
@@ -243,7 +243,7 @@ mod test {
     async fn test_pub_sub_instant_read_before_publishing_data() {
         let instance_name = "pubsub-instant-read-before-data";
         // GIVEN Publisher and all the different subscription option
-        let (_, publisher, _, _, _, instant_reader) = setup(instance_name, "CHANNEL_THREE").await;
+        let (_, publisher, _, _, _, instant_reader) = setup(instance_name, "channel_three").await;
 
         // WHEN we don't publish any data.
         // THEN instant reader can't retrieve any message
@@ -259,7 +259,7 @@ mod test {
 
         // GIVEN Publisher and all the different subscription option
         let (_, pressure_pub, mut observer, subscriber, history, instant_reader) =
-            setup(instance_name, "CHANNEL_FOUR").await;
+            setup(instance_name, "channel_four").await;
 
         // THEN subscriber cannot retrieve any message.
         let read = subscriber.read_next_messages(1).unwrap();
@@ -381,7 +381,7 @@ mod test {
 
         // GIVEN Publisher and all the different subscription option
         let (_, pressure_pub, mut observer, subscriber, history, instant_reader) =
-            setup(instance_name, "CHANNEL_NINE").await;
+            setup(instance_name, "channel_nine").await;
 
         // WHEN publisher writes more message than buffer size ( buffer size is 8 )
         for n in 1..=10 {
@@ -468,7 +468,7 @@ mod test {
         let instance_name = "pubsub-observer-after-publisher-drop";
         // GIVEN Publisher and all the different subscription option
         let (sdv_comms, pressure_pub, mut observer, _, _, _) =
-            setup(instance_name, "CHANNEL_TEN").await;
+            setup(instance_name, "channel_ten").await;
 
         // WHEN publishing a message.
         let pressure = 43678;
@@ -514,7 +514,7 @@ mod test {
 
         // GIVEN Publisher and all the different subscription option
         let (sdv_comms, pressure_pub, _, subscriber, _, _) =
-            setup(instance_name, "CHANNEL_ELEVEN").await;
+            setup(instance_name, "channel_eleven").await;
 
         // WHEN publishing a message.
         let pressure = 43678;
@@ -569,7 +569,7 @@ mod test {
         let instance_name = "pubsub-instant-after-publisher-drop";
         // GIVEN Publisher and all the different subscription option
         let (sdv_comms, pressure_pub, _, _, _, instant_reader) =
-            setup(instance_name, "CHANNEL_TWELVE").await;
+            setup(instance_name, "channel_twelve").await;
 
         // WHEN publishing a message.
         let pressure = 43678;
@@ -623,7 +623,7 @@ mod test {
         let instance_name = "pubsub-history-after-publisher-drop";
         // GIVEN Publisher and all the different subscription option
         let (sdv_comms, pressure_pub, _, _, history, _) =
-            setup(instance_name, "CHANNEL_THIRTEEN").await;
+            setup(instance_name, "channel_thirteen").await;
 
         // WHEN publishing a message.
         let pressure = 43678;

@@ -21,17 +21,6 @@ package sdv.vsidl.sendsync.test;
 import "google/protobuf/empty.proto";
 import "sdv/vsidl/v1/annotations.proto";
 
-enum Location {
-  FRONT_LEFT = 0;
-  FRONT_RIGHT = 1;
-}
-
 message TirePressure {
-  option (.sdv.vsidl.v1.publication) = {
-    instances_enum: "Location"
-    message_count: 8
-    model: SINGLE_PUB
-  };
-
   uint32 pressure = 1;
 }
