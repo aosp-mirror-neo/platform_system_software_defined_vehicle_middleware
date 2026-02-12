@@ -626,6 +626,55 @@ pub unsafe extern "C" fn ASDV_ServiceDiscoveryManager_registerServiceUnitChangeL
     }
 }
 
+/// Registers service unit change listener by UnitType and topic_name.
+///
+/// Parameters:
+///    [IN] ctx: Pointer to the Context object for this ServiceBundle.
+///    [IN] unit_type: The UnitType used for discovering Service Units.
+///    [IN] topic_name: The topic name used for discovering Service Units.
+///    [IN] cb_vtable: The CallbackVTable which will be used to trigger the callback when the
+///         backing operation completes.
+///
+/// This function returns immediately and invokes the provided callback when the IPC call to the
+/// local (same VM) ServiceDiscoveryAgent completes.
+///
+/// SAFETY: The caller guarantees all the following:
+///   1. `ctx` is a valid Context object pointer,
+///   2. `unit_type` is a pointer to a valid ASDV_UnitType declaration,
+///   3. `topic_name` is a valid pointer to a NUL-terminated string,
+///   4. `listener_cb_vtable`` transfers ownership of the provided ASDV_ServiceUnitChangeEvent pointer.
+///      The caller must use ASDV_ServiceUnitChangeEvent_extractDefinition to extract definition and destroy it.
+///   5. `completion_cb_vtable` transfers ownership of the provided ASDV_ServiceUnitChangeListenerHandle
+///      pointer. This must be cleared appropriately by calling ASDV_ServiceDiscoveryManager_unregisterServiceUnitChangeListener
+///      after use.
+#[comms_stack_ffi_fn]
+#[no_mangle]
+pub unsafe extern "C" fn ASDV_ServiceDiscoveryManager_registerServiceUnitChangeListenerByTopic(
+    ctx: &'static ASDV_Context,
+    unit_type: &ASDV_UnitType,
+    #[allow_ptr] topic_name: *const std::ffi::c_char,
+    #[allow_value] listener_cb_vtable: ASDV_CallbackVTable_ServiceDiscoveryManager_NotifyListenerOfServiceUnitChange,
+    #[allow_value] completion_cb_vtable: ASDV_CallbackVTable_ServiceDiscoveryManager_RegisterServiceUnitChangeListener,
+) -> sdv_status_t {
+    try_status! {
+        let ctx = ASDV_Context::peel_ref(ctx);
+        let unit_type = unit_type.try_into()?;
+        // SAFETY: `topic_name` is a pointer to a valid NUL-terminated string
+        let topic_name = unsafe { std::ffi::CStr::from_ptr(topic_name).to_str().unwrap() };
+        let listener_cb_vtable = listener_cb_vtable.into();
+        let completion_callback = completion_cb_vtable.into();
+
+        ctx.get_executor().spawn(Box::pin(async move {
+            let subscription_handle = manager::register_service_unit_change_listener_by_topic(ctx, &unit_type, topic_name, listener_cb_vtable)
+            .await
+                .map(|handle| Box::new(ASDV_ServiceUnitChangeListenerHandle(handle)));
+            completion_callback.invoke(subscription_handle);
+        }));
+
+        Ok(())
+    }
+}
+
 /// Unregisters service unit change listener.
 ///
 /// Parameters:

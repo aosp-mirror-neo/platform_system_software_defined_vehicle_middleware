@@ -200,6 +200,7 @@ impl IServiceUnitChangeListener for ServiceUnitChangeListener {
 enum ServiceUnitChangeSubscriptionArgument {
     UnitType(UnitType),
     UnitNameDiscoveryArgs(UnitNameDiscoveryArgs),
+    Topic(UnitType, String),
 }
 
 pub struct ServiceUnitChangeSubscriptionHandle {
@@ -255,6 +256,33 @@ pub async fn register_service_unit_change_listener_by_name(
     })
 }
 
+/// Registers service unit change listener by Topic.
+pub async fn register_service_unit_change_listener_by_topic(
+    ctx: &ContextImpl,
+    unit_type: &UnitType,
+    topic_name: &str,
+    callback: Callback<Box<ASDV_ServiceUnitChangeEvent>>,
+) -> SdvResult<ServiceUnitChangeSubscriptionHandle> {
+    let sd_agent = ctx.get_agents().get_sd_binder();
+
+    let listener = BnServiceUnitChangeListener::new_binder(
+        ServiceUnitChangeListener { callback: Mutex::new(callback) },
+        BinderFeatures::default(),
+    );
+
+    sd_agent
+        .registerServiceUnitChangeListenerByTopic(&unit_type.clone().into(), topic_name, &listener)
+        .map_err(SdvStatus::from)?;
+
+    Ok(ServiceUnitChangeSubscriptionHandle {
+        argument: ServiceUnitChangeSubscriptionArgument::Topic(
+            unit_type.clone(),
+            topic_name.to_string(),
+        ),
+        listener,
+    })
+}
+
 /// Registers service unit change listener by UnitType.
 pub async fn unregister_service_unit_change_listener_by_type(
     ctx: &ContextImpl,
@@ -271,7 +299,34 @@ pub async fn unregister_service_unit_change_listener_by_type(
         ServiceUnitChangeSubscriptionArgument::UnitNameDiscoveryArgs(unit_name) => sd_agent
             .unregisterServiceUnitChangeListenerByName(&unit_name.into(), &handle.listener)
             .map_err(SdvStatus::from)?,
+
+        ServiceUnitChangeSubscriptionArgument::Topic(unit_type, topic_name) => sd_agent
+            .unregisterServiceUnitChangeListenerByTopic(
+                &unit_type.into(),
+                &topic_name,
+                &handle.listener,
+            )
+            .map_err(SdvStatus::from)?,
     }
+    Ok(())
+}
+
+/// Unregisters service unit change listener by Topic.
+pub async fn unregister_service_unit_change_listener_by_topic(
+    ctx: &ContextImpl,
+    unit_type: &UnitType,
+    topic_name: &str,
+    handle: ServiceUnitChangeSubscriptionHandle,
+) -> SdvResult<()> {
+    let sd_agent = ctx.get_agents().get_sd_binder();
+
+    sd_agent
+        .unregisterServiceUnitChangeListenerByTopic(
+            &unit_type.clone().into(),
+            topic_name,
+            &handle.listener,
+        )
+        .map_err(SdvStatus::from)?;
     Ok(())
 }
 
