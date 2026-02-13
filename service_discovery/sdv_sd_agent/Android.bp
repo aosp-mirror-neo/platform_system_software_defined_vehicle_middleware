@@ -63,7 +63,6 @@ rust_defaults {
         "liblog_rust",
         "libmio",
         "libmockall",
-        "libnative_services_names",
         "libonce_cell",
         "libopenssl",
         "libprotobuf",
@@ -117,6 +116,9 @@ rust_binary {
     defaults: [
         "sdv_sd_agent_binary_defaults",
     ],
+    rustlibs: [
+        "libnative_services_names",
+    ],
     features: [
         "vpm",
     ],
@@ -132,6 +134,7 @@ rust_binary {
     ],
     rustlibs: [
         "google.sdv.privileged.gatewaynetworking-V2-rust",
+        "libnative_services_names",
     ],
     features: [
         "ivi",
@@ -150,6 +153,7 @@ rust_binary {
     ],
     rustlibs: [
         "google.sdv.privileged.gatewaynetworking-V2-rust",
+        "libnative_services_names",
     ],
     vendor: true,
     stem: "sdv_sd_agent",
@@ -181,6 +185,7 @@ rust_test {
         "libgoogletest_rust",
         "libkmr_common",
         "libkmr_wire",
+        "libnative_services_names_for_test",
         "libsample_dice_handover",
         "libsdv_dice",
         "libtempfile",

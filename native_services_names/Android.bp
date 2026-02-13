@@ -39,6 +39,14 @@ rust_library {
     min_sdk_version: "35",
 }
 
+rust_library {
+    name: "libnative_services_names_for_test",
+    crate_name: "native_services_names",
+    features: ["test-util"],
+    defaults: ["native_services_names@rust_defaults"],
+    visibility: ["//system/software_defined_vehicle:__subpackages__"],
+}
+
 rust_test {
     name: "sdv_core_middleware_unit_native_services_names_test",
     defaults: ["native_services_names@rust_defaults"],
