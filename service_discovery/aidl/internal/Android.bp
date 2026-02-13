@@ -19,6 +19,11 @@ package {
 aidl_interface {
     name: "google.sdv.identity.internal",
     system_ext_specific: true,
+    vendor_available: true,
+    visibility: [
+        "//system/software_defined_vehicle:__subpackages__",
+        "//system/tools/aidl/build",
+    ],
     srcs: ["google/sdv/identity/internal/*.aidl"],
     imports: [
         "google.sdv.identity-V2",

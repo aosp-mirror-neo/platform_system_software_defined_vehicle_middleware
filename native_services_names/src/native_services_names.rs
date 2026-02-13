@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::bail;
-use google_sdv_service_bundles_identity::aidl::google::sdv::service_bundles::identity::LocalServiceFqin::LocalServiceFqin;
+use google_sdv_identity::aidl::google::sdv::identity::LocalServiceFqin::LocalServiceFqin;
 use sdv_comms_id::ServiceFqin;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -32,13 +32,18 @@ fn parse_local_fqin_from_string(s: &str) -> anyhow::Result<LocalServiceFqin> {
     })
 }
 
+/// Provides a mapping from UIDs to allowed service bundle QINs.
+///
+/// This is used to verify that a native service is not attempting to register with a service
+/// bundle QIN that it is not authorized to use.
 #[derive(Debug, PartialEq)]
-pub(crate) struct NativeServicesNames {
+pub struct NativeServicesNames {
     uid_to_local_fqins: HashMap<u32, HashSet<LocalServiceFqin>>,
 }
 
 impl NativeServicesNames {
-    pub(crate) fn new() -> anyhow::Result<Self> {
+    /// Creates a new `NativeServicesNames` instance from configuration files in standard locations.
+    pub fn new() -> anyhow::Result<Self> {
         let system_ext_config = Self::read_config_to_string(SYSTEM_EXT_NATIVE_SERVICES_CONFIG)?;
         let product_config = Self::read_config_to_string(PRODUCT_NATIVE_SERVICES_CONFIG)?;
         let vendor_config = Self::read_config_to_string(VENDOR_NATIVE_SERVICES_CONFIG)?;
@@ -95,11 +100,11 @@ impl NativeServicesNames {
         Ok(())
     }
 
-    pub(crate) fn is_local_fqin_allowed_for_service_uid(
-        &self,
-        uid: u32,
-        fqin: &LocalServiceFqin,
-    ) -> bool {
+    /// Checks if a given `LocalServiceFqin` is allowed for a specific service UID.
+    ///
+    /// Returns `true` if the UID is configured and the service bundle QIN is in the allowed set
+    /// for that UID, otherwise it returns `false`.
+    pub fn is_local_fqin_allowed_for_service_uid(&self, uid: u32, fqin: &LocalServiceFqin) -> bool {
         if let Some(fqins) = self.uid_to_local_fqins.get(&uid) {
             return fqins.contains(fqin);
         }

@@ -378,19 +378,17 @@ impl Communicate for SdvComms {
                     .build()?;
 
                 let stream = sd.subscribe_service_unit_change_by_type(&unit_type).await?;
-                let filtered_stream = stream.filter_map(|event: ServiceUnitChangeEvent| {
-                    async move {
-                        match event {
-                            ServiceUnitChangeEvent::Registered(_) => Some(Availability::Available),
-                            ServiceUnitChangeEvent::Unregistered(_) => {
-                                Some(Availability::Unavailable)
-                            }
-                            ServiceUnitChangeEvent::Changed(_) => None,
-                        }
-                    }
-                    .boxed()
-                });
-                Box::pin(filtered_stream)
+                Box::pin(Self::filter_availability_stream(stream))
+            }
+            UnitQuery::Topic((type_name, topic)) => {
+                let unit_type = UnitType::builder()
+                    .set_sdv_package_name(type_name.get_package_name())
+                    .set_unit_type_name(type_name.get_type_name())
+                    .build()?;
+
+                let stream =
+                    sd.subscribe_service_unit_change_by_topic(&unit_type, topic.as_str()).await?;
+                Box::pin(Self::filter_availability_stream(stream))
             }
             _ => {
                 return Err(SdvStatus::with_message(
@@ -437,6 +435,25 @@ impl SdvComms {
             })
             .next()
             .await
+    }
+
+    /// Maps a stream of ServiceUnitChangeEvent to produce a stream of Availability.
+    ///
+    /// Maps `Registered` events to `Availability::Available` and `Unregistered` events to
+    /// `Availability::Unavailable`. `Changed` events are ignored.
+    fn filter_availability_stream(
+        stream: impl Stream<Item = ServiceUnitChangeEvent> + Send + 'static,
+    ) -> impl Stream<Item = Availability> + Send {
+        stream.filter_map(|event: ServiceUnitChangeEvent| {
+            async move {
+                match event {
+                    ServiceUnitChangeEvent::Registered(_) => Some(Availability::Available),
+                    ServiceUnitChangeEvent::Unregistered(_) => Some(Availability::Unavailable),
+                    ServiceUnitChangeEvent::Changed(_) => None,
+                }
+            }
+            .boxed()
+        })
     }
 }
 
@@ -752,6 +769,96 @@ mod test {
         let received = observer.next().await.unwrap().unwrap();
         assert_eq!(received.len(), 1);
         assert_eq!(received[0].pressure, pressure);
+
+        // Dropping the publisher to test for the `Unavailable` event
+        drop(publisher);
+
+        // THEN unavailable
+        assert_eq!(
+            tokio::time::timeout(
+                EVENT_STREAM_TIMEOUT,
+                registration_event_stream_created_at_start.next()
+            )
+            .await,
+            Ok(Some(Availability::Unavailable))
+        );
+        assert_eq!(
+            tokio::time::timeout(
+                EVENT_STREAM_TIMEOUT,
+                registration_event_stream_created_after_publisher.next()
+            )
+            .await,
+            Ok(Some(Availability::Unavailable))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_publication_availability_by_topic() {
+        // We need to init Binder for the event registration stream
+        // as Binder is used internally by SDV Service Discovery.
+        // Events are not emitted unless `binder::ProcessState::start_thread_pool()`
+        // is called beforehand.
+        binder::ProcessState::start_thread_pool();
+
+        let bundle_name: &str = "PublicationAvailabilityTopic";
+        let publication_name: &str = "pressure-publication";
+        let topic_name: &str = "pressure_topic";
+
+        // GIVEN a TypeName and topic.
+        let type_name =
+            TypeName::builder().package_name(PACKAGE).type_name(TYPE_NAME).build().unwrap();
+
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{VM}:{PACKAGE}.{bundle_name}/sample"))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = Arc::new(SdvComms { context });
+
+        // WHEN create registration event stream
+        let mut registration_event_stream_created_at_start = comms
+            .create_registration_event_stream(&UnitQuery::Topic((
+                type_name.clone(),
+                topic_name.to_string(),
+            )))
+            .await
+            .unwrap();
+
+        // WHEN creating a publisher using SdvComms.
+        let publisher = new_pressure_publisher(
+            comms.clone(),
+            publication_name,
+            Some(TYPE_NAME),
+            Some(topic_name),
+            PublisherMetadata::builder().message_count(10).message_size(5).build().unwrap(),
+        )
+        .await;
+
+        // AND WHEN creating a registration event stream after the publisher was created
+        let mut registration_event_stream_created_after_publisher = comms
+            .create_registration_event_stream(&UnitQuery::Topic((
+                type_name.clone(),
+                topic_name.to_string(),
+            )))
+            .await
+            .unwrap();
+
+        // THEN both event streams have an available item.
+        assert_eq!(
+            tokio::time::timeout(
+                EVENT_STREAM_TIMEOUT,
+                registration_event_stream_created_at_start.next()
+            )
+            .await,
+            Ok(Some(Availability::Available))
+        );
+        assert_eq!(
+            tokio::time::timeout(
+                EVENT_STREAM_TIMEOUT,
+                registration_event_stream_created_after_publisher.next()
+            )
+            .await,
+            Ok(Some(Availability::Available))
+        );
 
         // Dropping the publisher to test for the `Unavailable` event
         drop(publisher);

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use bytemuck::TransparentWrapper;
+use futures::channel::mpsc;
 use futures::stream::{Stream, StreamExt};
 use sdv_comms_bindgen::ASDV_UNIT_NAME_MAX_SIZE_BYTES_INCLUDING_NUL;
 use sdv_comms_bindgen::{
@@ -22,6 +23,7 @@ use sdv_comms_bindgen::{
     ASDV_CallbackVTable_ServiceDiscoveryManager_NotifyListenerOfServiceUnitChange,
     ASDV_CallbackVTable_ServiceDiscoveryManager_RegisterServiceUnitChangeListener,
     ASDV_ServiceDiscoveryManager_registerServiceUnitChangeListenerByName,
+    ASDV_ServiceDiscoveryManager_registerServiceUnitChangeListenerByTopic,
     ASDV_ServiceDiscoveryManager_registerServiceUnitChangeListenerByType,
     ASDV_ServiceUnitChangeEvent, ASDV_ServiceUnitChangeListenerHandle, ASDV_ServiceUnitDefinition,
 };
@@ -188,53 +190,65 @@ impl ServiceDiscoveryManager {
         Ok(ServiceUnitDefinition(sud))
     }
 
+    fn create_listener_callback() -> (
+        ASDV_CallbackVTable_ServiceDiscoveryManager_NotifyListenerOfServiceUnitChange,
+        mpsc::Receiver<OwnedOpaquePtr<ASDV_ServiceUnitChangeEvent>>,
+    ) {
+        type NotifyListenerCb = CallbackWrapper<OwnedOpaquePtr<ASDV_ServiceUnitChangeEvent>>;
+
+        unsafe extern "C" fn trampoline_func(
+            cb_data: *mut c_void,
+            ptr: *mut ASDV_ServiceUnitChangeEvent,
+        ) -> i32 {
+            // SAFETY: `cb_data` and `ptr` are valid pointers that are passed to
+            // ASDV_ServiceDiscoveryManager_listUnitsByType.
+            unsafe {
+                NotifyListenerCb::trampoline_func(
+                    cb_data,
+                    OwnedOpaquePtr::from_ffi_value(ptr)
+                        .expect("Pointer returned by listUnitsByType should be valid"),
+                )
+            }
+        }
+
+        let (cb, receiver) = NotifyListenerCb::new_async();
+        let vtable =
+            ASDV_CallbackVTable_ServiceDiscoveryManager_NotifyListenerOfServiceUnitChange {
+                func: Some(trampoline_func),
+                clear: Some(NotifyListenerCb::trampoline_clear),
+                cb_data: cb.into_void_ptr(),
+            };
+        (vtable, receiver)
+    }
+
+    fn create_subscription_handle_callback() -> (
+        futures::channel::oneshot::Receiver<
+            SdvResult<OwnedOpaquePtr<ASDV_ServiceUnitChangeListenerHandle>>,
+        >,
+        ASDV_CallbackVTable_ServiceDiscoveryManager_RegisterServiceUnitChangeListener,
+    ) {
+        type SubscriptionHandleCb =
+            OnceCallbackWrapper<OwnedOpaquePtr<ASDV_ServiceUnitChangeListenerHandle>>;
+        let (cb, fut) = SubscriptionHandleCb::new_async();
+        let vtable =
+            ASDV_CallbackVTable_ServiceDiscoveryManager_RegisterServiceUnitChangeListener {
+                func: Some(SubscriptionHandleCb::trampoline_func),
+                clear: Some(SubscriptionHandleCb::trampoline_clear),
+                cb_data: cb.into_void_ptr(),
+            };
+
+        (fut, vtable)
+    }
+
     /// Subscribes to the service unit events by unit type.
     /// Returns a [futures::Stream] of [ServiceUnitChangeEvent].
     pub async fn subscribe_service_unit_change_by_type(
         &self,
         unit_type: &UnitType,
     ) -> SdvResult<UnitChangeEventStream> {
-        let (listener_cb_vtable, event_receiver) = {
-            type NotifyListenerCb = CallbackWrapper<OwnedOpaquePtr<ASDV_ServiceUnitChangeEvent>>;
-
-            // TODO: simplify  when tooling is ready
-            unsafe extern "C" fn trampoline_func(
-                cb_data: *mut c_void,
-                ptr: *mut ASDV_ServiceUnitChangeEvent,
-            ) -> i32 {
-                // SAFETY: `cb_data` and `ptr` are valid pointers that are passed to
-                // ASDV_ServiceDiscoveryManager_listUnitsByType.
-                unsafe {
-                    NotifyListenerCb::trampoline_func(
-                        cb_data,
-                        OwnedOpaquePtr::from_ffi_value(ptr)
-                            .expect("Pointer returned by listUnitsByType should be valid"),
-                    )
-                }
-            }
-
-            let (cb, receiver) = NotifyListenerCb::new_async();
-            let vtable =
-                ASDV_CallbackVTable_ServiceDiscoveryManager_NotifyListenerOfServiceUnitChange {
-                    func: Some(trampoline_func),
-                    clear: Some(NotifyListenerCb::trampoline_clear),
-                    cb_data: cb.into_void_ptr(),
-                };
-            (vtable, receiver)
-        };
-        let (callback_handle_future, completion_cb_vtable) = {
-            type SubscriptionHandleCb =
-                OnceCallbackWrapper<OwnedOpaquePtr<ASDV_ServiceUnitChangeListenerHandle>>;
-            let (cb, fut) = SubscriptionHandleCb::new_async();
-            let vtable =
-                ASDV_CallbackVTable_ServiceDiscoveryManager_RegisterServiceUnitChangeListener {
-                    func: Some(SubscriptionHandleCb::trampoline_func),
-                    clear: Some(SubscriptionHandleCb::trampoline_clear),
-                    cb_data: cb.into_void_ptr(),
-                };
-
-            (fut, vtable)
-        };
+        let (listener_cb_vtable, event_receiver) = Self::create_listener_callback();
+        let (callback_handle_future, completion_cb_vtable) =
+            Self::create_subscription_handle_callback();
 
         // SAFETY: `ctx` and `unit_type` are valid pointers to corresponding types.
         // `listener_cb_vtable` and `completion_cb_vtable` represents the correct Callback Vtable: ASDV_CallbackVTable_ServiceDiscoveryManager_GetUnit.
@@ -257,53 +271,51 @@ impl ServiceDiscoveryManager {
         Ok(UnitChangeEventStream::new(self.ctx, callback_handle, event_receiver))
     }
 
+    /// Subscribes to the service unit events by unit type and topic_name.
+    /// Returns a [futures::Stream] of [ServiceUnitChangeEvent].
+    pub async fn subscribe_service_unit_change_by_topic(
+        &self,
+        unit_type: &UnitType,
+        topic_name: &str,
+    ) -> SdvResult<UnitChangeEventStream> {
+        let (listener_cb_vtable, event_receiver) = Self::create_listener_callback();
+        let (callback_handle_future, completion_cb_vtable) =
+            Self::create_subscription_handle_callback();
+
+        // TODO(b/361742242): Handle errors returned from the function call more gracefully.
+        let topic_name_cstr = std::ffi::CString::new(topic_name).unwrap();
+
+        // SAFETY: `ctx` and `unit_type` are valid pointers to corresponding types.
+        // `listener_cb_vtable` and `completion_cb_vtable` represents the correct Callback Vtable: ASDV_CallbackVTable_ServiceDiscoveryManager_GetUnit.
+        let status = unsafe {
+            ASDV_ServiceDiscoveryManager_registerServiceUnitChangeListenerByTopic(
+                self.ctx.as_raw(),
+                UnitType::peel_ref(unit_type),
+                topic_name_cstr.as_ptr(),
+                listener_cb_vtable,
+                completion_cb_vtable,
+            )
+        };
+
+        // TODO(b/361742242): Handle errors returned from the function call more gracefully.
+        SdvStatusCode::from(status).expect(
+            "Call to ASDV_ServiceDiscoveryManager_registerServiceUnitChangeListenerByTopic failed.",
+        );
+
+        let callback_handle =
+            callback_handle_future.await.map_err(derive!(SdvStatusCode::Internal))??;
+        Ok(UnitChangeEventStream::new(self.ctx, callback_handle, event_receiver))
+    }
+
     /// Subscribes to the service unit events using the provided [UnitNameDiscoveryArgs].
     /// Returns a [futures::Stream] of [ServiceUnitChangeEvent].
     pub async fn subscribe_service_unit_change_by_name(
         &self,
         name_args: &UnitNameDiscoveryArgs,
     ) -> SdvResult<UnitChangeEventStream> {
-        let (listener_cb_vtable, event_receiver) = {
-            type NotifyListenerCb = CallbackWrapper<OwnedOpaquePtr<ASDV_ServiceUnitChangeEvent>>;
-
-            // TODO: simplify  when tooling is ready
-            unsafe extern "C" fn trampoline_func(
-                cb_data: *mut c_void,
-                ptr: *mut ASDV_ServiceUnitChangeEvent,
-            ) -> i32 {
-                // SAFETY: `cb_data` and `ptr` are valid pointers that are passed to
-                // ASDV_ServiceDiscoveryManager_listUnitsByType.
-                unsafe {
-                    NotifyListenerCb::trampoline_func(
-                        cb_data,
-                        OwnedOpaquePtr::from_ffi_value(ptr)
-                            .expect("Pointer returned by listUnitsByType should be valid"),
-                    )
-                }
-            }
-
-            let (cb, receiver) = NotifyListenerCb::new_async();
-            let vtable =
-                ASDV_CallbackVTable_ServiceDiscoveryManager_NotifyListenerOfServiceUnitChange {
-                    func: Some(trampoline_func),
-                    clear: Some(NotifyListenerCb::trampoline_clear),
-                    cb_data: cb.into_void_ptr(),
-                };
-            (vtable, receiver)
-        };
-        let (callback_handle_future, completion_cb_vtable) = {
-            type SubscriptionHandleCb =
-                OnceCallbackWrapper<OwnedOpaquePtr<ASDV_ServiceUnitChangeListenerHandle>>;
-            let (cb, fut) = SubscriptionHandleCb::new_async();
-            let vtable =
-                ASDV_CallbackVTable_ServiceDiscoveryManager_RegisterServiceUnitChangeListener {
-                    func: Some(SubscriptionHandleCb::trampoline_func),
-                    clear: Some(SubscriptionHandleCb::trampoline_clear),
-                    cb_data: cb.into_void_ptr(),
-                };
-
-            (fut, vtable)
-        };
+        let (listener_cb_vtable, event_receiver) = Self::create_listener_callback();
+        let (callback_handle_future, completion_cb_vtable) =
+            Self::create_subscription_handle_callback();
 
         // SAFETY: `ctx` and `unit_type` are valid pointers to corresponding types.
         // `listener_cb_vtable` and `completion_cb_vtable` represents the correct Callback Vtables

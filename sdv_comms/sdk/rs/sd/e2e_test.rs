@@ -34,7 +34,7 @@ use crate::sd::{
 };
 use crate::ContextRef;
 
-static UNIT_TYPE_STR: &str = "com.google.sdv.samples.SampleBundle1#HelloWorldTopic";
+static UNIT_TYPE_STR: &str = "com.android.sdv.samples.SampleBundle1#HelloWorldTopic";
 static SERVICE_FQIN_STR: &str = "vm-name:com.google.comms_stack_tests.SDE2Etests";
 
 lazy_static! {
@@ -56,9 +56,14 @@ fn create_unit_identifier(ctx: ContextRef) -> UnitIdentifier {
 }
 
 fn create_unit_metadata() -> UnitMetadata {
+    create_publisher_metadata("default")
+}
+
+fn create_publisher_metadata(topic_name: &str) -> UnitMetadata {
     let mut publisher_metadata = PublisherUnitMetadata::new();
     publisher_metadata.set_message_size(10);
     publisher_metadata.set_message_count(100);
+    publisher_metadata.set_topic(topic_name);
 
     UnitMetadata::Publisher(publisher_metadata)
 }
@@ -201,7 +206,7 @@ async fn subscribe_unit_by_type_success() {
         let ctx = ContextRef::create(fqin);
 
         let unit_type: UnitType =
-            UnitType::from_str("com.google.sdv.samples.SampleBundle1#SubscribeByType")
+            UnitType::from_str("com.android.sdv.samples.SampleBundle1#SubscribeByType")
                 .expect("Valid UnitType");
 
         // Subscribe before we register a specific unit.
@@ -239,7 +244,7 @@ async fn subscribe_unit_by_type_notifies_existing_units() {
         let ctx = ContextRef::create(fqin);
 
         let unit_type: UnitType =
-            UnitType::from_str("com.google.sdv.samples.SampleBundle1#ExistingByType")
+            UnitType::from_str("com.android.sdv.samples.SampleBundle1#ExistingByType")
                 .expect("Valid UnitType");
 
         // Create and register publisher before we subscribe.
@@ -429,6 +434,89 @@ async fn subscribe_unit_by_name_success() {
                 eq(&unit_identifier)
             ))))
         );
+    })
+    .await
+    .expect("Spawning a task should be successful");
+}
+
+#[tokio::test]
+async fn subscribe_unit_by_topic_success() {
+    binder::ProcessState::start_thread_pool();
+    tokio::spawn(async {
+        let fqin_str = SERVICE_FQIN_STR.to_string() + "SubscribeUnitByTopic/instance";
+        let fqin = ServiceFqin::from_str(&fqin_str).expect("ServiceFqin should not be malformed");
+        let ctx = ContextRef::create(fqin);
+
+        let unit_type: UnitType =
+            UnitType::from_str("com.google.sdv.samples.SubscribeByTopic").unwrap();
+        let topic_name = "test_topic";
+
+        // Subscribe before we register a specific unit.
+        let mut event_stream = ServiceDiscoveryManager::new(ctx)
+            .subscribe_service_unit_change_by_topic(&unit_type, topic_name)
+            .await
+            .unwrap();
+
+        // Create and register publisher.
+        let unit_identifier = create_unit_identifier_with_unit_name(ctx, "wrong-topic-name");
+        let metadata = create_publisher_metadata("wrong_topic_name");
+        let _publisher =
+            create_publisher(ctx, &unit_type, unit_identifier.get_unit_name(), &metadata)
+                .await
+                .unwrap();
+
+        let event = timeout(Duration::from_millis(500), event_stream.next()).await;
+        event.expect_err("Unexpected notification from a topic with no service unit.");
+
+        // Create and register publisher.
+        let unit_identifier = create_unit_identifier(ctx);
+        let metadata = create_publisher_metadata(topic_name);
+        let _publisher =
+            create_publisher(ctx, &unit_type, unit_identifier.get_unit_name(), &metadata)
+                .await
+                .unwrap();
+
+        let event = timeout(Duration::from_millis(500), event_stream.next()).await.unwrap();
+        assert_that!(event, some(matches_pattern!(ServiceUnitChangeEvent::Registered(anything()))));
+
+        let Some(ServiceUnitChangeEvent::Registered(sud)) = event else { unreachable!() };
+        assert_that!(sud.get_unit_identifier(), eq(&unit_identifier));
+    })
+    .await
+    .expect("Spawning a task should be successful");
+}
+
+#[tokio::test]
+async fn subscribe_unit_by_topic_notifies_existing_units() {
+    binder::ProcessState::start_thread_pool();
+    tokio::spawn(async {
+        let fqin_str = SERVICE_FQIN_STR.to_string() + "SubscribeUnitByTopicExisting/instance";
+        let fqin = ServiceFqin::from_str(&fqin_str).expect("ServiceFqin should not be malformed");
+        let ctx = ContextRef::create(fqin);
+
+        let unit_type: UnitType =
+            UnitType::from_str("com.google.sdv.samples.ExistingByTopic").unwrap();
+        let topic_name = "existing_test_topic";
+
+        // Create and register publisher before we subscribe.
+        let unit_identifier = create_unit_identifier(ctx);
+        let metadata = create_publisher_metadata(topic_name);
+        let _publisher =
+            create_publisher(ctx, &unit_type, unit_identifier.get_unit_name(), &metadata)
+                .await
+                .unwrap();
+
+        // Subscribe and expect preexisting unit to be notified.
+        let mut event_stream = ServiceDiscoveryManager::new(ctx)
+            .subscribe_service_unit_change_by_type(&unit_type)
+            .await
+            .unwrap();
+
+        let event = timeout(Duration::from_millis(500), event_stream.next()).await.unwrap();
+        assert_that!(event, some(matches_pattern!(ServiceUnitChangeEvent::Registered(anything()))));
+
+        let Some(ServiceUnitChangeEvent::Registered(sud)) = event else { unreachable!() };
+        assert_that!(sud.get_unit_identifier(), eq(&unit_identifier));
     })
     .await
     .expect("Spawning a task should be successful");

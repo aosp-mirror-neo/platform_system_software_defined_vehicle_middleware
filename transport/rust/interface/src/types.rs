@@ -190,6 +190,8 @@ pub enum UnitQuery {
     Name(UnitName),
     /// query by TypeName
     Type(TypeName),
+    /// query by Topic
+    Topic((TypeName, String)),
 }
 
 /// PublisherAttributes

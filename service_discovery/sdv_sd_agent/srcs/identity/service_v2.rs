@@ -25,18 +25,17 @@ use google_sdv_identity::aidl::google::sdv::identity::{
 };
 
 use crate::identity::id_gen::SidGenerator;
-#[cfg(feature = "verified_fqin")]
 use crate::identity::lazy_identity_verifier::{IdentityVerifierProvider, LazyIdentityVerifier};
-#[cfg(feature = "verified_fqin")]
-use crate::identity::native_services_names::NativeServicesNames;
 use crate::kv::death_watcher::{self, DeathWatcher};
 use crate::kv::process_identifier::get_calling_process_identifier;
 use crate::kv::ServiceRegistry;
 use crate::mesh::VvmConfig;
+use native_services_names::NativeServicesNames;
 
 use sdv_comms_id::{names::VmName, ServiceFqin};
 
 use anyhow::anyhow;
+use anyhow::ensure;
 use async_trait::async_trait;
 use binder::{DeathRecipient, IBinder, SpIBinder, Status};
 
@@ -48,9 +47,7 @@ use tracing::instrument;
 
 pub(crate) struct IdentityAgentV2 {
     service_registry: Arc<ServiceRegistry>,
-    #[cfg(feature = "verified_fqin")]
     identity_verifier: Box<dyn IdentityVerifierProvider>,
-    #[cfg(feature = "verified_fqin")]
     native_services_names: Arc<NativeServicesNames>,
     sid_gen: SidGenerator,
     self_vm_name: VmName,
@@ -98,9 +95,7 @@ impl IdentityAgentV2 {
         let self_vm_name = vvm_config.own_cfg.name.clone();
         Ok(IdentityAgentV2 {
             service_registry,
-            #[cfg(feature = "verified_fqin")]
             identity_verifier: Box::new(LazyIdentityVerifier::default()),
-            #[cfg(feature = "verified_fqin")]
             native_services_names: Arc::new(NativeServicesNames::new()?),
             sid_gen: SidGenerator::try_new(vvm_config)?,
             self_vm_name,
@@ -110,9 +105,7 @@ impl IdentityAgentV2 {
     pub(crate) fn new_shallow_copy(source: &IdentityAgentV2) -> Self {
         IdentityAgentV2 {
             service_registry: source.service_registry.clone(),
-            #[cfg(feature = "verified_fqin")]
             identity_verifier: Box::new(LazyIdentityVerifier::default()),
-            #[cfg(feature = "verified_fqin")]
             native_services_names: source.native_services_names.clone(),
             sid_gen: source.sid_gen.clone(),
             self_vm_name: source.self_vm_name.clone(),
@@ -147,7 +140,6 @@ impl IdentityAgentV2 {
         Ok(ServiceIdentityV2Aidl { sid: sid as i64, publicKey: pub_key.clone(), name: aidl_fqin })
     }
 
-    #[cfg(feature = "verified_fqin")]
     fn verify_fqin_for_process(
         &self,
         process_identifier: &ProcessIdentifierAidl,
@@ -163,7 +155,7 @@ impl IdentityAgentV2 {
             return Ok(());
         }
 
-        use google_sdv_service_bundles_identity::aidl::google::sdv::service_bundles::identity::LocalServiceFqin::LocalServiceFqin;
+        use google_sdv_identity::aidl::google::sdv::identity::LocalServiceFqin::LocalServiceFqin;
 
         let provided_local_fqin = LocalServiceFqin {
             sdvPackageName: provided_fqin.sdvPackageName.clone(),
@@ -180,17 +172,11 @@ impl IdentityAgentV2 {
 
         let identity_verifier = self.identity_verifier.get()?;
 
-        identity_verifier.verify(process_identifier, &provided_local_fqin)?;
+        let passed_verification: bool =
+            identity_verifier.verifyFqinForProcess(&provided_local_fqin, process_identifier)?;
 
-        Ok(())
-    }
+        ensure!(passed_verification);
 
-    #[cfg(not(feature = "verified_fqin"))]
-    fn verify_fqin_for_process(
-        &self,
-        _process_identifier: &ProcessIdentifierAidl,
-        _provided_fqin: &ServiceFqinV2Aidl,
-    ) -> anyhow::Result<()> {
         Ok(())
     }
 }
@@ -295,9 +281,11 @@ impl IPrivilegedIdentityAgentAsyncServer for IdentityAgentV2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::identity::lazy_identity_verifier::MockIdentityVerifierProvider;
     use crate::kv::ServiceRegistry;
-
     use crate::mesh::vvm_config::{create_test_uds_ca_pub, VmConfig};
+
+    use binder::{BinderFeatures, Strong};
     use std::default::Default;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::sync::Arc;
@@ -305,6 +293,10 @@ mod tests {
 
     use google_sdv_identity::aidl::google::sdv::identity::ServiceFqin::ServiceFqin as ServiceFqinV2Aidl;
     use google_sdv_identity::aidl::google::sdv::identity::ServiceIdentity::EcPublicKey::EcPublicKey as EcPublicKeyAidl;
+
+    use google_sdv_identity_internal::aidl::google::sdv::identity::internal::IIdentityVerifier::{
+        BnIdentityVerifier, IIdentityVerifier, MockIIdentityVerifier,
+    };
 
     const VM_INSTANCE_1_NAME: &str = "instance1";
 
@@ -325,6 +317,52 @@ mod tests {
 
     fn create_identity_manager_for_test() -> anyhow::Result<IdentityAgentV2> {
         IdentityAgentV2::new(Arc::new(ServiceRegistry::default()), &create_fake_vvmconfig())
+    }
+
+    fn create_identity_manager_with_mock_verifier_provider(
+        identity_verifier: MockIdentityVerifierProvider,
+    ) -> anyhow::Result<IdentityAgentV2> {
+        let config = create_fake_vvmconfig();
+        let self_vm_name = config.own_cfg.name.clone();
+        Ok(IdentityAgentV2 {
+            service_registry: Arc::new(ServiceRegistry::default()),
+            identity_verifier: Box::new(identity_verifier),
+            sid_gen: SidGenerator::try_new(&config)?,
+            self_vm_name,
+            native_services_names: Arc::new(NativeServicesNames::new()?),
+        })
+    }
+
+    fn create_identity_manager_with_verifier_expectations<F>(
+        expectations: F,
+    ) -> anyhow::Result<IdentityAgentV2>
+    where
+        F: Fn(&mut MockIIdentityVerifier) + Send + 'static,
+    {
+        let mut mock_verifier_provider = MockIdentityVerifierProvider::new();
+        mock_verifier_provider.expect_get().returning(move || {
+            let mut mock_verifier = MockIIdentityVerifier::new();
+            expectations(&mut mock_verifier);
+            let mock_service: Strong<dyn IIdentityVerifier> =
+                BnIdentityVerifier::new_binder(mock_verifier, BinderFeatures::default());
+            Ok(mock_service)
+        });
+
+        create_identity_manager_with_mock_verifier_provider(mock_verifier_provider)
+    }
+
+    fn create_test_fqin() -> ServiceFqinV2Aidl {
+        ServiceFqinV2Aidl {
+            sdvVmName: "vm".to_string(),
+            sdvPackageName: "com.example".to_string(),
+            serviceBundleName: "s".to_string(),
+            serviceInstanceName: "i".to_string(),
+        }
+    }
+
+    fn get_untrusted_uid() -> i64 {
+        // An arbitrary UID that is out of the range that is trusted by default.
+        (sdv_aid::AID_SYSTEM_EXT_RESERVED_END + 1).try_into().unwrap()
     }
 
     #[test]
@@ -391,172 +429,110 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "verified_fqin")]
-    mod verified_fqin_tests {
-        use super::*;
-        use crate::identity::lazy_identity_verifier::MockIdentityVerifierProvider;
-
-        use binder::{BinderFeatures, Strong};
-        use google_sdv_service_bundles_identity::aidl::google::sdv::service_bundles::identity::IIdentityVerifier::{
-            BnIdentityVerifier, IIdentityVerifier, MockIIdentityVerifier,
+    #[test]
+    fn verify_fqin_for_process_succeeds_for_native_service() -> anyhow::Result<()> {
+        let identity_manager = create_identity_manager_for_test()?;
+        let update_manager_uid = sdv_aid::AID_SYSTEM.try_into().unwrap();
+        let update_manager_agent_fqin = ServiceFqinV2Aidl {
+            sdvVmName: "vm".to_string(),
+            sdvPackageName: "com.sdv.google.update_manager".to_string(),
+            serviceBundleName: "UpdateManagerAgent".to_string(),
+            serviceInstanceName: "default".to_string(),
         };
+        let process_identifier = ProcessIdentifierAidl { pid: 1, uid: update_manager_uid };
+        identity_manager
+            .verify_fqin_for_process(&process_identifier, &update_manager_agent_fqin)?;
+        Ok(())
+    }
 
-        fn get_untrusted_uid() -> i64 {
-            // An arbitrary UID that is out of the range that is trusted by default.
-            (sdv_aid::AID_SYSTEM_EXT_RESERVED_END + 1).try_into().unwrap()
-        }
+    #[test]
+    fn verify_fqin_for_process_fails_for_unknown_native_service_uid() -> anyhow::Result<()> {
+        let identity_manager = create_identity_manager_for_test()?;
+        let process_identifier = ProcessIdentifierAidl { pid: 1, uid: get_untrusted_uid() };
+        assert!(identity_manager
+            .verify_fqin_for_process(&process_identifier, &create_test_fqin())
+            .is_err());
+        Ok(())
+    }
 
-        fn create_identity_manager_with_mock_verifier_provider(
-            identity_verifier: MockIdentityVerifierProvider,
-        ) -> anyhow::Result<IdentityAgentV2> {
-            let config = create_fake_vvmconfig();
-            let self_vm_name = config.own_cfg.name.clone();
-            Ok(IdentityAgentV2 {
-                service_registry: Arc::new(ServiceRegistry::default()),
-                identity_verifier: Box::new(identity_verifier),
-                sid_gen: SidGenerator::try_new(&config)?,
-                self_vm_name,
-                native_services_names: Arc::new(NativeServicesNames::new()?),
-            })
-        }
+    #[test]
+    fn verify_fqin_for_process_fails_for_native_service_with_unknown_fqin() -> anyhow::Result<()> {
+        let identity_manager = create_identity_manager_for_test()?;
+        let update_manager_uid = sdv_aid::AID_SYSTEM.try_into().unwrap();
+        let not_update_manager_agent_fqin = ServiceFqinV2Aidl {
+            sdvVmName: "vm".to_string(),
+            sdvPackageName: "com.sdv.google.update_manager".to_string(),
+            serviceBundleName: "NOTUpdateManagerAgent".to_string(),
+            serviceInstanceName: "default".to_string(),
+        };
+        let process_identifier = ProcessIdentifierAidl { pid: 1, uid: update_manager_uid };
+        assert!(identity_manager
+            .verify_fqin_for_process(&process_identifier, &not_update_manager_agent_fqin)
+            .is_err());
+        Ok(())
+    }
 
-        fn create_identity_manager_with_verifier_expectations<F>(
-            expectations: F,
-        ) -> anyhow::Result<IdentityAgentV2>
-        where
-            F: Fn(&mut MockIIdentityVerifier) + Send + 'static,
-        {
-            let mut mock_verifier_provider = MockIdentityVerifierProvider::new();
-            mock_verifier_provider.expect_get().returning(move || {
-                let mut mock_verifier = MockIIdentityVerifier::new();
-                expectations(&mut mock_verifier);
-                let mock_service: Strong<dyn IIdentityVerifier> =
-                    BnIdentityVerifier::new_binder(mock_verifier, BinderFeatures::default());
-                Ok(mock_service)
-            });
+    #[test]
+    fn verify_fqin_for_process_succeeds_for_native_service_and_mock_is_not_called(
+    ) -> anyhow::Result<()> {
+        let mut mock_verifier_provider = MockIdentityVerifierProvider::new();
+        mock_verifier_provider.expect_get().times(0);
 
-            create_identity_manager_with_mock_verifier_provider(mock_verifier_provider)
-        }
+        let identity_manager =
+            create_identity_manager_with_mock_verifier_provider(mock_verifier_provider)?;
+        let update_manager_uid = sdv_aid::AID_SYSTEM;
+        let update_manager_agent_fqin = ServiceFqinV2Aidl {
+            sdvVmName: "vm".to_string(),
+            sdvPackageName: "com.sdv.google.update_manager".to_string(),
+            serviceBundleName: "UpdateManagerAgent".to_string(),
+            serviceInstanceName: "default".to_string(),
+        };
+        let process_identifier =
+            ProcessIdentifierAidl { pid: 1, uid: update_manager_uid.try_into().unwrap() };
 
-        fn create_test_fqin() -> ServiceFqinV2Aidl {
-            ServiceFqinV2Aidl {
-                sdvVmName: "vm".to_string(),
-                sdvPackageName: "com.example".to_string(),
-                serviceBundleName: "s".to_string(),
-                serviceInstanceName: "i".to_string(),
-            }
-        }
+        identity_manager
+            .verify_fqin_for_process(&process_identifier, &update_manager_agent_fqin)?;
+        Ok(())
+    }
 
-        #[test]
-        fn verify_fqin_for_process_succeeds_for_native_service() -> anyhow::Result<()> {
-            let identity_manager = create_identity_manager_for_test()?;
-            let update_manager_uid = sdv_aid::AID_SYSTEM.try_into().unwrap();
-            let update_manager_agent_fqin = ServiceFqinV2Aidl {
-                sdvVmName: "vm".to_string(),
-                sdvPackageName: "com.sdv.google.update_manager".to_string(),
-                serviceBundleName: "UpdateManagerAgent".to_string(),
-                serviceInstanceName: "default".to_string(),
-            };
-            let process_identifier = ProcessIdentifierAidl { pid: 1, uid: update_manager_uid };
-            identity_manager
-                .verify_fqin_for_process(&process_identifier, &update_manager_agent_fqin)?;
-            Ok(())
-        }
+    #[test]
+    fn verify_fqin_for_process_succeeds_for_root_uid() -> anyhow::Result<()> {
+        let identity_manager =
+            create_identity_manager_with_verifier_expectations(|mock_verifier| {
+                mock_verifier.expect_verifyFqinForProcess().times(0);
+            })?;
+        let process_identifier =
+            ProcessIdentifierAidl { pid: 1, uid: sdv_aid::AID_ROOT.try_into().unwrap() };
 
-        #[test]
-        fn verify_fqin_for_process_fails_for_unknown_native_service_uid() -> anyhow::Result<()> {
-            let identity_manager = create_identity_manager_for_test()?;
-            let process_identifier = ProcessIdentifierAidl { pid: 1, uid: get_untrusted_uid() };
-            assert!(identity_manager
-                .verify_fqin_for_process(&process_identifier, &create_test_fqin())
-                .is_err());
-            Ok(())
-        }
+        identity_manager.verify_fqin_for_process(&process_identifier, &create_test_fqin())?;
+        Ok(())
+    }
 
-        #[test]
-        fn verify_fqin_for_process_fails_for_native_service_with_unknown_fqin() -> anyhow::Result<()>
-        {
-            let identity_manager = create_identity_manager_for_test()?;
-            let update_manager_uid = sdv_aid::AID_SYSTEM.try_into().unwrap();
-            let not_update_manager_agent_fqin = ServiceFqinV2Aidl {
-                sdvVmName: "vm".to_string(),
-                sdvPackageName: "com.sdv.google.update_manager".to_string(),
-                serviceBundleName: "NOTUpdateManagerAgent".to_string(),
-                serviceInstanceName: "default".to_string(),
-            };
-            let process_identifier = ProcessIdentifierAidl { pid: 1, uid: update_manager_uid };
-            assert!(identity_manager
-                .verify_fqin_for_process(&process_identifier, &not_update_manager_agent_fqin)
-                .is_err());
-            Ok(())
-        }
+    #[test]
+    fn verify_fqin_for_process_fails_if_verifier_fails() -> anyhow::Result<()> {
+        let identity_manager =
+            create_identity_manager_with_verifier_expectations(|mock_verifier| {
+                mock_verifier.expect_verifyFqinForProcess().returning(|_, _| Ok(false));
+            })?;
+        let process_identifier = ProcessIdentifierAidl { pid: 1, uid: 123 };
 
-        #[test]
-        fn verify_fqin_for_process_succeeds_for_native_service_and_mock_is_not_called(
-        ) -> anyhow::Result<()> {
-            let mut mock_verifier_provider = MockIdentityVerifierProvider::new();
-            mock_verifier_provider.expect_get().times(0);
+        assert!(identity_manager
+            .verify_fqin_for_process(&process_identifier, &create_test_fqin())
+            .is_err());
 
-            let identity_manager =
-                create_identity_manager_with_mock_verifier_provider(mock_verifier_provider)?;
-            let update_manager_uid = sdv_aid::AID_SYSTEM;
-            let update_manager_agent_fqin = ServiceFqinV2Aidl {
-                sdvVmName: "vm".to_string(),
-                sdvPackageName: "com.sdv.google.update_manager".to_string(),
-                serviceBundleName: "UpdateManagerAgent".to_string(),
-                serviceInstanceName: "default".to_string(),
-            };
-            let process_identifier =
-                ProcessIdentifierAidl { pid: 1, uid: update_manager_uid.try_into().unwrap() };
+        Ok(())
+    }
 
-            identity_manager
-                .verify_fqin_for_process(&process_identifier, &update_manager_agent_fqin)?;
-            Ok(())
-        }
+    #[test]
+    fn verify_fqin_for_process_succeeds_if_verifier_succeeds() -> anyhow::Result<()> {
+        let identity_manager =
+            create_identity_manager_with_verifier_expectations(|mock_verifier| {
+                mock_verifier.expect_verifyFqinForProcess().returning(|_, _| Ok(true));
+            })?;
+        let process_identifier = ProcessIdentifierAidl { pid: 1, uid: 123 };
 
-        #[test]
-        fn verify_fqin_for_process_fails_if_verifier_fails() -> anyhow::Result<()> {
-            let identity_manager =
-                create_identity_manager_with_verifier_expectations(|mock_verifier| {
-                    mock_verifier.expect_verify().returning(|_, _| {
-                        Err(Status::new_exception(
-                            ExceptionCode::SECURITY,
-                            Some(c"mock verifier failed"),
-                        ))
-                    });
-                })?;
-            let process_identifier = ProcessIdentifierAidl { pid: 1, uid: get_untrusted_uid() };
+        identity_manager.verify_fqin_for_process(&process_identifier, &create_test_fqin())?;
 
-            assert!(identity_manager
-                .verify_fqin_for_process(&process_identifier, &create_test_fqin())
-                .is_err());
-            Ok(())
-        }
-
-        #[test]
-        fn verify_fqin_for_process_succeeds_for_untrusted_uid_if_verifier_succeeds(
-        ) -> anyhow::Result<()> {
-            let identity_manager =
-                create_identity_manager_with_verifier_expectations(|mock_verifier| {
-                    mock_verifier.expect_verify().returning(|_, _| Ok(()));
-                })?;
-            let process_identifier = ProcessIdentifierAidl { pid: 1, uid: get_untrusted_uid() };
-
-            identity_manager.verify_fqin_for_process(&process_identifier, &create_test_fqin())?;
-            Ok(())
-        }
-
-        #[test]
-        fn verify_fqin_for_process_succeeds_for_root_uid() -> anyhow::Result<()> {
-            let identity_manager =
-                create_identity_manager_with_verifier_expectations(|mock_verifier| {
-                    mock_verifier.expect_verify().times(0);
-                })?;
-            let process_identifier =
-                ProcessIdentifierAidl { pid: 1, uid: sdv_aid::AID_ROOT.try_into().unwrap() };
-
-            identity_manager.verify_fqin_for_process(&process_identifier, &create_test_fqin())?;
-            Ok(())
-        }
+        Ok(())
     }
 }
