@@ -279,3 +279,276 @@ fn parse_message_repeated_value(
     )?;
     Ok(message_repeated_field)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::reflection::codec::api::protobuf::ProtobufReader;
+    use crate::reflection::message::api::protobuf::SimpleRepeatedField;
+    use crate::reflection::metadata::field_type::ProtobufSimpleType;
+    use crate::reflection::metadata::simple::SimpleMetadata;
+
+    #[test]
+    fn test_parse_packed_repeated_values_succeeds() {
+        let cases = vec![
+            (
+                ProtobufSimpleType::Double,
+                vec![
+                    0x10, // Length 16
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f, // 1.0
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // 2.0
+                ],
+                SimpleRepeatedField::Double(vec![1.0, 2.0]),
+            ),
+            (
+                ProtobufSimpleType::Float,
+                vec![
+                    0x08, // Length 8
+                    0x00, 0x00, 0x80, 0x3f, // 1.0
+                    0x00, 0x00, 0x00, 0x40, // 2.0
+                ],
+                SimpleRepeatedField::Float(vec![1.0, 2.0]),
+            ),
+            (
+                ProtobufSimpleType::Int32,
+                vec![0x03, 0x01, 0x96, 0x01], // Length 3, [1, 150]
+                SimpleRepeatedField::Int32(vec![1, 150]),
+            ),
+            (
+                ProtobufSimpleType::Int64,
+                vec![0x03, 0x01, 0x96, 0x01], // Length 3, [1, 150]
+                SimpleRepeatedField::Int64(vec![1, 150]),
+            ),
+            (
+                ProtobufSimpleType::Uint32,
+                vec![0x03, 0x01, 0x96, 0x01], // Length 3, [1, 150]
+                SimpleRepeatedField::Uint32(vec![1, 150]),
+            ),
+            (
+                ProtobufSimpleType::Uint64,
+                vec![0x03, 0x01, 0x96, 0x01], // Length 3, [1, 150]
+                SimpleRepeatedField::Uint64(vec![1, 150]),
+            ),
+            (
+                ProtobufSimpleType::Sint32,
+                vec![0x02, 0x01, 0x02], // Length 2, [-1, 1] (ZigZag: 1, 2)
+                SimpleRepeatedField::Sint32(vec![-1, 1]),
+            ),
+            (
+                ProtobufSimpleType::Sint64,
+                vec![0x02, 0x01, 0x02], // Length 2, [-1, 1] (ZigZag: 1, 2)
+                SimpleRepeatedField::Sint64(vec![-1, 1]),
+            ),
+            (
+                ProtobufSimpleType::Fixed32,
+                vec![
+                    0x08, // Length 8
+                    0x01, 0x00, 0x00, 0x00, // 1
+                    0x02, 0x00, 0x00, 0x00, // 2
+                ],
+                SimpleRepeatedField::Fixed32(vec![1, 2]),
+            ),
+            (
+                ProtobufSimpleType::Fixed64,
+                vec![
+                    0x10, // Length 16
+                    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 1
+                    0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 2
+                ],
+                SimpleRepeatedField::Fixed64(vec![1, 2]),
+            ),
+            (
+                ProtobufSimpleType::Sfixed32,
+                vec![
+                    0x08, // Length 8
+                    0xff, 0xff, 0xff, 0xff, // -1
+                    0x01, 0x00, 0x00, 0x00, // 1
+                ],
+                SimpleRepeatedField::Sfixed32(vec![-1, 1]),
+            ),
+            (
+                ProtobufSimpleType::Sfixed64,
+                vec![
+                    0x10, // Length 16
+                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // -1
+                    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 1
+                ],
+                SimpleRepeatedField::Sfixed64(vec![-1, 1]),
+            ),
+            (
+                ProtobufSimpleType::Bool,
+                vec![0x02, 0x01, 0x00], // Length 2, [true, false]
+                SimpleRepeatedField::Bool(vec![true, false]),
+            ),
+            (
+                ProtobufSimpleType::Enum,
+                vec![0x02, 0x01, 0x02], // Length 2, [1, 2]
+                SimpleRepeatedField::Enum(vec![1, 2]),
+            ),
+        ];
+
+        for (field_type, bytes, expected) in cases {
+            let metadata = SimpleMetadata::new(field_type);
+            let mut reader = ProtobufReader::new(&bytes);
+            let result = parse_packed_repeated_values(&mut reader, &metadata);
+            assert!(result.is_ok(), "Failed to parse {:?}: {:?}", field_type, result.err());
+            assert_eq!(result.unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn test_parse_packed_repeated_values_fails_for_non_packable() {
+        let cases = vec![ProtobufSimpleType::String, ProtobufSimpleType::Bytes];
+
+        for field_type in cases {
+            let metadata = SimpleMetadata::new(field_type);
+            let mut reader = ProtobufReader::new(&[]);
+            let result = parse_packed_repeated_values(&mut reader, &metadata);
+            assert!(result.is_err(), "Expected error for type {:?}", field_type);
+        }
+    }
+
+    #[test]
+    fn test_parse_simple_repeated_value_succeeds() {
+        let cases = vec![
+            (
+                ProtobufSimpleType::Double,
+                WireType::Fixed64,
+                vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f], // 1.0
+                SimpleRepeatedField::Double(vec![1.0]),
+            ),
+            (
+                ProtobufSimpleType::Float,
+                WireType::Fixed32,
+                vec![0x00, 0x00, 0x80, 0x3f], // 1.0
+                SimpleRepeatedField::Float(vec![1.0]),
+            ),
+            (
+                ProtobufSimpleType::Int32,
+                WireType::Varint,
+                vec![0x96, 0x01], // 150
+                SimpleRepeatedField::Int32(vec![150]),
+            ),
+            (
+                ProtobufSimpleType::Int64,
+                WireType::Varint,
+                vec![0x96, 0x01], // 150
+                SimpleRepeatedField::Int64(vec![150]),
+            ),
+            (
+                ProtobufSimpleType::Uint32,
+                WireType::Varint,
+                vec![0x96, 0x01], // 150
+                SimpleRepeatedField::Uint32(vec![150]),
+            ),
+            (
+                ProtobufSimpleType::Uint64,
+                WireType::Varint,
+                vec![0x96, 0x01], // 150
+                SimpleRepeatedField::Uint64(vec![150]),
+            ),
+            (
+                ProtobufSimpleType::Sint32,
+                WireType::Varint,
+                vec![0x01], // -1 (ZigZag encoded is 1)
+                SimpleRepeatedField::Sint32(vec![-1]),
+            ),
+            (
+                ProtobufSimpleType::Sint64,
+                WireType::Varint,
+                vec![0x01], // -1 (ZigZag encoded is 1)
+                SimpleRepeatedField::Sint64(vec![-1]),
+            ),
+            (
+                ProtobufSimpleType::Fixed32,
+                WireType::Fixed32,
+                vec![0x64, 0x00, 0x00, 0x00], // 100
+                SimpleRepeatedField::Fixed32(vec![100]),
+            ),
+            (
+                ProtobufSimpleType::Fixed64,
+                WireType::Fixed64,
+                vec![0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], // 100
+                SimpleRepeatedField::Fixed64(vec![100]),
+            ),
+            (
+                ProtobufSimpleType::Sfixed32,
+                WireType::Fixed32,
+                vec![0xff, 0xff, 0xff, 0xff], // -1
+                SimpleRepeatedField::Sfixed32(vec![-1]),
+            ),
+            (
+                ProtobufSimpleType::Sfixed64,
+                WireType::Fixed64,
+                vec![0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff], // -1
+                SimpleRepeatedField::Sfixed64(vec![-1]),
+            ),
+            (
+                ProtobufSimpleType::Bool,
+                WireType::Varint,
+                vec![0x01], // true
+                SimpleRepeatedField::Bool(vec![true]),
+            ),
+            (
+                ProtobufSimpleType::Enum,
+                WireType::Varint,
+                vec![0x01], // 1
+                SimpleRepeatedField::Enum(vec![1]),
+            ),
+            (
+                ProtobufSimpleType::String,
+                WireType::LengthDelimited,
+                vec![0x03, 0x66, 0x6f, 0x6f], // "foo"
+                SimpleRepeatedField::String(vec!["foo".to_string()]),
+            ),
+            (
+                ProtobufSimpleType::Bytes,
+                WireType::LengthDelimited,
+                vec![0x02, 0x01, 0x02], // [1, 2]
+                SimpleRepeatedField::Bytes(vec![vec![0x01, 0x02]]),
+            ),
+        ];
+
+        for (field_type, wire_type, bytes, expected) in cases {
+            let metadata = SimpleMetadata::new(field_type);
+            let mut reader = ProtobufReader::new(&bytes);
+            let result = parse_simple_repeated_value(&mut reader, &metadata, wire_type);
+            assert!(result.is_ok(), "Failed to parse {:?}: {:?}", field_type, result.err());
+            assert_eq!(result.unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn test_parse_simple_repeated_value_wrong_wire_type_fails() {
+        let cases = vec![
+            (ProtobufSimpleType::Double, WireType::Varint),
+            (ProtobufSimpleType::Float, WireType::Varint),
+            (ProtobufSimpleType::Int32, WireType::Fixed32),
+            (ProtobufSimpleType::Int64, WireType::Fixed64),
+            (ProtobufSimpleType::Uint32, WireType::Fixed32),
+            (ProtobufSimpleType::Uint64, WireType::Fixed64),
+            (ProtobufSimpleType::Sint32, WireType::Fixed32),
+            (ProtobufSimpleType::Sint64, WireType::Fixed64),
+            (ProtobufSimpleType::Fixed32, WireType::Varint),
+            (ProtobufSimpleType::Fixed64, WireType::Varint),
+            (ProtobufSimpleType::Sfixed32, WireType::Varint),
+            (ProtobufSimpleType::Sfixed64, WireType::Varint),
+            (ProtobufSimpleType::Bool, WireType::Fixed32),
+            (ProtobufSimpleType::Enum, WireType::Fixed32),
+            (ProtobufSimpleType::String, WireType::Varint),
+            (ProtobufSimpleType::Bytes, WireType::Varint),
+        ];
+
+        for (field_type, wire_type) in cases {
+            let metadata = SimpleMetadata::new(field_type);
+            let mut reader = ProtobufReader::new(&[]);
+            let result = parse_simple_repeated_value(&mut reader, &metadata, wire_type);
+            assert!(
+                result.is_err(),
+                "Expected error for type {:?} with wire type {:?}",
+                field_type,
+                wire_type
+            );
+        }
+    }
+}

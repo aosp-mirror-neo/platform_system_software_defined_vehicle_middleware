@@ -293,6 +293,10 @@ mod tests {
     use protobuf::reflect::FileDescriptor;
     use std::collections::HashMap;
 
+    use crate::reflection::codec::api::protobuf::ProtobufReader;
+    use crate::reflection::message::api::protobuf::{MapField, SimpleField, SingularField};
+    use crate::reflection::metadata::message::SingularTypeMetadata;
+
     use crate::reflection::metadata::{field_type::ProtobufSimpleType, simple::SimpleMetadata};
 
     use super::*;
@@ -380,6 +384,101 @@ mod tests {
                 map_metadata.get_value_metadata(),
                 &SingularTypeMetadata::Simple(SimpleMetadata::new(ProtobufSimpleType::String))
             );
+        }
+    }
+
+    #[test]
+    fn test_parse_map_entry_from_reader_succeeds() {
+        let key_metadata = MapKeyType::Int32;
+        let value_metadata =
+            SingularTypeMetadata::Simple(SimpleMetadata::new(ProtobufSimpleType::String));
+        let map_metadata = MapMetadata::new(key_metadata, value_metadata);
+
+        // Key: 10, Value: "foo"
+        // Field 1 (Key): 0x08 (Varint), 0x0A (10)
+        // Field 2 (Value): 0x12 (LengthDelimited), 0x03 (Length), "foo"
+        let bytes = vec![0x08, 0x0A, 0x12, 0x03, 0x66, 0x6f, 0x6f];
+        let length = bytes.len() as i64;
+        let mut reader = ProtobufReader::new(&bytes);
+
+        let result = map_metadata.parse_map_entry_from_reader(&mut reader, length);
+        assert!(result.is_ok());
+
+        let map_field = result.unwrap();
+        if let MapField::Int32(container) = map_field {
+            assert_eq!(container.len(), 1);
+            let value = container.get(&10).expect("Key 10 should exist");
+            if let SingularField::Simple(SimpleField::String(s)) = value {
+                assert_eq!(s, "foo");
+            } else {
+                panic!("Expected String value");
+            }
+        } else {
+            panic!("Expected MapField::Int32");
+        }
+    }
+
+    #[test]
+    fn test_parse_map_entry_missing_key_fails() {
+        let key_metadata = MapKeyType::Int32;
+        let value_metadata =
+            SingularTypeMetadata::Simple(SimpleMetadata::new(ProtobufSimpleType::String));
+        let map_metadata = MapMetadata::new(key_metadata, value_metadata);
+
+        // Value: "foo" only
+        let bytes = vec![0x12, 0x03, 0x66, 0x6f, 0x6f];
+        let length = bytes.len() as i64;
+        let mut reader = ProtobufReader::new(&bytes);
+
+        let result = map_metadata.parse_map_entry_from_reader(&mut reader, length);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Missing key for map entry");
+    }
+
+    #[test]
+    fn test_parse_map_entry_missing_value_fails() {
+        let key_metadata = MapKeyType::Int32;
+        let value_metadata =
+            SingularTypeMetadata::Simple(SimpleMetadata::new(ProtobufSimpleType::String));
+        let map_metadata = MapMetadata::new(key_metadata, value_metadata);
+
+        // Key: 10 only
+        let bytes = vec![0x08, 0x0A];
+        let length = bytes.len() as i64;
+        let mut reader = ProtobufReader::new(&bytes);
+
+        let result = map_metadata.parse_map_entry_from_reader(&mut reader, length);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Missing value for map entry");
+    }
+
+    #[test]
+    fn test_parse_map_entry_with_unknown_field_succeeds() {
+        let key_metadata = MapKeyType::Int32;
+        let value_metadata =
+            SingularTypeMetadata::Simple(SimpleMetadata::new(ProtobufSimpleType::String));
+        let map_metadata = MapMetadata::new(key_metadata, value_metadata);
+
+        // Key: 10
+        // Unknown Field 3: Varint 5
+        // Value: "foo"
+        let bytes = vec![
+            0x08, 0x0A, // Key 10
+            0x18, 0x05, // Field 3, value 5
+            0x12, 0x03, 0x66, 0x6f, 0x6f, // Value "foo"
+        ];
+        let length = bytes.len() as i64;
+        let mut reader = ProtobufReader::new(&bytes);
+
+        let result = map_metadata.parse_map_entry_from_reader(&mut reader, length);
+        assert!(result.is_ok());
+
+        let map_field = result.unwrap();
+        if let MapField::Int32(container) = map_field {
+            assert_eq!(container.len(), 1);
+            assert!(container.get(&10).is_some());
+        } else {
+            panic!("Expected MapField::Int32");
         }
     }
 }

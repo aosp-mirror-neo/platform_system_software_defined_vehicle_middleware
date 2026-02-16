@@ -651,4 +651,142 @@ mod tests {
             MetadataBuildError::RepeatedTypeExpected("TestProto.a".to_owned())
         );
     }
+
+    #[test]
+    fn test_parse_message_from_reader_integration() {
+        use crate::reflection::message::api::protobuf::{
+            DynamicMessageField, MapField, RepeatedField, SimpleField, SimpleRepeatedField,
+            SingularField,
+        };
+
+        let file_content = r#"
+            syntax = "proto3";
+            message TestMessage {
+                int32 id = 1;
+                string name = 2;
+                repeated int32 values = 3;
+                NestedMessage nested = 4;
+                map<string, string> properties = 5;
+            }
+            message NestedMessage {
+                bool active = 1;
+            }
+        "#;
+        let file_descriptor = mock_file_descriptor("test_integration.proto", file_content);
+        let message_descriptor = file_descriptor
+            .message_by_full_name(".TestMessage")
+            .expect("Message descriptor must be created");
+
+        // Create a dynamic message using protobuf crate
+        let mut message = message_descriptor.new_instance();
+
+        // Set fields using reflection
+        let id_field = message_descriptor.field_by_name("id").unwrap();
+        id_field.set_singular_field(message.as_mut(), protobuf::reflect::ReflectValueBox::I32(123));
+
+        let name_field = message_descriptor.field_by_name("name").unwrap();
+        name_field.set_singular_field(
+            message.as_mut(),
+            protobuf::reflect::ReflectValueBox::String("test".to_string()),
+        );
+
+        let values_field = message_descriptor.field_by_name("values").unwrap();
+        let mut repeated = values_field.mut_repeated(message.as_mut());
+        repeated.push(protobuf::reflect::ReflectValueBox::I32(10));
+        repeated.push(protobuf::reflect::ReflectValueBox::I32(20));
+
+        let nested_field = message_descriptor.field_by_name("nested").unwrap();
+        let RuntimeType::Message(nested_desc) = nested_field.singular_runtime_type() else {
+            panic!("Unexpected field type for nested: {}", nested_field);
+        };
+        let mut nested_msg = nested_desc.new_instance();
+        let active_field = nested_desc.field_by_name("active").unwrap();
+        active_field.set_singular_field(
+            nested_msg.as_mut(),
+            protobuf::reflect::ReflectValueBox::Bool(true),
+        );
+        nested_field.set_singular_field(
+            message.as_mut(),
+            protobuf::reflect::ReflectValueBox::Message(nested_msg),
+        );
+
+        let properties_field = message_descriptor.field_by_name("properties").unwrap();
+        let mut map = properties_field.mut_map(message.as_mut());
+        map.insert(
+            protobuf::reflect::ReflectValueBox::String("key1".to_string()),
+            protobuf::reflect::ReflectValueBox::String("value1".to_string()),
+        );
+
+        // Serialize
+        let bytes = message.write_to_bytes_dyn().unwrap();
+
+        // Parse using MessageMetadata
+        let metadata = MessageMetadata::build(&message_descriptor).unwrap();
+        let mut reader = ProtobufReader::new(&bytes);
+        let parsed_message = metadata.parse_message_from_reader(&mut reader, -1).unwrap();
+
+        // Verify id
+        let id_field_num = 1;
+        let field = parsed_message.get_message_field(&id_field_num).unwrap();
+        if let DynamicMessageField::Singular(SingularField::Simple(SimpleField::Int32(val))) = field
+        {
+            assert_eq!(*val, 123);
+        } else {
+            panic!("Unexpected field type for id: {:?}", field);
+        }
+
+        // Verify name
+        let name_field_num = 2;
+        let field = parsed_message.get_message_field(&name_field_num).unwrap();
+        if let DynamicMessageField::Singular(SingularField::Simple(SimpleField::String(val))) =
+            field
+        {
+            assert_eq!(val, "test");
+        } else {
+            panic!("Unexpected field type for name: {:?}", field);
+        }
+
+        // Verify values
+        let values_field_num = 3;
+        let field = parsed_message.get_message_field(&values_field_num).unwrap();
+        if let DynamicMessageField::Repeated(RepeatedField::Simple(SimpleRepeatedField::Int32(
+            vals,
+        ))) = field
+        {
+            assert_eq!(*vals, vec![10, 20]);
+        } else {
+            panic!("Unexpected field type for values: {:?}", field);
+        }
+
+        // Verify nested
+        let nested_field_num = 4;
+        let field = parsed_message.get_message_field(&nested_field_num).unwrap();
+        if let DynamicMessageField::Singular(SingularField::Message(nested_msg)) = field {
+            let active_field_num = 1;
+            let active = nested_msg.get_message_field(&active_field_num).unwrap();
+            if let DynamicMessageField::Singular(SingularField::Simple(SimpleField::Bool(val))) =
+                active
+            {
+                assert!(val);
+            } else {
+                panic!("Unexpected field type for nested.active: {:?}", active);
+            }
+        } else {
+            panic!("Unexpected field type for nested: {:?}", field);
+        }
+
+        // Verify map
+        let properties_field_num = 5;
+        let field = parsed_message.get_message_field(&properties_field_num).unwrap();
+        if let DynamicMessageField::Map(MapField::String(map)) = field {
+            let val = map.get(&"key1".to_string()).unwrap();
+            if let SingularField::Simple(SimpleField::String(s)) = val {
+                assert_eq!(s, "value1");
+            } else {
+                panic!("Unexpected value type for map entry: {:?}", val);
+            }
+        } else {
+            panic!("Unexpected field type for properties: {:?}", field);
+        }
+    }
 }
