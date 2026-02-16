@@ -45,6 +45,8 @@ pub struct AclPolicyModel {
     pub(crate) serve_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
     #[cfg(feature = "permissions")]
     pub(crate) call_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
+    #[cfg(feature = "permissions")]
+    pub(crate) allow_read_all: bool,
 }
 
 impl AclPolicyModel {
@@ -63,6 +65,8 @@ impl AclPolicyModel {
             serve_permissions: HashSet::new(),
             #[cfg(feature = "permissions")]
             call_permissions: HashSet::new(),
+            #[cfg(feature = "permissions")]
+            allow_read_all: false,
         }
     }
 
@@ -74,6 +78,7 @@ impl AclPolicyModel {
         subscribe_permissions: HashSet<(UnitType, Option<TopicName>)>,
         serve_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
         call_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
+        allow_read_all: bool,
     ) -> AclPolicyModel {
         AclPolicyModel {
             service_units_acls,
@@ -82,6 +87,7 @@ impl AclPolicyModel {
             subscribe_permissions,
             serve_permissions,
             call_permissions,
+            allow_read_all,
         }
     }
 
@@ -118,22 +124,30 @@ impl AclPolicyModel {
     /// Returns whether there is permission to subscribe to the given topic.
     #[cfg(feature = "permissions")]
     pub fn can_subscribe(&self, publication_type: &UnitType, topic: &TopicName) -> bool {
+        if self.allow_read_all {
+            return true;
+        }
+
         self.subscribe_permissions.contains(&(publication_type.clone(), Some(topic.clone())))
             || self.subscribe_permissions.contains(&(publication_type.clone(), None))
     }
 
     /// Returns whether there is permission to serve the given service unit.
     #[cfg(feature = "permissions")]
-    pub fn can_serve(&self, server_type: &UnitType, service_unit: &ServiceUnitName) -> bool {
-        self.serve_permissions.contains(&(server_type.clone(), Some(service_unit.clone())))
-            || self.serve_permissions.contains(&(server_type.clone(), None))
+    pub fn can_serve(&self, service: &UnitType, service_unit: &ServiceUnitName) -> bool {
+        self.serve_permissions.contains(&(service.clone(), Some(service_unit.clone())))
+            || self.serve_permissions.contains(&(service.clone(), None))
     }
 
     /// Returns whether there is permission to call the given service unit.
     #[cfg(feature = "permissions")]
-    pub fn can_call(&self, server_type: &UnitType, service_unit: &ServiceUnitName) -> bool {
-        self.call_permissions.contains(&(server_type.clone(), Some(service_unit.clone())))
-            || self.call_permissions.contains(&(server_type.clone(), None))
+    pub fn can_call(&self, service: &UnitType, service_unit: &ServiceUnitName) -> bool {
+        if self.allow_read_all {
+            return true;
+        }
+
+        self.call_permissions.contains(&(service.clone(), Some(service_unit.clone())))
+            || self.call_permissions.contains(&(service.clone(), None))
     }
 }
 
@@ -248,27 +262,29 @@ mod tests {
     fn test_permissions_logic() {
         let proto: AclPolicyProto = text_format::parse_from_str(
             r#"
-            publish {
-                publication_type: "test.package.TirePressureTopic"
-                topic_name: "front_left"
+            publisher {
+                message: "test.package.TirePressureTopic"
+                topic: "front_left"
             }
-            publish {
-                publication_type: "test.package.BrakeTopic"
+            publisher {
+                message: "test.package.BrakeTopic"
+                allow_all_topics: true
             }
-            subscribe {
-                publication_type: "test.package.TemperatureTopic"
-                topic_name: "cabin"
+            subscriber {
+                message: "test.package.TemperatureTopic"
+                topic: "cabin"
             }
-            serve {
-                server_type: "test.package.HvacServer"
-                service_unit_name: "hvac-controller"
+            server {
+                service: "test.package.HvacServer"
+                channel: "hvac-controller"
             }
-            serve {
-                server_type: "test.package.MediaServer"
+            server {
+                service: "test.package.MediaServer"
+                allow_all_channels: true
             }
-            call {
-                server_type: "test.package.NavServer"
-                service_unit_name: "nav-system"
+            client {
+                service: "test.package.NavServer"
+                channel: "nav-system"
             }
         "#,
         )
@@ -309,6 +325,46 @@ mod tests {
 
     #[cfg(feature = "permissions")]
     #[test]
+    fn test_blanket_read_permission_logic() {
+        let proto: AclPolicyProto = text_format::parse_from_str(
+            r#"
+            publisher {
+                message: "test.package.TirePressureTopic"
+                topic: "front_left"
+            }
+            server {
+                service: "test.package.MediaServer"
+                allow_all_channels: true
+            }
+
+            allow_read_all: true
+        "#,
+        )
+        .unwrap();
+
+        let acl_policy = AclPolicyModel::try_from(proto).unwrap();
+
+        let tire_topic = UnitType::from_str("test.package.TirePressureTopic").unwrap();
+        let media_server = UnitType::from_str("test.package.MediaServer").unwrap();
+        let front_left = TopicName::from_str("front_left").unwrap();
+        let any_service_name = ServiceUnitName::from_str("any-service-name").unwrap();
+        let any_topic_name = TopicName::from_str("any-topic-name").unwrap();
+
+        // 1. Test Positive Logic
+        assert!(acl_policy.can_publish(&tire_topic, &front_left));
+        assert!(acl_policy.can_serve(&media_server, &any_service_name));
+
+        // 2. Test Blanket Permission
+        assert!(acl_policy.can_subscribe(&tire_topic, &any_topic_name));
+        assert!(acl_policy.can_call(&media_server, &any_service_name));
+
+        // 3. Test Negative Logic (Denial)
+        assert!(!acl_policy.can_serve(&tire_topic, &any_service_name));
+        assert!(!acl_policy.can_publish(&tire_topic, &any_topic_name));
+    }
+
+    #[cfg(feature = "permissions")]
+    #[test]
     fn test_mixed_acls_and_permissions() {
         // This test ensures that the presence of permission fields does not interfere
         // with ACL parsing, and vice versa.
@@ -325,13 +381,13 @@ mod tests {
             }
 
             # 2. Permission Definitions
-            publish {
-                publication_type: "test.package.MyTopic"
-                topic_name: "ch1"
+            publisher {
+                message: "test.package.MyTopic"
+                topic: "ch1"
             }
-            serve {
-                server_type: "test.package.MyServer"
-                service_unit_name: "my-service-unit"
+            server {
+                service: "test.package.MyServer"
+                channel: "my-service-unit"
             }
         "#,
         )

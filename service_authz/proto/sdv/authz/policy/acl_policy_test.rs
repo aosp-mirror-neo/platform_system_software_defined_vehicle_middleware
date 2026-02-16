@@ -23,19 +23,21 @@ fn test_parse_textproto_with_permissions() {
     let textproto_content = fs::read_to_string(TEST_TEXTPROTO_PATH).unwrap();
     let policy: AclPolicy = parse_from_str(&textproto_content).unwrap();
 
-    assert_eq!(policy.publish.len(), 1);
-    assert_eq!(policy.publish[0].publication_type, "test.package.MessageType");
-    assert_eq!(policy.publish[0].topic_name, "test_topic_name");
+    assert_eq!(policy.publisher.len(), 1);
+    assert_eq!(policy.publisher[0].message, "test.package.MessageType");
+    assert_eq!(policy.publisher[0].topic[0], "test_topic");
 
-    assert_eq!(policy.subscribe.len(), 1);
-    assert_eq!(policy.subscribe[0].publication_type, "test.package.MessageType");
-    assert_eq!(policy.subscribe[0].topic_name, "test_another_topic_name");
+    assert_eq!(policy.subscriber.len(), 1);
+    assert_eq!(policy.subscriber[0].message, "test.package.MessageType");
+    assert_eq!(policy.subscriber[0].topic[0], "test_another_topic");
 
-    assert_eq!(policy.serve.len(), 1);
-    assert_eq!(policy.serve[0].server_type, "test.package.Server");
-    assert_eq!(policy.serve[0].service_unit_name, "test-service-unit-name");
+    assert_eq!(policy.server.len(), 1);
+    assert_eq!(policy.server[0].service, "test.package.Server");
+    assert_eq!(policy.server[0].channel[0], "test-channel");
 
-    assert_eq!(policy.call.len(), 1);
-    assert_eq!(policy.call[0].server_type, "test.package.Server");
-    assert_eq!(policy.call[0].service_unit_name, "test-another-service-unit-name");
+    assert_eq!(policy.client.len(), 1);
+    assert_eq!(policy.client[0].service, "test.package.Server");
+    assert_eq!(policy.client[0].channel[0], "test-another-channel");
+
+    assert!(policy.allow_read_all);
 }
