@@ -17,6 +17,6 @@
 # proto-message: ServiceBundleConfig
 
 # Service bundle FQIN with instance.
-package_name: "com.sdv.google.test.authz.foo"
+package_name: "com.android.sdv.test.authz.foo"
 service_bundle_name: "ServiceBundleTestAuthzFoo"
 instance: "instance"

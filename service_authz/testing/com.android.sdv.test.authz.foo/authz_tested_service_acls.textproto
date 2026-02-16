@@ -20,7 +20,7 @@
 
 acls {
     name: "ping-dt-publisher-unit-type-acl"
-    include: "com.sdv.google.test.authz.foo.AuthzTestedService"
+    include: "com.android.sdv.test.authz.foo.AuthzTestedService"
 }
 
 unit_types {
@@ -30,7 +30,7 @@ unit_types {
 
 acls {
     name: "ping-dt-publisher-acl"
-    include: "com.sdv.google.test.authz.bar.AuthzTestDriver"
+    include: "com.android.sdv.test.authz.bar.AuthzTestDriver"
 }
 
 service_units {
@@ -45,7 +45,7 @@ acls {
     #
     # Later SID will be used by AuthzTestDriver service bundle to directly
     # connect to the non-connectable DT publisher
-    include: "com.sdv.google.test.authz.foo.AuthzTestedService"
+    include: "com.android.sdv.test.authz.foo.AuthzTestedService"
 }
 
 service_units {
@@ -57,7 +57,7 @@ service_units {
 
 acls {
     name: "echo-rpc-server-unit-type-acl"
-    include: "com.sdv.google.test.authz.foo.AuthzTestedService"
+    include: "com.android.sdv.test.authz.foo.AuthzTestedService"
 }
 
 unit_types {
@@ -67,7 +67,7 @@ unit_types {
 
 acls {
     name: "echo-rpc-server-acl"
-    include: "com.sdv.google.test.authz.bar.AuthzTestDriver"
+    include: "com.android.sdv.test.authz.bar.AuthzTestDriver"
 }
 
 service_units {
@@ -82,7 +82,7 @@ acls {
     #
     # Later SID will be used by AuthzTestDriver service bundle to directly
     # connect to the non-connectable RPC server
-    include: "com.sdv.google.test.authz.foo.AuthzTestedService"
+    include: "com.android.sdv.test.authz.foo.AuthzTestedService"
 }
 
 service_units {
