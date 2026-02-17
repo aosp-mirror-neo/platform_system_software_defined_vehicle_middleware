@@ -25,7 +25,7 @@ fn test_authz_apex_has_acl_policy() {
     let provider = create_local_vm_acl_policy_provider().unwrap();
 
     let package_name =
-        PackageName::from_str("com.sdv.google.test.authz.local_vm_acl_policy_provider").unwrap();
+        PackageName::from_str("com.android.sdv.test.authz.local_vm_acl_policy_provider").unwrap();
     let service_bundle_name = ServiceBundleName::from_str("AuthzTest").unwrap();
 
     let acl_policy = provider.get_acl_policy(&package_name, Some(&service_bundle_name)).unwrap();
@@ -45,7 +45,7 @@ fn test_authz_apex_without_acl_policy() {
     let provider = create_local_vm_acl_policy_provider().unwrap();
 
     let package_name =
-        PackageName::from_str("com.sdv.google.test.authz.local_vm_acl_policy_provider").unwrap();
+        PackageName::from_str("com.android.sdv.test.authz.local_vm_acl_policy_provider").unwrap();
     let service_bundle_name = ServiceBundleName::from_str("AuthzTestWithoutAclPolicy").unwrap();
 
     assert!(provider.get_acl_policy(&package_name, Some(&service_bundle_name)).is_err());
@@ -59,7 +59,7 @@ fn test_authz_apex_service_bundles_with_acl_policy() {
     let service_bundles = provider.get_namespace_with_acl_policy().unwrap();
 
     let package_name =
-        PackageName::from_str("com.sdv.google.test.authz.local_vm_acl_policy_provider").unwrap();
+        PackageName::from_str("com.android.sdv.test.authz.local_vm_acl_policy_provider").unwrap();
 
     let service_bundle_name_with_acl = ServiceBundleName::from_str("AuthzTest").unwrap();
     assert!(
