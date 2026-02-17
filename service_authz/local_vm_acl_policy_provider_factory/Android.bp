@@ -97,7 +97,7 @@ rust_test {
 
 prebuilt_etc {
     name: "ivi_acl_provider_vendor_acl_textproto",
-    sub_dir: "sdv_authz_acls/com.sdv.google.test.authz.local_vm_acl_policy_provider",
+    sub_dir: "sdv_authz_acls/com.android.sdv.test.authz.local_vm_acl_policy_provider",
     src: "tests/VendorBundle.textproto",
     filename: "VendorBundle.textproto",
     vendor: true,
@@ -105,7 +105,7 @@ prebuilt_etc {
 
 prebuilt_etc {
     name: "ivi_acl_provider_product_acl_textproto",
-    sub_dir: "sdv_authz_acls/com.sdv.google.test.authz.local_vm_acl_policy_provider",
+    sub_dir: "sdv_authz_acls/com.android.sdv.test.authz.local_vm_acl_policy_provider",
     src: "tests/ProductBundle.textproto",
     filename: "ProductBundle.textproto",
     product_specific: true,
@@ -113,14 +113,14 @@ prebuilt_etc {
 
 prebuilt_etc {
     name: "ivi_acl_provider_system_acl_textproto",
-    sub_dir: "sdv_authz_acls/com.sdv.google.test.authz.local_vm_acl_policy_provider",
+    sub_dir: "sdv_authz_acls/com.android.sdv.test.authz.local_vm_acl_policy_provider",
     src: "tests/SystemBundle.textproto",
     filename: "SystemBundle.textproto",
 }
 
 prebuilt_etc {
     name: "ivi_acl_provider_system_ext_acl_textproto",
-    sub_dir: "sdv_authz_acls/com.sdv.google.test.authz.local_vm_acl_policy_provider",
+    sub_dir: "sdv_authz_acls/com.android.sdv.test.authz.local_vm_acl_policy_provider",
     src: "tests/SystemExtBundle.textproto",
     filename: "SystemExtBundle.textproto",
     system_ext_specific: true,

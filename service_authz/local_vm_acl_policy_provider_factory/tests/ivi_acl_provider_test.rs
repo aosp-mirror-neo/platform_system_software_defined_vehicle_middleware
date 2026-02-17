@@ -20,7 +20,7 @@ use sdv_comms_id::names::{
     PackageName, ServiceName as ServiceBundleName, ServiceUnitName, UnitTypeName,
 };
 
-const PACKAGE_NAME: &str = "com.sdv.google.test.authz.local_vm_acl_policy_provider";
+const PACKAGE_NAME: &str = "com.android.sdv.test.authz.local_vm_acl_policy_provider";
 
 #[test]
 fn test_vendor_partition_has_acl_policy() {
