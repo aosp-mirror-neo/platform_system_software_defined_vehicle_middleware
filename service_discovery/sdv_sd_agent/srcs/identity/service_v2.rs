@@ -315,8 +315,23 @@ mod tests {
         }
     }
 
+    fn create_native_services_names_for_test() -> NativeServicesNames {
+        NativeServicesNames::from_entries(&[(
+            sdv_aid::AID_SYSTEM,
+            "com.sdv.google.update_manager.UpdateManagerAgent/default",
+        )])
+    }
+
     fn create_identity_manager_for_test() -> anyhow::Result<IdentityAgentV2> {
-        IdentityAgentV2::new(Arc::new(ServiceRegistry::default()), &create_fake_vvmconfig())
+        let vvm_config = create_fake_vvmconfig();
+        let self_vm_name = vvm_config.own_cfg.name.clone();
+        Ok(IdentityAgentV2 {
+            service_registry: Arc::new(ServiceRegistry::default()),
+            identity_verifier: Box::new(LazyIdentityVerifier::default()),
+            native_services_names: Arc::new(create_native_services_names_for_test()),
+            sid_gen: SidGenerator::try_new(&vvm_config)?,
+            self_vm_name,
+        })
     }
 
     fn create_identity_manager_with_mock_verifier_provider(
@@ -329,7 +344,7 @@ mod tests {
             identity_verifier: Box::new(identity_verifier),
             sid_gen: SidGenerator::try_new(&config)?,
             self_vm_name,
-            native_services_names: Arc::new(NativeServicesNames::new()?),
+            native_services_names: Arc::new(create_native_services_names_for_test()),
         })
     }
 

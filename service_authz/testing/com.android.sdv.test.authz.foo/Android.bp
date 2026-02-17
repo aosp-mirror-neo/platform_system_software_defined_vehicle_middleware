@@ -17,16 +17,16 @@ package {
 
 // Apex with AuthzTestedService.
 apex {
-    name: "com.sdv.google.test.authz.foo",
+    name: "com.android.sdv.test.authz.foo",
     defaults: ["cuj_sample_apex@defaults"],
     native_shared_libs: ["libauthz_tested_service"],
     prebuilts: [
         // SDV service bundles manifest file.
-        "com.sdv.google.test.authz.foo.service_bundles_manifest",
+        "com.android.sdv.test.authz.foo.service_bundles_manifest",
         // Orchestration configuration.
-        "com.sdv.google.test.authz.foo.tested_service.orch.config",
+        "com.android.sdv.test.authz.foo.tested_service.orch.config",
         // ACLs policy file.
-        "com.sdv.google.test.authz.foo.tested_service.acls.config",
+        "com.android.sdv.test.authz.foo.tested_service.acls.config",
     ],
     // Setting the security contexts to files in this APEX bundle.
     file_contexts: "apex_file_contexts",
@@ -34,7 +34,7 @@ apex {
 
 // SDV manifest file with the metadata information about service bundles stored in the apex.
 prebuilt_etc {
-    name: "com.sdv.google.test.authz.foo.service_bundles_manifest",
+    name: "com.android.sdv.test.authz.foo.service_bundles_manifest",
     // The source name of the manifest file.
     src: "sdv_service_bundles_manifest.textproto",
     // The name of the installed file shall be `sdv_service_bundles_manifest.textproto`.
@@ -46,7 +46,7 @@ prebuilt_etc {
 
 // Orchestration configuration for AuthzTestedService service bundle.
 prebuilt_etc {
-    name: "com.sdv.google.test.authz.foo.tested_service.orch.config",
+    name: "com.android.sdv.test.authz.foo.tested_service.orch.config",
     src: "authz_tested_service_orch.textproto",
     // Subdirectory under which the file(s) to be installed into.
     sub_dir: "orch",
@@ -59,7 +59,7 @@ prebuilt_etc {
 
 // ACLs policy for AuthzTestedService service bundle.
 prebuilt_etc {
-    name: "com.sdv.google.test.authz.foo.tested_service.acls.config",
+    name: "com.android.sdv.test.authz.foo.tested_service.acls.config",
     src: "authz_tested_service_acls.textproto",
     sub_dir: "acls",
     // Filename is used in sdv service bundle metadata manifest.
@@ -81,5 +81,5 @@ rust_ffi_shared {
         "liblazy_static",
     ],
     // Allows the library to be available inside of the related APEX.
-    apex_available: ["com.sdv.google.test.authz.foo"],
+    apex_available: ["com.android.sdv.test.authz.foo"],
 }

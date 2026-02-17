@@ -168,7 +168,7 @@ async fn service_main(context: ContextRef) -> SdvResult<()> {
 }
 
 static SERVER_UNIT_TYPE_STR: &str =
-    "com.sdv.google.test.authz.foo.AuthzTestedService#EchoRpcServerUnitType";
+    "com.android.sdv.test.authz.foo.AuthzTestedService#EchoRpcServerUnitType";
 static SERVER_SERVICE_UNIT_NAME: &str = "echo-rpc-server";
 
 lazy_static! {
@@ -200,7 +200,7 @@ async fn create_server(context: ContextRef) -> SdvResult<Server> {
     Ok(server)
 }
 
-static NON_CONNECTABLE_SERVER_PACKAGE_NAME: &str = "com.sdv.google.test.authz.foo";
+static NON_CONNECTABLE_SERVER_PACKAGE_NAME: &str = "com.android.sdv.test.authz.foo";
 static NON_CONNECTABLE_SERVER_SERVICE_BUNDLE_NAME: &str = "AuthzTestedService";
 static NON_CONNECTABLE_SERVER_SERVICE_UNIT_NAME: &str = "echo-rpc-server-non-connectable";
 
@@ -260,7 +260,7 @@ const PUBLISHER_MESSAGE_SIZE: u32 = 128;
 const PUBLISHER_MESSAGE_COUNT: u32 = 16;
 
 static PUBLISHER_UNIT_TYPE_STR: &str =
-    "com.sdv.google.test.authz.foo.AuthzTestedService#PingDtPublisherUnitType";
+    "com.android.sdv.test.authz.foo.AuthzTestedService#PingDtPublisherUnitType";
 static PUBLISHER_SERVICE_UNIT_NAME: &str = "ping-dt-publisher";
 
 lazy_static! {
@@ -304,7 +304,7 @@ fn resize_to_size(data: &[u8], size: u32) -> Vec<u8> {
     resized_data
 }
 
-static NON_CONNECTABLE_PUBLISHER_PACKAGE_NAME: &str = "com.sdv.google.test.authz.foo";
+static NON_CONNECTABLE_PUBLISHER_PACKAGE_NAME: &str = "com.android.sdv.test.authz.foo";
 static NON_CONNECTABLE_PUBLISHER_SERVICE_BUNDLE_NAME: &str = "AuthzTestedService";
 static NON_CONNECTABLE_PUBLISHER_SERVICE_UNIT_NAME: &str = "ping-dt-publisher-non-connectable";
 

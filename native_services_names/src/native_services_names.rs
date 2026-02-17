@@ -50,6 +50,20 @@ impl NativeServicesNames {
         Self::new_from_configs(&system_ext_config, &product_config, &vendor_config)
     }
 
+    /// Creates a new `NativeServicesNames` containing the given native services.
+    ///
+    /// To be used in tests.
+    #[cfg(feature = "test-util")]
+    pub fn from_entries(entries: &[(u32, &str)]) -> Self {
+        let mut uid_to_local_fqins: HashMap<u32, HashSet<LocalServiceFqin>> = HashMap::new();
+        for (uid, fqin_str) in entries {
+            let fqin = parse_local_fqin_from_string(fqin_str)
+                .unwrap_or_else(|e| panic!("Invalid FQIN '{fqin_str}': {e}"));
+            uid_to_local_fqins.entry(*uid).or_default().insert(fqin);
+        }
+        Self { uid_to_local_fqins }
+    }
+
     fn new_from_configs(
         system_ext_config: &str,
         product_config: &str,
