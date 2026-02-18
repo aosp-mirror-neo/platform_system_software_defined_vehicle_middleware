@@ -41,6 +41,7 @@ rust_library {
     name: "libsdv_wire_format",
     crate_name: "sdv_wire_format",
     defaults: ["sdv_wire_format_defaults"],
+    vendor_available: true,
     min_sdk_version: "35",
 }
 

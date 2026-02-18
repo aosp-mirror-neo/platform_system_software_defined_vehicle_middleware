@@ -26,9 +26,12 @@ use crate::reflection::message::api::protobuf::DynamicMessage;
 use crate::reflection::message::api::protobuf::DynamicMessageField;
 use crate::reflection::message::api::protobuf::SingularField;
 use crate::reflection::metadata::error::MetadataBuildError;
+use crate::reflection::metadata::field_type::ProtobufSimpleType;
 use crate::reflection::metadata::map::MapMetadata;
 use crate::reflection::metadata::repeated::parse_repeated_field;
 use crate::reflection::metadata::simple::SimpleMetadata;
+
+const PROTO_ANY_FULL_NAME: &str = "google.protobuf.Any";
 
 /// Protobuf Message metadata that contains information relevant to wire format de/serialization, message
 /// full name, field names declared in the message and fields whose presence can be tracked
@@ -176,6 +179,31 @@ impl MessageMetadata {
         ))
     }
 
+    /// Build metadata for the `google.protobuf.Any` message type
+    pub fn build_any_metadata() -> MessageMetadata {
+        let mut fields_metadata = HashMap::new();
+        let mut field_name_to_number = HashMap::new();
+
+        let type_url_field_metadata = FieldMetadata::Singular(SingularTypeMetadata::Simple(
+            SimpleMetadata::new(ProtobufSimpleType::String),
+        ));
+        let value_field_metadata = FieldMetadata::Singular(SingularTypeMetadata::Simple(
+            SimpleMetadata::new(ProtobufSimpleType::Bytes),
+        ));
+
+        fields_metadata.insert(1, type_url_field_metadata);
+        fields_metadata.insert(2, value_field_metadata);
+        field_name_to_number.insert("type_url".to_owned(), 1);
+        field_name_to_number.insert("value".to_owned(), 2);
+        Self::new(
+            Syntax::Proto3,
+            PROTO_ANY_FULL_NAME.to_owned(),
+            fields_metadata,
+            field_name_to_number,
+            HashSet::new(),
+        )
+    }
+
     /// Get metadata for field with number `field_number`
     pub fn get_field_metadata(&self, field_number: &u32) -> Option<&FieldMetadata> {
         self.fields_metadata.get(field_number)
@@ -186,6 +214,16 @@ impl MessageMetadata {
         self.field_name_to_number
             .get(field_name)
             .and_then(|field_number| self.fields_metadata.get(field_number))
+    }
+
+    /// Get the field number for field with name `field_name`
+    pub fn get_field_number(&self, field_name: &str) -> Option<&u32> {
+        self.field_name_to_number.get(field_name)
+    }
+
+    /// Returns an iterator over all the fields' metadata along with their field number
+    pub fn fields(&self) -> impl Iterator<Item = (&u32, &FieldMetadata)> {
+        self.fields_metadata.iter()
     }
 
     /// Checks whether a field with number `field_number` tracks its presence in the message.
@@ -265,6 +303,11 @@ impl MessageMetadata {
         }
     }
 
+    /// Create a default instance of the message
+    pub fn create_default_instance(&self) -> DynamicMessage {
+        DynamicMessage::new(self.get_message_full_name().to_owned())
+    }
+
     /// Parse a `DynamicMessage` from bytes
     pub fn parse_from_bytes(&self, bytes: &[u8]) -> anyhow::Result<DynamicMessage> {
         let mut reader = ProtobufReader::new(bytes);
@@ -331,7 +374,10 @@ impl MessageMetadata {
 #[cfg(test)]
 mod tests {
     use crate::reflection::metadata::{field_type::ProtobufSimpleType, map::MapKeyType};
-    use protobuf::{descriptor::field_descriptor_proto::Type, reflect::FileDescriptor};
+    use protobuf::{
+        descriptor::field_descriptor_proto::Type,
+        reflect::{FileDescriptor, Syntax},
+    };
 
     use super::*;
 
@@ -788,5 +834,33 @@ mod tests {
         } else {
             panic!("Unexpected field type for properties: {:?}", field);
         }
+    }
+
+    #[test]
+    fn test_build_any_metadata() {
+        let metadata = MessageMetadata::build_any_metadata();
+
+        assert_eq!(metadata.get_message_full_name(), PROTO_ANY_FULL_NAME);
+        assert_eq!(metadata.syntax, Syntax::Proto3);
+        assert_eq!(metadata.fields_metadata.len(), 2);
+        assert_eq!(metadata.field_name_to_number.len(), 2);
+
+        // Check type_url field
+        let type_url_field = metadata.get_field_metadata(&1).expect("type_url field missing");
+        if let FieldMetadata::Singular(SingularTypeMetadata::Simple(simple)) = type_url_field {
+            assert_eq!(simple.get_field_type(), ProtobufSimpleType::String);
+        } else {
+            panic!("Unexpected metadata for type_url");
+        }
+        assert_eq!(metadata.get_field_number("type_url"), Some(&1));
+
+        // Check value field
+        let value_field = metadata.get_field_metadata(&2).expect("value field missing");
+        if let FieldMetadata::Singular(SingularTypeMetadata::Simple(simple)) = value_field {
+            assert_eq!(simple.get_field_type(), ProtobufSimpleType::Bytes);
+        } else {
+            panic!("Unexpected metadata for value");
+        }
+        assert_eq!(metadata.get_field_number("value"), Some(&2));
     }
 }

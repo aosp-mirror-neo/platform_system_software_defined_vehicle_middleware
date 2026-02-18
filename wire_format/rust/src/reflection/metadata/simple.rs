@@ -38,7 +38,7 @@ impl SimpleMetadata {
     }
 
     /// Get the type of the simple field
-    pub(crate) fn get_field_type(&self) -> ProtobufSimpleType {
+    pub fn get_field_type(&self) -> ProtobufSimpleType {
         self.field_type
     }
 
