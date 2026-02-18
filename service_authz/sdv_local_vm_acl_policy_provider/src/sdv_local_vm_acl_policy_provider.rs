@@ -60,7 +60,7 @@ fn read_acl_file_mappings_from_service_bundle_registry() -> anyhow::Result<Vec<A
 /// Parses Service Bundle Metadata and returns tuple of Package Name,
 /// Service Bundle Name and ACL policy path.
 fn parse_service_bundle_metadata(service_bundle: &ServiceBundleMetadata) -> Option<AclFileMapping> {
-    let path = match &service_bundle.accessControlListPolicyPath {
+    let path = match &service_bundle.authorizationPolicyPath {
         Some(path) => PathBuf::from(path),
         None => {
             debug!(
@@ -126,7 +126,7 @@ mod tests {
         let metadata = ServiceBundleMetadata {
             packageName: VALID_PACKAGE_NAME.to_string(),
             name: VALID_SERVICE_BUNDLE_NAME.to_string(),
-            accessControlListPolicyPath: None,
+            authorizationPolicyPath: None,
             ..Default::default()
         };
 
@@ -138,7 +138,7 @@ mod tests {
         let metadata = ServiceBundleMetadata {
             packageName: "Invalid-Package-Name".to_string(),
             name: VALID_SERVICE_BUNDLE_NAME.to_string(),
-            accessControlListPolicyPath: Some(VALID_ACL_PATH.to_string()),
+            authorizationPolicyPath: Some(VALID_ACL_PATH.to_string()),
             ..Default::default()
         };
 
@@ -150,7 +150,7 @@ mod tests {
         let metadata = ServiceBundleMetadata {
             packageName: VALID_PACKAGE_NAME.to_string(),
             name: "Invalid Bundle Name".to_string(),
-            accessControlListPolicyPath: Some(VALID_ACL_PATH.to_string()),
+            authorizationPolicyPath: Some(VALID_ACL_PATH.to_string()),
             ..Default::default()
         };
 
