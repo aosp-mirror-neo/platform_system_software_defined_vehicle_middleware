@@ -20,7 +20,7 @@ mod tests {
     use std::str::FromStr;
 
     use sdv_authz::SingleVmAclPolicyProvider;
-    use sdv_authz_policy_proto_rust::acl_policy::AclPolicy as AclPolicyProto;
+    use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
     use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName};
 
     use anyhow::anyhow;

@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use sdv_authz_policy::Acl;
-use sdv_authz_policy_proto_rust::acl_policy::AclPolicy as AclPolicyProto;
+use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
 #[cfg(feature = "permissions")]
 use sdv_comms::sd::UnitType;
 #[cfg(feature = "permissions")]

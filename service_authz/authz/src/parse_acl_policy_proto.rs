@@ -26,12 +26,12 @@ use anyhow::bail;
 use anyhow::{anyhow, Context};
 use protobuf::MessageDyn;
 use sdv_authz_policy::{Acl, AclName};
-use sdv_authz_policy_proto_rust::acl_policy::{
-    Acl as AclProto, AclPolicy as AclPolicyProto, UnitAclMapping as UnitAclMappingProto,
+use sdv_authz_policy_proto_rust::authz_policy::{
+    Acl as AclProto, AuthzPolicy as AclPolicyProto, UnitAclMapping as UnitAclMappingProto,
 };
 
 #[cfg(feature = "permissions")]
-use sdv_authz_policy_proto_rust::acl_policy::{
+use sdv_authz_policy_proto_rust::authz_policy::{
     Client as CallPermissionProto, Publisher as PublishPermissionProto,
     Server as ServePermissionProto, Subscriber as SubscribePermissionProto,
 };

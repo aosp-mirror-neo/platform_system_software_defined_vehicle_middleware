@@ -21,7 +21,7 @@ use std::str::FromStr;
 use anyhow::Result;
 use protobuf::Message;
 
-use sdv_authz_policy_proto_rust::acl_policy::AclPolicy as AclPolicyProto;
+use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
 use sdv_comms_id::names::PackageName;
 
 use crate::caching_acl_reader::CachingAclReader;
@@ -70,7 +70,7 @@ pub(crate) fn merge_package_acl_policies(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sdv_authz_policy_proto_rust::acl_policy::{Acl, UnitAclMapping};
+    use sdv_authz_policy_proto_rust::authz_policy::{Acl, UnitAclMapping};
     use sdv_comms_id::names::PackageName;
     use std::str::FromStr;
     use tempfile::TempDir;

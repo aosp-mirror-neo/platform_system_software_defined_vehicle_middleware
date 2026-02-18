@@ -15,7 +15,7 @@
 //! Uses local VM ACL policy provider to create a GetPeerLocalAclsResponse proto message.
 
 use sdv_authz::SingleVmAclPolicyProvider;
-use sdv_authz_policy_proto_rust::acl_policy::AclPolicy as AclPolicyProto;
+use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
 use sdv_sd_mesh_api::sdv_sd_mesh::{
     get_peer_local_acls_response::ServiceBundleAclPolicy, GetPeerLocalAclsResponse,
 };
