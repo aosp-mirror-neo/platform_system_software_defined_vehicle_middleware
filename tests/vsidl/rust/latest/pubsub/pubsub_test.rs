@@ -29,11 +29,12 @@ mod test {
     use sdv::mw::{SdvComms, SubscribeOptions};
     use sdv::status::SdvStatusCode;
     // test catalog
-    use sdv_mw_rs_sdv_vsidl_pubsub_test_publishing_bundle::{publisher, PublishingBundle};
+    use sdv_mw_rs_sdv_vsidl_pubsub_test_publishing_bundle::publisher;
     use sdv_mw_rs_sdv_vsidl_pubsub_test_subscribing_bundle::subscriber;
     use vsidl_pubsub_test_proto::tire::TirePressure;
 
     // This is required by Datatunnel to guarantee forwarding the message to the history buffer.
+    const CHANNEL_PROCESSING_DURATION: Duration = Duration::from_millis(200);
     const HISTORY_PROCESSING_DURATION: Duration = Duration::from_millis(200);
     const PUBLISHER_DROP_SIGNAL_PROPAGATION: Duration = Duration::from_millis(500);
     const OBSERVER_TIMEOUT_DURATION: Duration = Duration::from_millis(200);
@@ -51,6 +52,7 @@ mod test {
 
     async fn setup(
         instance_name: &str,
+        channel_num: &str,
     ) -> (
         Arc<SdvComms>,
         sdv::mw::Publisher<TirePressure>,
@@ -64,45 +66,121 @@ mod test {
         sdv::mw::History<TirePressure>,
         sdv::mw::InstantReader<TirePressure>,
     ) {
+        let (pub_channel, sub_channel) = match channel_num {
+            "CHANNEL_ZERO" => (
+                publisher::Channel::<TirePressure>::CHANNEL_ZERO,
+                subscriber::Channel::<TirePressure>::CHANNEL_ZERO,
+            ),
+            "CHANNEL_ONE" => (
+                publisher::Channel::<TirePressure>::CHANNEL_ONE,
+                subscriber::Channel::<TirePressure>::CHANNEL_ONE,
+            ),
+            "CHANNEL_TWO" => (
+                publisher::Channel::<TirePressure>::CHANNEL_TWO,
+                subscriber::Channel::<TirePressure>::CHANNEL_TWO,
+            ),
+            "CHANNEL_THREE" => (
+                publisher::Channel::<TirePressure>::CHANNEL_THREE,
+                subscriber::Channel::<TirePressure>::CHANNEL_THREE,
+            ),
+            "CHANNEL_FOUR" => (
+                publisher::Channel::<TirePressure>::CHANNEL_FOUR,
+                subscriber::Channel::<TirePressure>::CHANNEL_FOUR,
+            ),
+            "CHANNEL_FIVE" => (
+                publisher::Channel::<TirePressure>::CHANNEL_FIVE,
+                subscriber::Channel::<TirePressure>::CHANNEL_FIVE,
+            ),
+            "CHANNEL_SIX" => (
+                publisher::Channel::<TirePressure>::CHANNEL_SIX,
+                subscriber::Channel::<TirePressure>::CHANNEL_SIX,
+            ),
+            "CHANNEL_SEVEN" => (
+                publisher::Channel::<TirePressure>::CHANNEL_SEVEN,
+                subscriber::Channel::<TirePressure>::CHANNEL_SEVEN,
+            ),
+            "CHANNEL_EIGHT" => (
+                publisher::Channel::<TirePressure>::CHANNEL_EIGHT,
+                subscriber::Channel::<TirePressure>::CHANNEL_EIGHT,
+            ),
+            "CHANNEL_NINE" => (
+                publisher::Channel::<TirePressure>::CHANNEL_NINE,
+                subscriber::Channel::<TirePressure>::CHANNEL_NINE,
+            ),
+            "CHANNEL_TEN" => (
+                publisher::Channel::<TirePressure>::CHANNEL_TEN,
+                subscriber::Channel::<TirePressure>::CHANNEL_TEN,
+            ),
+            "CHANNEL_ELEVEN" => (
+                publisher::Channel::<TirePressure>::CHANNEL_ELEVEN,
+                subscriber::Channel::<TirePressure>::CHANNEL_ELEVEN,
+            ),
+            "CHANNEL_TWELVE" => (
+                publisher::Channel::<TirePressure>::CHANNEL_TWELVE,
+                subscriber::Channel::<TirePressure>::CHANNEL_TWELVE,
+            ),
+            "CHANNEL_THIRTEEN" => (
+                publisher::Channel::<TirePressure>::CHANNEL_THIRTEEN,
+                subscriber::Channel::<TirePressure>::CHANNEL_THIRTEEN,
+            ),
+            "CHANNEL_FOURTEEN" => (
+                publisher::Channel::<TirePressure>::CHANNEL_FOURTEEN,
+                subscriber::Channel::<TirePressure>::CHANNEL_FOURTEEN,
+            ),
+            "CHANNEL_FIFTEEN" | &_ => (
+                publisher::Channel::<TirePressure>::CHANNEL_FIFTEEN,
+                subscriber::Channel::<TirePressure>::CHANNEL_FIFTEEN,
+            ),
+        };
+
+        setup_test(instance_name, pub_channel, sub_channel).await
+    }
+
+    async fn setup_test(
+        instance_name: &str,
+        pub_channel: &publisher::Channel<TirePressure>,
+        sub_channel: &subscriber::Channel<TirePressure>,
+    ) -> (
+        Arc<SdvComms>,
+        sdv::mw::Publisher<TirePressure>,
+        std::pin::Pin<
+            Box<
+                dyn futures::stream::Stream<Item = sdv::status::SdvResult<Vec<TirePressure>>>
+                    + Send,
+            >,
+        >,
+        sdv::mw::Subscriber<TirePressure>,
+        sdv::mw::History<TirePressure>,
+        sdv::mw::InstantReader<TirePressure>,
+    ) {
+        // Channels depends on a SD listener that needs a running binder thread.
+        binder::ProcessState::start_thread_pool();
+
         let sdv_comms = create_sdv_comms(instance_name);
 
         // GIVEN a publisher.
-        let mut publishing_bundle = PublishingBundle::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
+        let publisher = clientlib::create_publisher(sdv_comms.as_ref(), pub_channel)
             .await
-            .expect("PublishingBundle creation failed.");
-        let publisher = publishing_bundle
-            .take_publisher(publisher::Channel::<TirePressure>::FRONT_LEFT)
-            .expect("taking pressure_pub::FRONT_LEFT failed.");
+            .expect("Create TirePressure publisher failed.");
 
         // AND GIVEN different the subscription options to that publisher.
         let subscribe_option =
             &SubscribeOptions::builder().instance_name(instance_name).build().unwrap();
-        let observer = clientlib::create_observer(
-            sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
-            subscribe_option,
-        )
-        .await
-        .expect("Create TirePressure observer failed.");
-        let subscriber = clientlib::create_subscriber(
-            sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
-            subscribe_option,
-        )
-        .await
-        .expect("Create TirePressure subscriber failed.");
-        let instant_reader = clientlib::create_instant_reader(
-            sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
-            subscribe_option,
-        )
-        .await
-        .expect("Create TirePressure history failed.");
+        let observer =
+            clientlib::create_observer(sdv_comms.as_ref(), sub_channel, subscribe_option)
+                .await
+                .expect("Create TirePressure observer failed.");
+        let subscriber =
+            clientlib::create_subscriber(sdv_comms.as_ref(), sub_channel, subscribe_option)
+                .await
+                .expect("Create TirePressure subscriber failed.");
+        let instant_reader =
+            clientlib::create_instant_reader(sdv_comms.as_ref(), sub_channel, subscribe_option)
+                .await
+                .expect("Create TirePressure instant_reader failed.");
         let history = clientlib::create_history(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            sub_channel,
             &SubscribeOptions::builder()
                 .message_count(HISTORY_BUFFER_SIZE)
                 .instance_name(instance_name)
@@ -120,7 +198,7 @@ mod test {
         let instance_name = "pubsub-observer-before-data";
 
         // GIVEN Publisher and all the different subscription option
-        let (_, publisher, mut observer, _, _, _) = setup(instance_name).await;
+        let (_, publisher, mut observer, _, _, _) = setup(instance_name, "CHANNEL_ZERO").await;
 
         // WHEN we don't publish any data.
         // THEN observer does not get any data
@@ -135,7 +213,7 @@ mod test {
     async fn test_pub_sub_subscriber_before_publishing_data() {
         let instance_name = "pubsub-subscriber-before-data";
         // GIVEN Publisher and all the different subscription option
-        let (_, publisher, _, subscriber, _, _) = setup(instance_name).await;
+        let (_, publisher, _, subscriber, _, _) = setup(instance_name, "CHANNEL_ONE").await;
 
         // WHEN we don't publish any data.
         // THEN subscriber can't retrieve any message
@@ -150,7 +228,7 @@ mod test {
     async fn test_pub_sub_history_before_publishing_data() {
         let instance_name = "pubsub-history-before-data";
         // GIVEN Publisher and all the different subscription option
-        let (_, publisher, _, _, history, _) = setup(instance_name).await;
+        let (_, publisher, _, _, history, _) = setup(instance_name, "CHANNEL_TWO").await;
 
         // WHEN we don't publish any data.
         // THEN history can't retrieve any message
@@ -165,7 +243,7 @@ mod test {
     async fn test_pub_sub_instant_read_before_publishing_data() {
         let instance_name = "pubsub-instant-read-before-data";
         // GIVEN Publisher and all the different subscription option
-        let (_, publisher, _, _, _, instant_reader) = setup(instance_name).await;
+        let (_, publisher, _, _, _, instant_reader) = setup(instance_name, "CHANNEL_THREE").await;
 
         // WHEN we don't publish any data.
         // THEN instant reader can't retrieve any message
@@ -181,7 +259,7 @@ mod test {
 
         // GIVEN Publisher and all the different subscription option
         let (_, pressure_pub, mut observer, subscriber, history, instant_reader) =
-            setup(instance_name).await;
+            setup(instance_name, "CHANNEL_FOUR").await;
 
         // THEN subscriber cannot retrieve any message.
         let read = subscriber.read_next_messages(1).unwrap();
@@ -234,7 +312,7 @@ mod test {
             &SubscribeOptions::builder().instance_name(instance_name).build().unwrap();
         let observer = clientlib::create_observer(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            subscriber::Channel::<TirePressure>::CHANNEL_FIVE,
             subscribe_option,
         )
         .await;
@@ -251,12 +329,12 @@ mod test {
             &SubscribeOptions::builder().instance_name(instance_name).build().unwrap();
         let subscriber = clientlib::create_subscriber(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            subscriber::Channel::<TirePressure>::CHANNEL_SIX,
             subscribe_option,
         )
         .await;
         assert!(subscriber.is_err());
-        let _ = subscriber.inspect_err(|e| assert_eq!(e.status_code(), SdvStatusCode::Unavailable));
+        let _ = subscriber.inspect_err(|e| assert_eq!(e.status_code(), SdvStatusCode::NotFound));
     }
 
     #[tokio::test]
@@ -269,7 +347,7 @@ mod test {
 
         let history = clientlib::create_history(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            subscriber::Channel::<TirePressure>::CHANNEL_SEVEN,
             subscribe_option,
         )
         .await;
@@ -284,7 +362,7 @@ mod test {
 
         let instant_reader = clientlib::create_instant_reader(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            subscriber::Channel::<TirePressure>::CHANNEL_EIGHT,
             &SubscribeOptions::builder()
                 .message_count(HISTORY_BUFFER_SIZE)
                 .instance_name(instance_name)
@@ -303,7 +381,7 @@ mod test {
 
         // GIVEN Publisher and all the different subscription option
         let (_, pressure_pub, mut observer, subscriber, history, instant_reader) =
-            setup(instance_name).await;
+            setup(instance_name, "CHANNEL_NINE").await;
 
         // WHEN publisher writes more message than buffer size ( buffer size is 8 )
         for n in 1..=10 {
@@ -389,7 +467,8 @@ mod test {
     async fn test_pub_sub_observer_after_publisher_drop() {
         let instance_name = "pubsub-observer-after-publisher-drop";
         // GIVEN Publisher and all the different subscription option
-        let (sdv_comms, pressure_pub, mut observer, _, _, _) = setup(instance_name).await;
+        let (sdv_comms, pressure_pub, mut observer, _, _, _) =
+            setup(instance_name, "CHANNEL_TEN").await;
 
         // WHEN publishing a message.
         let pressure = 43678;
@@ -409,14 +488,12 @@ mod test {
         assert!(observer.next().await.is_none());
 
         // WHEN the publisher is re-created
-        let mut publishing_bundle = PublishingBundle::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("PublishingBundle creation failed.");
-        let publisher = publishing_bundle
-            .take_publisher(publisher::Channel::<TirePressure>::FRONT_LEFT)
-            .expect("taking pressure_pub::FRONT_LEFT failed.");
+        let publisher = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            publisher::Channel::<TirePressure>::CHANNEL_TEN,
+        )
+        .await
+        .expect("Create pressure_pub::CHANNEL_TEN failed.");
 
         // WHEN publishing a new message.
         let pressure_after_recreation = 43679;
@@ -436,7 +513,8 @@ mod test {
         let instance_name = "pubsub-subscriber-after-publisher-drop";
 
         // GIVEN Publisher and all the different subscription option
-        let (sdv_comms, pressure_pub, _, subscriber, _, _) = setup(instance_name).await;
+        let (sdv_comms, pressure_pub, _, subscriber, _, _) =
+            setup(instance_name, "CHANNEL_ELEVEN").await;
 
         // WHEN publishing a message.
         let pressure = 43678;
@@ -464,14 +542,15 @@ mod test {
         assert_eq!(read.len(), 0);
 
         // WHEN the publisher is re-created
-        let mut publishing_bundle = PublishingBundle::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("PublishingBundle creation failed.");
-        let publisher = publishing_bundle
-            .take_publisher(publisher::Channel::<TirePressure>::FRONT_LEFT)
-            .expect("taking pressure_pub::FRONT_LEFT failed.");
+        let publisher = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            publisher::Channel::<TirePressure>::CHANNEL_ELEVEN,
+        )
+        .await
+        .expect("Create pressure_pub::CHANNEL_ELEVEN failed.");
+
+        // Make sure publisher is registered on the channel.
+        tokio::time::sleep(CHANNEL_PROCESSING_DURATION).await;
 
         // WHEN publishing a new message.
         let pressure_after_recreation = 43679;
@@ -479,17 +558,18 @@ mod test {
             .publish(&TirePressure { pressure: pressure_after_recreation, ..Default::default() })
             .expect("pressure_pub publishing failed.");
 
-        // THEN subscriber does not receive any message from this new publisher
-        thread::sleep(PUBLISHER_DROP_SIGNAL_PROPAGATION);
+        // THEN subscriber does receive messages from the new publisher
         let read = subscriber.read_next_messages(1).unwrap();
-        assert_eq!(read.len(), 0);
+        assert_eq!(read.len(), 1);
+        assert_eq!(read[0].pressure, pressure_after_recreation);
     }
 
     #[tokio::test]
     async fn test_pub_sub_instant_read_after_publisher_drop() {
         let instance_name = "pubsub-instant-after-publisher-drop";
         // GIVEN Publisher and all the different subscription option
-        let (sdv_comms, pressure_pub, _, _, _, instant_reader) = setup(instance_name).await;
+        let (sdv_comms, pressure_pub, _, _, _, instant_reader) =
+            setup(instance_name, "CHANNEL_TWELVE").await;
 
         // WHEN publishing a message.
         let pressure = 43678;
@@ -518,14 +598,12 @@ mod test {
         assert_eq!(instant_read.unwrap_err().status_code(), SdvStatusCode::Internal);
 
         // WHEN the publisher is re-created
-        let mut publishing_bundle = PublishingBundle::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("PublishingBundle creation failed.");
-        let publisher = publishing_bundle
-            .take_publisher(publisher::Channel::<TirePressure>::FRONT_LEFT)
-            .expect("taking pressure_pub::FRONT_LEFT failed.");
+        let publisher = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            publisher::Channel::<TirePressure>::CHANNEL_TWELVE,
+        )
+        .await
+        .expect("Create pressure_pub::CHANNEL_TWELVE failed.");
 
         // WHEN publishing a new message.
         let pressure_after_recreation = 43679;
@@ -544,7 +622,8 @@ mod test {
     async fn test_pub_sub_history_read_after_publisher_drop() {
         let instance_name = "pubsub-history-after-publisher-drop";
         // GIVEN Publisher and all the different subscription option
-        let (sdv_comms, pressure_pub, _, _, history, _) = setup(instance_name).await;
+        let (sdv_comms, pressure_pub, _, _, history, _) =
+            setup(instance_name, "CHANNEL_THIRTEEN").await;
 
         // WHEN publishing a message.
         let pressure = 43678;
@@ -575,15 +654,12 @@ mod test {
         assert_eq!(read_history[0].pressure, pressure);
 
         // WHEN the publisher is re-created
-        let mut publishing_bundle = PublishingBundle::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("PublishingBundle creation failed.");
-
-        let publisher = publishing_bundle
-            .take_publisher(publisher::Channel::<TirePressure>::FRONT_LEFT)
-            .expect("taking pressure_pub::FRONT_LEFT failed.");
+        let publisher = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            publisher::Channel::<TirePressure>::CHANNEL_THIRTEEN,
+        )
+        .await
+        .expect("Create pressure_pub::CHANNEL_THIRTEEN failed.");
 
         // WHEN publishing a new message.
         let pressure_after_recreation = 43679;
@@ -604,20 +680,23 @@ mod test {
         let sdv_comms = create_sdv_comms(instance_name);
 
         // GIVEN a publisher.
-        let _publishing_bundle = PublishingBundle::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("PublishingBundle creation failed.");
+        let _publisher = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            publisher::Channel::<TirePressure>::CHANNEL_FOURTEEN,
+        )
+        .await
+        .expect("Create pressure_pub::CHANNEL_FOURTEEN failed.");
 
         // WHEN creating another publisher with same sdv_comms object
-        let publishing_bundle_2 =
-            PublishingBundle::builder().set_comms(sdv_comms.clone()).build().await;
+        let publisher_2 = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            publisher::Channel::<TirePressure>::CHANNEL_FOURTEEN,
+        )
+        .await;
 
         // THEN an error is returned
-        assert!(publishing_bundle_2.is_err());
-        let _ = publishing_bundle_2
-            .inspect_err(|e| assert_eq!(e.status_code(), SdvStatusCode::Internal));
+        assert!(publisher_2.is_err());
+        let _ = publisher_2.inspect_err(|e| assert_eq!(e.status_code(), SdvStatusCode::Internal));
     }
 
     #[tokio::test]
@@ -626,20 +705,17 @@ mod test {
         let sdv_comms = create_sdv_comms(instance_name);
 
         // GIVEN a publisher, publishing two messages
-        let mut publishing_bundle = PublishingBundle::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("PublishingBundle creation failed.");
-
-        let publisher = publishing_bundle
-            .take_publisher(publisher::Channel::<TirePressure>::FRONT_LEFT)
-            .expect("taking publisher::FRONT_LEFT failed.");
+        let publisher = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            publisher::Channel::<TirePressure>::CHANNEL_FIFTEEN,
+        )
+        .await
+        .expect("Create publisher::CHANNEL_FIFTEEN failed.");
 
         // AND GIVEN an observer
         let mut observer_from_beginning = clientlib::create_observer(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            subscriber::Channel::<TirePressure>::CHANNEL_FIFTEEN,
             &SubscribeOptions::builder()
                 .instance_name(instance_name)
                 .read_on_subscribe(true)
@@ -673,7 +749,7 @@ mod test {
         // WHEN creating an observer after messages have been published
         let mut observer_read_on_subscribe = clientlib::create_observer(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            subscriber::Channel::<TirePressure>::CHANNEL_FIFTEEN,
             &SubscribeOptions::builder()
                 .instance_name(instance_name)
                 .read_on_subscribe(true)
@@ -697,7 +773,7 @@ mod test {
         // WHEN creating an observer without read on subscribe
         let mut observer_no_read_on_subscribe = clientlib::create_observer(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            subscriber::Channel::<TirePressure>::CHANNEL_FIFTEEN,
             &SubscribeOptions::builder()
                 .instance_name(instance_name)
                 .read_on_subscribe(false)

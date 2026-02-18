@@ -43,15 +43,8 @@ pub async fn create_subscriber<Channel: subscriber::Channel>(
     channel: &Channel,
     options: &SubscribeOptions,
 ) -> SdvResult<Subscriber<Channel::ProtoMessage>> {
-    let subscribe_handle = if Channel::IS_MULTIPUB {
-        // For multi-pub, subscribe to a message type.
-        comms.subscribe_by_type(&Channel::type_name()?, options).await?
-    } else {
-        // For single-pub, subscribe to a specific publication.
-        let publication =
-            comms.find_publication(&UnitQuery::Name(to_unit_name(channel, options)?)).await?;
-        publication.subscribe(options).await?
-    };
+    let subscribe_handle =
+        comms.create_subscribe_handle(&Channel::type_name()?, channel.get_name(), options).await?;
     Ok(Subscriber::<Channel::ProtoMessage>::new(subscribe_handle))
 }
 
