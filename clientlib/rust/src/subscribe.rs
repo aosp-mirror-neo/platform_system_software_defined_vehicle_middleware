@@ -90,16 +90,9 @@ pub async fn create_history<Channel: subscriber::Channel>(
     channel: &Channel,
     options: &SubscribeOptions,
 ) -> SdvResult<History<Channel::ProtoMessage>> {
-    if Channel::IS_MULTIPUB {
-        Err(SdvStatus::with_message(
-            SdvStatusCode::Unimplemented,
-            "History is not supported for Multipub channels.",
-        ))
-    } else {
-        let publication =
-            comms.find_publication(&UnitQuery::Name(to_unit_name(channel, options)?)).await?;
-        Ok(History::<Channel::ProtoMessage>::new(publication.create_history(options).await?))
-    }
+    let history_handle =
+        comms.create_history_handle(&Channel::type_name()?, channel.get_name(), options).await?;
+    Ok(History::<Channel::ProtoMessage>::new(history_handle))
 }
 
 /// Creates a new instant reader for a specific subscription channel.

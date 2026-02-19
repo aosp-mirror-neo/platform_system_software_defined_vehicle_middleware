@@ -190,6 +190,9 @@ mod test {
         .await
         .expect("Create TirePressure history failed.");
 
+        // Make sure publisher is registered on the channel.
+        tokio::time::sleep(CHANNEL_PROCESSING_DURATION).await;
+
         (sdv_comms, publisher, observer, subscriber, history, instant_reader)
     }
 
@@ -342,8 +345,11 @@ mod test {
         let instance_name = "history-created-before-publisher";
         let sdv_comms = create_sdv_comms(instance_name);
 
-        let subscribe_option =
-            &SubscribeOptions::builder().instance_name(instance_name).build().unwrap();
+        let subscribe_option = &SubscribeOptions::builder()
+            .message_count(HISTORY_BUFFER_SIZE)
+            .instance_name(instance_name)
+            .build()
+            .unwrap();
 
         let history = clientlib::create_history(
             sdv_comms.as_ref(),
@@ -352,7 +358,7 @@ mod test {
         )
         .await;
         assert!(history.is_err());
-        let _ = history.inspect_err(|e| assert_eq!(e.status_code(), SdvStatusCode::Unavailable));
+        let _ = history.inspect_err(|e| assert_eq!(e.status_code(), SdvStatusCode::NotFound));
     }
 
     #[tokio::test]
