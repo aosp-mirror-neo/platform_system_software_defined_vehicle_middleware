@@ -123,7 +123,7 @@ mod test {
         let message_descriptor = file_descriptors
             .iter()
             .find_map(|fd| {
-                fd.message_by_full_name(".com.sdv.google.test_messages.RepeatedNestedTestMessage")
+                fd.message_by_full_name(".com.android.sdv.test_messages.RepeatedNestedTestMessage")
             })
             .expect("message descriptor was not found");
         message_descriptor
