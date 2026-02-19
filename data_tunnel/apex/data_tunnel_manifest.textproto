@@ -23,14 +23,14 @@
 # This is a config-only manifest and the `IDataTunnelAgent` should
 # be never started or executed by user(s).
 sdv_service_bundle_metadata {
-    # This name must match the agent's Bundle Name, and should be never used
-    # for starting or executing by user(s).
-    name: "IDataTunnelAgent"
-    version_number: 1
-    version_name: "1"
+  # This name must match the agent's Bundle Name, and should be never used
+  # for starting or executing by user(s).
+  name: "IDataTunnelAgent"
+  version_number: 1
+  version_name: "1"
 
-    # Reference the manifest itself to mark this as a config-only declaration.
-    native_library_path: "etc/sdv_service_bundles_manifest.textproto"
+  # Reference the manifest itself to mark this as a config-only declaration.
+  native_library_path: "etc/sdv_service_bundles_manifest.textproto"
 
-    access_control_list_policy_path: "etc/acl.textproto"
+  authorization_policy_path: "etc/acl.textproto"
 }
