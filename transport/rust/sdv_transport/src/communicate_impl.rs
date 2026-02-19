@@ -171,6 +171,12 @@ impl Communicate for SdvComms {
         Ok(Box::new(SdvSubscriber::new(dt_subscriber)))
     }
 
+    #[allow(useless_deprecated)]
+    #[allow(unused_attributes)]
+    #[deprecated(
+        since = "2.0.0",
+        note = "Topic-based subscribe methods are called instead, e.g. `create_message_stream`"
+    )]
     async fn observe_by_type(
         &self,
         type_name: &TypeName,

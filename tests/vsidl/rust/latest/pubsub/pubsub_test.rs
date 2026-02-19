@@ -317,7 +317,7 @@ mod test {
         )
         .await;
         assert!(observer.is_err());
-        let _ = observer.inspect_err(|e| assert_eq!(e.status_code(), SdvStatusCode::Unavailable));
+        let _ = observer.inspect_err(|e| assert_eq!(e.status_code(), SdvStatusCode::NotFound));
     }
 
     #[tokio::test]
@@ -484,8 +484,9 @@ mod test {
         // WHEN the publisher is dropped
         drop(pressure_pub);
 
-        // THEN the observer's stream sends us None to signal that the subscription became invalid
-        assert!(observer.next().await.is_none());
+        // no further notification is received
+        let result = tokio::time::timeout(OBSERVER_TIMEOUT_DURATION, observer.next()).await;
+        assert!(result.is_err()); // Timeout
 
         // WHEN the publisher is re-created
         let publisher = clientlib::create_publisher(
@@ -495,17 +496,19 @@ mod test {
         .await
         .expect("Create pressure_pub::CHANNEL_TEN failed.");
 
+        // Make sure publisher is registered on the channel.
+        tokio::time::sleep(CHANNEL_PROCESSING_DURATION).await;
+
         // WHEN publishing a new message.
         let pressure_after_recreation = 43679;
         publisher
             .publish(&TirePressure { pressure: pressure_after_recreation, ..Default::default() })
             .expect("pressure_pub publishing failed.");
 
-        // THEN the observer's stream must still return None
-        assert!(tokio::time::timeout(PUBLISHER_DROP_SIGNAL_PROPAGATION, observer.next())
-            .await
-            .expect("We must get None from the stream instead of time out.")
-            .is_none());
+        // THEN the observer's stream returns the new message
+        let received = observer.next().await.unwrap().unwrap();
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].pressure, pressure_after_recreation);
     }
 
     #[tokio::test]
@@ -701,6 +704,9 @@ mod test {
 
     #[tokio::test]
     async fn test_pub_sub_observer_notification_after_message_published() {
+        // Topics depends on a SD listener that needs a running binder thread.
+        binder::ProcessState::start_thread_pool();
+
         let instance_name = "pubsub-observer-created-after-data";
         let sdv_comms = create_sdv_comms(instance_name);
 
@@ -724,6 +730,9 @@ mod test {
         )
         .await
         .expect("Create TirePressure observer failed.");
+
+        // Make sure publisher is registered on the channel.
+        tokio::time::sleep(CHANNEL_PROCESSING_DURATION).await;
 
         // WHEN publishing two messages
         let pressure_1 = 43678;
