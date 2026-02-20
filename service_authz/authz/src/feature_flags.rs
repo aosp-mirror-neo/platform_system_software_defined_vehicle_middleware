@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Rudimentary feature flags, before we switch to proper feature flags setup.
+//! Wrappers for feature flags used in Authz.
 
-// "Feature flag" for enabling permissions-based checks in Authz.
+// Feature flag for enabling permissions-based checks in Authz.
 pub fn enable_permissions() -> bool {
-    cfg!(test)
+    sdv_middleware_flags::enable_authz_permissions()
 }
