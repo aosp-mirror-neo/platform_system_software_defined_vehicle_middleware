@@ -66,7 +66,7 @@ public:
 
     // Fake implementation of IConnection::ReceiveData.  Returns data (or a failure event) enqueued
     // by the "Enqueue*" methods below.  If no data or failure event has been enqueued
-    virtual size_t ReceiveData(void* buffer, size_t buffer_size) override;
+    virtual ReceivedData ReceiveData() override;
 
     // Enqueue the given buffer to be returned ReceiveData; if length is not provided the entire
     // remaining contents of the buffer are read.  Consumes length bytes from the reader.

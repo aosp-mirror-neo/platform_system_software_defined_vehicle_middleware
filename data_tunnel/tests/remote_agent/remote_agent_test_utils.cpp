@@ -24,7 +24,7 @@ namespace android::sdv::dt::agent::test {
 
 // Fake IConnection::ReceiveData implementation.
 // Retrieves the next block from receive_queue_, or blocks until one is available.
-size_t FakeConnection::ReceiveData(void* buffer, size_t buffer_size) {
+ReceivedData FakeConnection::ReceiveData() {
     receive_call_count_++;
 
     std::unique_lock guard(lock_);
@@ -33,14 +33,16 @@ size_t FakeConnection::ReceiveData(void* buffer, size_t buffer_size) {
     // Times out after 10 seconds to keep badly-written tests from running "forever".
     CHECK(cv_.wait_for(guard, std::chrono::seconds(10), [&]() { return !receive_queue_.empty(); }));
 
-    const auto& payload_data = receive_queue_.front();
-    auto payload_size = payload_data.Size();
-    CHECK(payload_size <= buffer_size);
-    if (payload_size) {
-        memcpy(buffer, payload_data.Ptr(), payload_size);
-    }
+    // Moving ownership into a shared so that our std::function below can capture it.
+    auto payload_data = std::make_shared<RawBuffer>(std::move(receive_queue_.front()));
     receive_queue_.pop_front();
-    return payload_size;
+
+    if (payload_data->Size() == 0) {
+        return ReceivedData();
+    }
+
+    return ReceivedData(std::span<const uint8_t>{payload_data->Ptr(), payload_data->Size()},
+                        [payload_data](auto) mutable { payload_data.reset(); });
 }
 
 // Enqueues a block of raw data from reader to be returned by a call to ReceiveData.  Consumes
@@ -74,7 +76,7 @@ void FakeConnection::EnqueueParcelForReceive(int32_t parcel_id, const proto::Pay
     CHECK(parcel.Serialize(writer, payload));
 
     // Delegate actual enqueue to raw data method.
-    BufferReader reader(writer);
+    BufferReader reader({buffer.Ptr(), writer.GetPos()});
     EnqueueDataForReceive(reader);
 }
 
@@ -130,7 +132,7 @@ std::unique_ptr<proto::Payload> FakeConnection::GetNextSentDataIfPayload(
 
     // Try to deserialize front entry without removing from queue.
     auto& buffer = sent_queue_.front();
-    BufferReader reader(buffer, buffer.Size());
+    BufferReader reader({buffer.Ptr(), buffer.Size()});
     auto [parse_result, payload] = proto::Parcel::Deserialize(reader, nullptr);
 
     // Return nothing if parse fails or result doesn't match predicate.
