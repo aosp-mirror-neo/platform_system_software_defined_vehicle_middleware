@@ -14,14 +14,13 @@
 
 //! ACL Policy type parser from proto.
 
+use crate::feature_flags;
 use crate::AclPolicyModel;
 
 use std::collections::HashMap;
-#[cfg(feature = "permissions")]
 use std::collections::HashSet;
 use std::str::FromStr;
 
-#[cfg(feature = "permissions")]
 use anyhow::bail;
 use anyhow::{anyhow, Context};
 use protobuf::MessageDyn;
@@ -30,14 +29,11 @@ use sdv_authz_policy_proto_rust::authz_policy::{
     Acl as AclProto, AuthzPolicy as AclPolicyProto, UnitAclMapping as UnitAclMappingProto,
 };
 
-#[cfg(feature = "permissions")]
 use sdv_authz_policy_proto_rust::authz_policy::{
     Client as CallPermissionProto, Publisher as PublishPermissionProto,
     Server as ServePermissionProto, Subscriber as SubscribePermissionProto,
 };
-#[cfg(feature = "permissions")]
 use sdv_comms::sd::UnitType;
-#[cfg(feature = "permissions")]
 use sdv_comms_id::names::TopicName;
 use sdv_comms_id::names::{ServiceUnitName, UnitTypeName};
 use tracing::instrument;
@@ -52,32 +48,29 @@ pub(crate) fn parse_acl_policy_from_proto(
     let service_unit_acls_map = parse_service_units_acls_mapping(&acl_policy_proto, &acls_map)?;
     let unit_type_acls_map = parse_unit_types_acls_mapping(&acl_policy_proto, &acls_map)?;
 
-    #[cfg(feature = "permissions")]
-    {
-        let publish_permissions = parse_publish_permissions(&acl_policy_proto.publisher)?;
-        let subscribe_permissions = parse_subscribe_permissions(&acl_policy_proto.subscriber)?;
-        let serve_permissions = parse_serve_permissions(&acl_policy_proto.server)?;
-        let call_permissions = parse_call_permissions(&acl_policy_proto.client)?;
+    let publish_permissions = parse_publish_permissions(&acl_policy_proto.publisher)?;
+    let subscribe_permissions = parse_subscribe_permissions(&acl_policy_proto.subscriber)?;
+    let serve_permissions = parse_serve_permissions(&acl_policy_proto.server)?;
+    let call_permissions = parse_call_permissions(&acl_policy_proto.client)?;
 
-        Ok(AclPolicyModel::new_with_permissions(
-            service_unit_acls_map,
-            unit_type_acls_map,
-            publish_permissions,
-            subscribe_permissions,
-            serve_permissions,
-            call_permissions,
-            acl_policy_proto.allow_read_all,
-        ))
-    }
-
-    #[cfg(not(feature = "permissions"))]
-    Ok(AclPolicyModel::new(service_unit_acls_map, unit_type_acls_map))
+    Ok(AclPolicyModel::new(
+        service_unit_acls_map,
+        unit_type_acls_map,
+        publish_permissions,
+        subscribe_permissions,
+        serve_permissions,
+        call_permissions,
+        acl_policy_proto.allow_read_all,
+    ))
 }
 
-#[cfg(feature = "permissions")]
 fn parse_publish_permissions(
     proto_perms: &[PublishPermissionProto],
 ) -> anyhow::Result<HashSet<(UnitType, Option<TopicName>)>> {
+    if !feature_flags::enable_permissions() {
+        return Ok(HashSet::new());
+    }
+
     let mut set = HashSet::new();
     for perm in proto_perms {
         let type_name = UnitType::from_str(&perm.message)
@@ -104,10 +97,13 @@ fn parse_publish_permissions(
     Ok(set)
 }
 
-#[cfg(feature = "permissions")]
 fn parse_subscribe_permissions(
     proto_perms: &[SubscribePermissionProto],
 ) -> anyhow::Result<HashSet<(UnitType, Option<TopicName>)>> {
+    if !feature_flags::enable_permissions() {
+        return Ok(HashSet::new());
+    }
+
     let mut set = HashSet::new();
     for perm in proto_perms {
         let type_name = UnitType::from_str(&perm.message)
@@ -132,10 +128,13 @@ fn parse_subscribe_permissions(
     Ok(set)
 }
 
-#[cfg(feature = "permissions")]
 fn parse_serve_permissions(
     proto_perms: &[ServePermissionProto],
 ) -> Result<HashSet<(UnitType, Option<ServiceUnitName>)>, anyhow::Error> {
+    if !feature_flags::enable_permissions() {
+        return Ok(HashSet::new());
+    }
+
     let mut set = HashSet::new();
     for perm in proto_perms {
         let type_name = UnitType::from_str(&perm.service)
@@ -160,10 +159,13 @@ fn parse_serve_permissions(
     Ok(set)
 }
 
-#[cfg(feature = "permissions")]
 fn parse_call_permissions(
     proto_perms: &[CallPermissionProto],
 ) -> anyhow::Result<HashSet<(UnitType, Option<ServiceUnitName>)>> {
+    if !feature_flags::enable_permissions() {
+        return Ok(HashSet::new());
+    }
+
     let mut set = HashSet::new();
     for perm in proto_perms {
         let type_name = UnitType::from_str(&perm.service)
@@ -354,9 +356,12 @@ mod tests {
         assert!(acl_policy.has_unit_type(&UnitTypeName::from_str("TirePressureTopic2").unwrap()));
     }
 
-    #[cfg(feature = "permissions")]
     #[test]
     fn test_parse_permissions_population() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+
         let proto: AclPolicyProto = text_format::parse_from_str(
             r#"
             publisher {
