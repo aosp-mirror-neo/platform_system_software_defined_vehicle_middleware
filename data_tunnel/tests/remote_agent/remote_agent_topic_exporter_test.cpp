@@ -45,6 +45,7 @@ namespace {
 
 static const char* kTestVmName = "testvm2";
 static const char* kTestTopicName = "test-topic-name";
+static uint32_t kTestTopicSubId = 42;
 
 class RemoteAgentTopicExporterTest : public ::testing::Test {
 protected:
@@ -77,7 +78,7 @@ protected:
 
         auto sub_result_payload = connection_.GetNextSentDataIfPayload<Payload_SubscribeResult>();
         ASSERT_TRUE(sub_result_payload);
-        ASSERT_EQ(sub_result_payload->topic_name_, kTestTopicName);
+        ASSERT_EQ(sub_result_payload->subscriber_pub_id_, kTestTopicSubId);
         ASSERT_EQ(sub_result_payload->result_, Payload_SubscribeResult::Result_Ok);
         ASSERT_EQ(sub_result_payload->message_size_, kTestMessageSize);
         ASSERT_EQ(sub_result_payload->message_count_, kTestMessageCount);
@@ -108,7 +109,8 @@ protected:
     }
 
     void SimulateSubscribeRequest() {
-        exporter_.HandleSubscribeRequest(Payload_SubscribeRequest(kTestTopicName), send_buffer_);
+        exporter_.HandleSubscribeRequest(Payload_SubscribeRequest(kTestTopicName, kTestTopicSubId),
+                                         send_buffer_);
     }
 
     // Ownership of the connection will be handed into the RemoteAgentServerSession, but tests
@@ -128,7 +130,7 @@ TEST_F(RemoteAgentTopicExporterTest, HandleSubscribeRequest_SendsFailureForUnkno
 
     auto payload = connection_.GetNextSentDataIfPayload<Payload_SubscribeResult>();
     ASSERT_TRUE(payload);
-    EXPECT_EQ(payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(payload->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(payload->result_, Payload_SubscribeResult::Result_Failure);
 }
 
@@ -139,7 +141,7 @@ TEST_F(RemoteAgentTopicExporterTest, HandleSubscribeRequest_SendsFailureForRemot
 
     auto payload = connection_.GetNextSentDataIfPayload<Payload_SubscribeResult>();
     ASSERT_TRUE(payload);
-    EXPECT_EQ(payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(payload->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(payload->result_, Payload_SubscribeResult::Result_Failure);
 }
 
@@ -152,7 +154,7 @@ TEST_F(RemoteAgentTopicExporterTest, HandleSubscribeRequest_SendsSuccessAndAlrea
 
     auto sub_result_payload = connection_.GetNextSentDataIfPayload<Payload_SubscribeResult>();
     ASSERT_TRUE(sub_result_payload);
-    EXPECT_EQ(sub_result_payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(sub_result_payload->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(sub_result_payload->result_, Payload_SubscribeResult::Result_Ok);
     EXPECT_EQ(sub_result_payload->message_size_, kTestMessageSize);
     EXPECT_EQ(sub_result_payload->message_count_, kTestMessageCount);
@@ -170,7 +172,7 @@ TEST_F(RemoteAgentTopicExporterTest, HandleSubscribeRequest_SendsSuccessAndNoDat
 
     auto sub_result_payload = connection_.GetNextSentDataIfPayload<Payload_SubscribeResult>();
     ASSERT_TRUE(sub_result_payload);
-    EXPECT_EQ(sub_result_payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(sub_result_payload->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(sub_result_payload->result_, Payload_SubscribeResult::Result_Ok);
     EXPECT_EQ(sub_result_payload->message_size_, kTestMessageSize);
     EXPECT_EQ(sub_result_payload->message_count_, kTestMessageCount);
@@ -184,7 +186,7 @@ TEST_F(RemoteAgentTopicExporterTest, ActiveSubscription_SendsNewlyWrittenDataAnd
 
     auto data_payload = connection_.GetNextSentDataIfPayload<Payload_TopicRawData>();
     ASSERT_TRUE(data_payload);
-    EXPECT_EQ(data_payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(data_payload->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(data_payload->data_size_, 2 * kTestMessageSize);
     EXPECT_GE(data_payload->buffer_.Size(), 2 * kTestMessageSize);
     const auto* messages = reinterpret_cast<const TestMessageType*>(data_payload->buffer_.Ptr());
@@ -195,7 +197,7 @@ TEST_F(RemoteAgentTopicExporterTest, ActiveSubscription_SendsNewlyWrittenDataAnd
 
     auto destroyed_payload = connection_.GetNextSentDataIfPayload<Payload_TopicDestroyed>();
     ASSERT_TRUE(destroyed_payload);
-    EXPECT_EQ(destroyed_payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(destroyed_payload->subscriber_pub_id_, kTestTopicSubId);
 }
 
 TEST_F(RemoteAgentTopicExporterTest, ActiveSubscription_RecoversFromOverflow) {
@@ -208,7 +210,7 @@ TEST_F(RemoteAgentTopicExporterTest, ActiveSubscription_RecoversFromOverflow) {
     // so we get a half-buffer worth of messages, here.
     auto data_payload = connection_.GetNextSentDataIfPayload<Payload_TopicRawData>();
     ASSERT_TRUE(data_payload);
-    EXPECT_EQ(data_payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(data_payload->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(data_payload->data_size_, 2 * kTestMessageSize);
     EXPECT_GE(data_payload->buffer_.Size(), 2 * kTestMessageSize);
     const auto* messages = reinterpret_cast<const TestMessageType*>(data_payload->buffer_.Ptr());
@@ -229,7 +231,7 @@ TEST_F(RemoteAgentTopicExporterTest, HandleSubscribeRequest_WorksForLargeMessage
 
     auto sub_result_payload = connection_.GetNextSentDataIfPayload<Payload_SubscribeResult>();
     ASSERT_TRUE(sub_result_payload);
-    EXPECT_EQ(sub_result_payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(sub_result_payload->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(sub_result_payload->result_, Payload_SubscribeResult::Result_Ok);
     EXPECT_EQ(sub_result_payload->message_size_, kBigMessageSize);
     EXPECT_EQ(sub_result_payload->message_count_, kTestMessageCount);
@@ -247,14 +249,14 @@ TEST_F(RemoteAgentTopicExporterTest, HandleSubscribeRequest_WorksForLargeMessage
     // Expect two parcels; messages > 8kb are always sent one per parcel.
     auto data_payload_1 = connection_.GetNextSentDataIfPayload<Payload_TopicRawData>();
     ASSERT_TRUE(data_payload_1);
-    EXPECT_EQ(data_payload_1->topic_name_, kTestTopicName);
+    EXPECT_EQ(data_payload_1->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(data_payload_1->data_size_, kBigMessageSize);
     ASSERT_GE(data_payload_1->buffer_.Size(), kBigMessageSize);
     EXPECT_EQ(memcmp(data_payload_1->buffer_.Ptr(), &big_messages[0], kBigMessageSize), 0);
 
     auto data_payload_2 = connection_.GetNextSentDataIfPayload<Payload_TopicRawData>();
     ASSERT_TRUE(data_payload_2);
-    EXPECT_EQ(data_payload_2->topic_name_, kTestTopicName);
+    EXPECT_EQ(data_payload_2->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(data_payload_2->data_size_, kBigMessageSize);
     ASSERT_GE(data_payload_2->buffer_.Size(), kBigMessageSize);
     EXPECT_EQ(memcmp(data_payload_2->buffer_.Ptr(), &big_messages[1], kBigMessageSize), 0);
@@ -328,14 +330,14 @@ TEST_F(RemoteAgentTopicExporterTest, ProcessTopicDataAvailable_BreaksUpLargeData
     // Expect 3 parcels:  Two full and one for the remainder
     auto data_payload_1 = connection_.GetNextSentDataIfPayload<Payload_TopicRawData>();
     ASSERT_TRUE(data_payload_1);
-    EXPECT_EQ(data_payload_1->topic_name_, kTestTopicName);
+    EXPECT_EQ(data_payload_1->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(data_payload_1->data_size_, max_payload_size);
     ASSERT_GE(data_payload_1->buffer_.Size(), max_payload_size);
     EXPECT_EQ(memcmp(data_payload_1->buffer_.Ptr(), write_data.data(), max_payload_size), 0);
 
     auto data_payload_2 = connection_.GetNextSentDataIfPayload<Payload_TopicRawData>();
     ASSERT_TRUE(data_payload_2);
-    EXPECT_EQ(data_payload_2->topic_name_, kTestTopicName);
+    EXPECT_EQ(data_payload_2->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(data_payload_2->data_size_, max_payload_size);
     ASSERT_GE(data_payload_2->buffer_.Size(), max_payload_size);
     EXPECT_EQ(memcmp(data_payload_2->buffer_.Ptr(), write_data.data() + max_payload_size,
@@ -345,7 +347,7 @@ TEST_F(RemoteAgentTopicExporterTest, ProcessTopicDataAvailable_BreaksUpLargeData
     auto tail_payload_size = write_size - (2 * max_payload_size);
     auto data_payload_3 = connection_.GetNextSentDataIfPayload<Payload_TopicRawData>();
     ASSERT_TRUE(data_payload_3);
-    EXPECT_EQ(data_payload_3->topic_name_, kTestTopicName);
+    EXPECT_EQ(data_payload_3->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(data_payload_3->data_size_, tail_payload_size);
     ASSERT_GE(data_payload_3->buffer_.Size(), tail_payload_size);
     EXPECT_EQ(memcmp(data_payload_3->buffer_.Ptr(), write_data.data() + (2 * max_payload_size),
