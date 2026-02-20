@@ -38,6 +38,8 @@ mod test {
 
     // Timeout to ensure propagation of Availability updates across discovery processes.
     const EVENT_STREAM_TIMEOUT: Duration = Duration::from_millis(500);
+    // Time required by Topic multiplexer to learn about publishers
+    const TOPIC_PROCESSING_DURATION: Duration = Duration::from_millis(200);
 
     #[tokio::test]
     async fn test_publication_availability() {
@@ -75,7 +77,7 @@ mod test {
 
         // THEN observer creation failed.
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap().status_code(), SdvStatusCode::Unavailable);
+        assert_eq!(result.err().unwrap().status_code(), SdvStatusCode::NotFound);
 
         // --------------------- Publisher Initially Available -----------------------
 
@@ -106,6 +108,10 @@ mod test {
         let pressure_pub = publishing_bundle
             .take_publisher(publisher::Channel::<TirePressure>::CHANNEL_ZERO)
             .expect("taking publisher Channel::CHANNEL_ZERO failed.");
+
+        // SLEEP to ensure the topic multiplexer is created on a separate process.
+        thread::sleep(TOPIC_PROCESSING_DURATION);
+
         pressure_pub
             .publish(&TirePressure { pressure, ..Default::default() })
             .expect("pressure_pub pulishing failed.");
@@ -125,8 +131,8 @@ mod test {
             Ok(Some(Availability::Unavailable))
         );
 
-        // THEN observer stream becomes invalid and always should return None
-        assert!(observer.next().await.is_none());
+        // SLEEP to ensure the topic multiplexer is created on a separate process.
+        thread::sleep(TOPIC_PROCESSING_DURATION);
 
         // --------------------- Publisher Available Again after Drop -----------------------
 
@@ -150,21 +156,21 @@ mod test {
         let pressure_pub = publishing_bundle
             .take_publisher(publisher::Channel::<TirePressure>::CHANNEL_ZERO)
             .expect("taking publisher Channel::CHANNEL_ZERO failed.");
+
+        // SLEEP to ensure the topic multiplexer is created on a separate process.
+        thread::sleep(TOPIC_PROCESSING_DURATION);
+
         pressure_pub
             .publish(&TirePressure { pressure: pressure_two, ..Default::default() })
-            .expect("pressure_pub pulishing failed.");
+            .expect("pressure_pub publishing failed.");
 
-        // THEN the observer's stream must still return None
-        assert!(tokio::time::timeout(EVENT_STREAM_TIMEOUT, observer.next())
-            .await
-            .expect("We must get None from the stream instead of time out.")
-            .is_none());
+        let received = observer.next().await.unwrap().unwrap();
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].pressure, pressure_two);
     }
 
     #[tokio::test]
     async fn test_multipub_availability() {
-        const MULTIPUB_PROCESSING_DURATION: Duration = Duration::from_millis(200);
-
         // We need to init Binder for the event registration stream
         // as Binder is used internally by SDV Service Discovery.
         // Events are not emitted unless `binder::ProcessState::start_thread_pool()`
@@ -220,8 +226,8 @@ mod test {
         .await
         .expect("Create CabinTemperature observer failed.");
 
-        // SLEEP to ensure the multiplexer is created on a separate process.
-        thread::sleep(MULTIPUB_PROCESSING_DURATION);
+        // SLEEP to ensure the topic multiplexer is created on a separate process.
+        thread::sleep(TOPIC_PROCESSING_DURATION);
 
         let cabin_pub = cabin_sensor
             .take_publisher(cabin_publisher::Channel::<CabinTemperature>::MULTIPUB)

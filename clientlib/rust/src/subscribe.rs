@@ -67,15 +67,8 @@ pub async fn create_observer<Channel: subscriber::Channel>(
     channel: &Channel,
     options: &SubscribeOptions,
 ) -> SdvResult<Pin<Box<dyn Stream<Item = SdvResult<Vec<Channel::ProtoMessage>>> + Send>>> {
-    let byte_buffer_stream = if Channel::IS_MULTIPUB {
-        // For multi-pub, observe a message type.
-        comms.observe_by_type(&Channel::type_name()?, options).await?
-    } else {
-        // For single-pub, observe a specific publication.
-        let publication =
-            comms.find_publication(&UnitQuery::Name(to_unit_name(channel, options)?)).await?;
-        publication.observe(options).await?
-    };
+    let byte_buffer_stream =
+        comms.create_message_stream(&Channel::type_name()?, channel.get_name(), options).await?;
     Ok(observe::<Channel::ProtoMessage>(byte_buffer_stream))
 }
 
