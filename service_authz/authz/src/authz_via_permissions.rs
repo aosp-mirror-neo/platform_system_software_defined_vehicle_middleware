@@ -89,13 +89,13 @@ impl AuthzViaPermissions {
 
         if subject_policy.can_call(&object_unit_type, object_service_unit_name) {
             return AuthzResult::Permitted(format!(
-                "Permitted by 'call' permission on Unit Type '{}'",
+                "Permitted by 'client' permission on Unit Type '{}'",
                 object_unit_type.get_unit_type_name()
             ));
         }
 
         AuthzResult::ExplicitlyDenied(format!(
-            "Subject '{}' lacks 'call' permission for service unit '{}' on object '{}' with unit type '{}'",
+            "Subject '{}' lacks 'client' permission for service unit '{}' on object '{}' with unit type '{}'",
             subject_fqin,
             object_service_unit_name.name(),
             object_fqin,
@@ -171,9 +171,9 @@ mod tests {
             AclPolicyModel::try_from(
                 text_format::parse_from_str::<AclPolicyProto>(
                     r#"
-                call {
-                    server_type: "com.server.TargetType"
-                    service_unit_name: "correct-unit"
+                client {
+                    service: "com.server.TargetType"
+                    channel: "correct-unit"
                 }
             "#,
                 )
@@ -182,7 +182,7 @@ mod tests {
             .unwrap(),
         );
 
-        // 2. Setup Mock SD: Return a Unit Type that matches the policy's 'server_type'
+        // 2. Setup Mock SD: Return a Unit Type that matches the policy's 'service'
         let fake_unit_type = AidlUnitType {
             sdvPackageName: "com.server".to_string(),
             serviceBundleName: "ServerBundle".to_string(),
@@ -205,7 +205,11 @@ mod tests {
         // 5. Assert Success
         match result {
             AuthzResult::Permitted(msg) => {
-                assert!(msg.contains("Permitted by 'call' permission"), "Unexpected msg: {}", msg);
+                assert!(
+                    msg.contains("Permitted by 'client' permission"),
+                    "Unexpected msg: {}",
+                    msg
+                );
             }
             _ => panic!("Expected Permitted, got {:?}", result),
         }

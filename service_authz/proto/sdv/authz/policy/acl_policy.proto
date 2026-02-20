@@ -38,18 +38,27 @@ message AclPolicy {
   repeated UnitAclMapping service_units = 3;
 
   // Optional. List of permissions to publish Data Tunnel publications.
-  repeated PublishPermission publish = 4;
+  repeated Publisher publisher = 4;
 
   // Optional. List of permissions to discover and subscribe to Data Tunnel
   // publications.
-  repeated SubscribePermission subscribe = 5;
+  repeated Subscriber subscriber = 5;
 
   // Optional. List of permissions to serve an RPC server.
-  repeated ServePermission serve = 6;
+  repeated Server server = 6;
 
   // Optional. List of permissions to discover and call methods of an RPC
   // server.
-  repeated CallPermission call = 7;
+  repeated Client client = 7;
+
+  // Optional. Allow blanket "read" permission.
+  //
+  // Gives permission to discover and call all methods of all RPC servers,
+  // as well as discover and subscribe to all publications.
+  //
+  // WARNING: This flag grants elevated permissions and should be used with a
+  // good reason and for privileged agents only (e.g. Telemetry).
+  bool allow_read_all = 8;
 }
 
 message Acl {
@@ -86,37 +95,69 @@ message UnitAclMapping {
 }
 
 // Defines a permission to publish Data Tunnel publications.
-message PublishPermission {
-  // Required. Publication UnitType name.
-  string publication_type = 1;
+message Publisher {
+  // Required. Publication's protobuf message name.
+  string message = 1;
 
-  // Required. Topic name.
-  string topic_name = 2;
+  // Topic(s) to which this permission allows to publish to.
+  //
+  // Setting this field or setting 'allow_all_topics == true' is required.
+  repeated string topic = 2;
+
+  // Flag indicates that Service Bundle is allowed to register publication
+  // of the 'message' type with any 'topic'
+  //
+  // Should only be set to 'true' if the 'topic' field is not set.
+  bool allow_all_topics = 3;
 }
 
 // Defines a permission to discover and subscribe to Data Tunnel publications.
-message SubscribePermission {
-  // Required. Publication UnitType name.
-  string publication_type = 1;
+message Subscriber {
+  // Required. Publication's protobuf message name.
+  string message = 1;
 
-  // Required. Topic name.
-  string topic_name = 2;
+  // Topic(s) to which this permission allows to subscribe to.
+  //
+  // Setting this field or setting 'allow_all_topics == true' is required.
+  repeated string topic = 2;
+
+  // Flag indicates that Service Bundle is allowed to discover and subscribe to
+  // all publications of the 'message' type.
+  //
+  // Should only be set to 'true' if the 'topic' field is not set.
+  bool allow_all_topics = 3;
 }
 
 // Defines a permission to serve an RPC server.
-message ServePermission {
-  // Required. Server UnitType name.
-  string server_type = 1;
+message Server {
+  // Required. Server's protobuf service name.
+  string service = 1;
 
-  // Required. Service Unit name.
-  string service_unit_name = 2;
+  // Channel(s) which this permission allows to register.
+  //
+  // Setting this field or setting 'allow_all_channels == true' is required.
+  repeated string channel = 2;
+
+  // Flag indicates that Service Bundle is allowed to register RPC servers
+  // of the 'service' type with any 'channel'
+  //
+  // Should only be set to 'true' if the 'channel' field is not set.
+  bool allow_all_channels = 3;
 }
 
 // Defines a permission to discover and call methods of an RPC server.
-message CallPermission {
-  // Required. Server UnitType name.
-  string server_type = 1;
+message Client {
+  // Required. Server's protobuf service name.
+  string service = 1;
 
-  // Required. Service Unit name.
-  string service_unit_name = 2;
+  // Channel(s) which this permission allows to discover and call methods on.
+  //
+  // Setting this field or setting 'allow_all_channels == true' is required.
+  repeated string channel = 2;
+
+  // Flag indicates that Service Bundle is allowed to discover and call all RPC
+  // servers of the 'service' type.
+  //
+  // Should only be set to 'true' if the 'channel' field is not set.
+  bool allow_all_channels = 3;
 }
