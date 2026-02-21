@@ -25,18 +25,7 @@ import "reference.proto";
 import "dir/childdir.proto";
 import "another.proto";
 
-enum SampleVariants {
-  FOO = 0;
-  BAR = 1;
-}
-
 message SampleMessage {
-  option (.sdv.vsidl.v1.publication) = {
-    instances_enum: "SampleVariants"
-    message_count: 8
-    model: SINGLE_PUB
-  };
-
   message Nested {
     uint32 value = 1;
   }

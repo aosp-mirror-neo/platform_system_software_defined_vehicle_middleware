@@ -21,10 +21,5 @@ package sdv.vsidl.multipub.test;
 import "sdv/vsidl/v1/annotations.proto";
 
 message CabinTemperature {
-  option (.sdv.vsidl.v1.publication) = {
-    model: MULTI_PUB
-    message_count: 8
-  };
-
   uint32 temperature = 1;
 }
