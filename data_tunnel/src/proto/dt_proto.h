@@ -49,9 +49,9 @@ struct Payload {
         LastMessageResult,
     };
 
-    const Type type_;
+    const Type type;
 
-    Payload(Type type) : type_(type) {}
+    Payload(Type type) : type(type) {}
     virtual ~Payload() {}
 
     static uint32_t BaseSize() { return sizeof(int16_t); }
@@ -69,13 +69,9 @@ struct Payload {
         return true;
     }
 
-    bool operator==(const Payload& other) const {
-        return type_ == other.type_ && Size() == other.Size();
-    }
-
     template <typename T>
     const T* As() const {
-        if (type_ != T::payload_type) {
+        if (type != T::payload_type) {
             return nullptr;
         }
         return static_cast<const T*>(this);
@@ -85,61 +81,59 @@ struct Payload {
 struct Payload_Ping : public Payload {
     static constexpr Type payload_type = Type::Ping;
 
-    std::string vm_name_;
+    std::string vm_name;
     Payload_Ping() : Payload(Ping) {}
-    Payload_Ping(const std::string& vm_name) : Payload(Ping), vm_name_(vm_name) {}
+    Payload_Ping(const std::string& vm_name) : Payload(Ping), vm_name(vm_name) {}
 
     uint32_t Size() const override {
-        return Payload::Size() + static_cast<uint32_t>(sizeof(uint16_t) + vm_name_.length());
+        return Payload::Size() + static_cast<uint32_t>(sizeof(uint16_t) + vm_name.length());
     }
 
-    bool Serialize(BufferWriter& bw) const override { return bw.Write(vm_name_); }
+    bool Serialize(BufferWriter& bw) const override { return bw.Write(vm_name); }
 
-    bool Deserialize(BufferReader& br) override { return br.Read(vm_name_); }
+    bool Deserialize(BufferReader& br) override { return br.Read(vm_name); }
 };
 
 struct Payload_Pong : public Payload {
     static constexpr Type payload_type = Type::Pong;
 
-    uint32_t ping_id_;
+    uint32_t ping_id;
 
-    Payload_Pong(uint32_t ping_id = 0) : Payload(Pong), ping_id_(ping_id) {}
+    Payload_Pong(uint32_t ping_id = 0) : Payload(Pong), ping_id(ping_id) {}
 
     uint32_t Size() const override {
-        return Payload::Size() + static_cast<uint32_t>(sizeof(ping_id_));
+        return Payload::Size() + static_cast<uint32_t>(sizeof(ping_id));
     }
 
-    bool Serialize(BufferWriter& bw) const override { return bw.Write(ping_id_); }
+    bool Serialize(BufferWriter& bw) const override { return bw.Write(ping_id); }
 
-    bool Deserialize(BufferReader& br) override { return br.Read(ping_id_); }
+    bool Deserialize(BufferReader& br) override { return br.Read(ping_id); }
 };
 
 struct Payload_SubscribeRequest : public Payload {
     static constexpr Type payload_type = Type::SubscribeRequest;
 
-    std::string topic_name_;
-    int32_t subscriber_pub_id_;
+    std::string topic_name;
+    int32_t subscriber_pub_id;
 
     Payload_SubscribeRequest() : Payload(SubscribeRequest) {}
 
     Payload_SubscribeRequest(const std::string& topic_name, int32_t subscriber_pub_id) :
-          Payload(SubscribeRequest),
-          topic_name_(topic_name),
-          subscriber_pub_id_(subscriber_pub_id) {}
+          Payload(SubscribeRequest), topic_name(topic_name), subscriber_pub_id(subscriber_pub_id) {}
 
     uint32_t Size() const override {
         return Payload::Size() +
-                static_cast<uint32_t>(sizeof(uint16_t) + topic_name_.length() +
-                                      sizeof(subscriber_pub_id_));
+                static_cast<uint32_t>(sizeof(uint16_t) + topic_name.length() +
+                                      sizeof(subscriber_pub_id));
     }
 
     bool Serialize(BufferWriter& bw) const override {
         // TODO: don't modify write pointer in case of failure
-        return bw.Write(topic_name_) && bw.Write(subscriber_pub_id_);
+        return bw.Write(topic_name) && bw.Write(subscriber_pub_id);
     }
 
     bool Deserialize(BufferReader& br) override {
-        return br.Read(topic_name_) && br.Read(subscriber_pub_id_);
+        return br.Read(topic_name) && br.Read(subscriber_pub_id);
     }
 };
 
@@ -148,54 +142,54 @@ struct Payload_SubscribeResult : public Payload {
 
     static constexpr uint16_t Result_Ok = 0;
     static constexpr uint16_t Result_Failure = 1;
-    uint16_t result_;
-    uint32_t message_size_;
-    uint32_t message_count_;
-    int32_t subscriber_pub_id_;
-    uint8_t has_last_message_ = 0;
-    RawBuffer last_message_content_;
+    uint16_t result;
+    uint32_t message_size;
+    uint32_t message_count;
+    int32_t subscriber_pub_id;
+    uint8_t has_last_message = 0;
+    RawBuffer last_message_content;
 
     Payload_SubscribeResult() : Payload(SubscribeResult) {}
 
     uint32_t Size() const override {
         return Payload::Size() +
                 static_cast<uint32_t>(
-                        sizeof(result_) +                          // result_
-                        sizeof(message_size_) +                    // message_size_
-                        sizeof(message_count_) +                   // message_count_
-                        sizeof(subscriber_pub_id_) +               // subscriber_pub_id_
-                        sizeof(has_last_message_) +                // has_last_message_
-                        (has_last_message_ ? message_size_ : 0));  // last_message_content_
+                        sizeof(result) +                         // result
+                        sizeof(message_size) +                   // message_size
+                        sizeof(message_count) +                  // message_count
+                        sizeof(subscriber_pub_id) +              // subscriber_pub_id
+                        sizeof(has_last_message) +               // has_last_message
+                        (has_last_message ? message_size : 0));  // last_message_content
     }
 
     bool Serialize(BufferWriter& bw) const override {
         // TODO: don't modify write pointer in case of failure
-        if (has_last_message_ && last_message_content_.Size() != message_size_) {
+        if (has_last_message && last_message_content.Size() != message_size) {
             ALOGE("Error serializing SubscribeResult for publication %d:  last_message_content "
                   "size %zu does not match message_size %u.",
-                  subscriber_pub_id_, last_message_content_.Size(), message_size_);
+                  subscriber_pub_id, last_message_content.Size(), message_size);
             return false;
         }
-        return bw.Write(result_) && bw.Write(message_size_) && bw.Write(message_count_) &&
-                bw.Write(subscriber_pub_id_) && bw.Write(has_last_message_) &&
-                (has_last_message_ ? bw.Write(last_message_content_.Ptr(), message_size_) : true);
+        return bw.Write(result) && bw.Write(message_size) && bw.Write(message_count) &&
+                bw.Write(subscriber_pub_id) && bw.Write(has_last_message) &&
+                (has_last_message ? bw.Write(last_message_content.Ptr(), message_size) : true);
     }
 
     bool Deserialize(BufferReader& br) override {
-        if (!(br.Read(result_) && br.Read(message_size_) && br.Read(message_count_) &&
-              br.Read(subscriber_pub_id_) && br.Read(has_last_message_))) {
+        if (!(br.Read(result) && br.Read(message_size) && br.Read(message_count) &&
+              br.Read(subscriber_pub_id) && br.Read(has_last_message))) {
             return false;
         }
-        if (!has_last_message_) {
+        if (!has_last_message) {
             return true;
         }
-        if (br.AvailableToRead() < message_size_) {
+        if (br.AvailableToRead() < message_size) {
             return false;
         }
-        if (last_message_content_.Size() < message_size_) {
-            last_message_content_.Resize(message_size_, false);
+        if (last_message_content.Size() < message_size) {
+            last_message_content.Resize(message_size, false);
         }
-        return br.Read(last_message_content_.Ptr(), message_size_);
+        return br.Read(last_message_content.Ptr(), message_size);
     }
 };
 
@@ -203,80 +197,79 @@ struct Payload_TopicRawData : public Payload {
     static constexpr Type payload_type = Type::TopicRawData;
 
     Payload_TopicRawData(uint32_t data_size) :
-          Payload(TopicRawData), data_size_(data_size), buffer_(data_size) {}
+          Payload(TopicRawData), data_size(data_size), buffer(data_size) {}
 
-    int32_t subscriber_pub_id_;
-    uint32_t data_size_;  // to be able to reuse the buffer with different buffers
-    RawBuffer buffer_;
+    int32_t subscriber_pub_id;
+    uint32_t data_size;  // to be able to reuse the buffer with different buffers
+    RawBuffer buffer;
 
     static uint32_t PayloadSize(uint32_t message_size) {
         return Payload::BaseSize() +
-                static_cast<uint32_t>(sizeof(subscriber_pub_id_) + sizeof(data_size_) +
-                                      message_size);
+                static_cast<uint32_t>(sizeof(subscriber_pub_id) + sizeof(data_size) + message_size);
     }
 
-    uint32_t Size() const override { return PayloadSize(data_size_); }
+    uint32_t Size() const override { return PayloadSize(data_size); }
 
     bool Serialize(BufferWriter& bw) const override {
         // TODO: don't modify write pointer in case of failure
-        return bw.Write(subscriber_pub_id_) && bw.Write(data_size_) &&
-                bw.Write(buffer_.Ptr(), data_size_);
+        return bw.Write(subscriber_pub_id) && bw.Write(data_size) &&
+                bw.Write(buffer.Ptr(), data_size);
     }
 
     bool Deserialize(BufferReader& br) override {
-        if (!br.Read(subscriber_pub_id_) || !br.Read(data_size_)) {
+        if (!br.Read(subscriber_pub_id) || !br.Read(data_size)) {
             return false;
         }
-        if (br.AvailableToRead() < data_size_) {
+        if (br.AvailableToRead() < data_size) {
             return false;
         }
-        if (buffer_.Size() < data_size_) {
-            buffer_.Resize(data_size_, false);
+        if (buffer.Size() < data_size) {
+            buffer.Resize(data_size, false);
         }
-        return br.Read(buffer_.Ptr(), data_size_);
+        return br.Read(buffer.Ptr(), data_size);
     }
 };
 
 struct Payload_TopicDestroyed : public Payload {
     static constexpr Type payload_type = Type::TopicDestroyed;
 
-    int32_t subscriber_pub_id_;
+    int32_t subscriber_pub_id;
 
     Payload_TopicDestroyed() : Payload(TopicDestroyed) {}
 
     Payload_TopicDestroyed(int32_t subscriber_pub_id) :
-          Payload(TopicDestroyed), subscriber_pub_id_(subscriber_pub_id) {}
+          Payload(TopicDestroyed), subscriber_pub_id(subscriber_pub_id) {}
 
-    uint32_t Size() const override { return Payload::Size() + sizeof(subscriber_pub_id_); }
+    uint32_t Size() const override { return Payload::Size() + sizeof(subscriber_pub_id); }
 
     bool Serialize(BufferWriter& bw) const override {
         // TODO: don't modify write pointer in case of failure
-        return bw.Write(subscriber_pub_id_);
+        return bw.Write(subscriber_pub_id);
     }
 
-    bool Deserialize(BufferReader& br) override { return br.Read(subscriber_pub_id_); }
+    bool Deserialize(BufferReader& br) override { return br.Read(subscriber_pub_id); }
 };
 
 struct Payload_LastMessageRequest : public Payload {
     static constexpr Type payload_type = Type::LastMessageRequest;
 
-    std::string topic_name_;
+    std::string topic_name;
 
     Payload_LastMessageRequest() : Payload(LastMessageRequest) {}
 
     Payload_LastMessageRequest(const std::string& topic_name) :
-          Payload(LastMessageRequest), topic_name_(topic_name) {}
+          Payload(LastMessageRequest), topic_name(topic_name) {}
 
     uint32_t Size() const override {
-        return Payload::Size() + static_cast<uint32_t>(sizeof(uint16_t) + topic_name_.length());
+        return Payload::Size() + static_cast<uint32_t>(sizeof(uint16_t) + topic_name.length());
     }
 
     bool Serialize(BufferWriter& bw) const override {
         // TODO: don't modify write pointer in case of failure
-        return bw.Write(topic_name_);
+        return bw.Write(topic_name);
     }
 
-    bool Deserialize(BufferReader& br) override { return br.Read(topic_name_); }
+    bool Deserialize(BufferReader& br) override { return br.Read(topic_name); }
 };
 
 struct Payload_LastMessageResult : public Payload {
@@ -287,9 +280,9 @@ struct Payload_LastMessageResult : public Payload {
     static constexpr uint16_t Result_Ok = 0;
     static constexpr uint16_t Result_Failure = 1;
 
-    std::string topic_name_;
-    uint16_t result_;
-    RawBuffer buffer_;
+    std::string topic_name;
+    uint16_t result;
+    RawBuffer buffer;
 
     static uint32_t PayloadSizeForTopic(const std::string& topic_name, uint32_t message_size) {
         return Payload::BaseSize() +
@@ -298,28 +291,28 @@ struct Payload_LastMessageResult : public Payload {
     }
 
     uint32_t Size() const override {
-        return PayloadSizeForTopic(topic_name_, static_cast<uint32_t>(buffer_.Size()));
+        return PayloadSizeForTopic(topic_name, static_cast<uint32_t>(buffer.Size()));
     }
 
     bool Serialize(BufferWriter& bw) const override {
         // TODO: don't modify write pointer in case of failure
-        return bw.Write(topic_name_) && bw.Write(result_) &&
-                bw.Write(static_cast<uint32_t>(buffer_.Size())) &&
-                bw.Write(buffer_.Ptr(), buffer_.Size());
+        return bw.Write(topic_name) && bw.Write(result) &&
+                bw.Write(static_cast<uint32_t>(buffer.Size())) &&
+                bw.Write(buffer.Ptr(), buffer.Size());
     }
 
     bool Deserialize(BufferReader& br) override {
-        uint32_t buffer_size;
-        if (!br.Read(topic_name_) || !br.Read(result_) || !br.Read(buffer_size)) {
+        uint32_t buffersize;
+        if (!br.Read(topic_name) || !br.Read(result) || !br.Read(buffersize)) {
             return false;
         }
-        if (br.AvailableToRead() < buffer_size) {
+        if (br.AvailableToRead() < buffersize) {
             return false;
         }
-        if (buffer_.Size() < buffer_size) {
-            buffer_.Resize(buffer_size, false);
+        if (buffer.Size() < buffersize) {
+            buffer.Resize(buffersize, false);
         }
-        return br.Read(buffer_.Ptr(), buffer_size);
+        return br.Read(buffer.Ptr(), buffersize);
     }
 };
 
@@ -373,9 +366,9 @@ struct Parcel {
     static constexpr uint32_t HeaderSize = sizeof(Header) + /* sequential_id */ sizeof(uint32_t) +
             /*  payload_size */ sizeof(uint32_t);
 
-    uint32_t sequential_id_;
+    uint32_t sequential_id;
 
-    Parcel(uint32_t sequential_id = 0) : sequential_id_(sequential_id) {}
+    Parcel(uint32_t sequential_id = 0) : sequential_id(sequential_id) {}
 
     static uint32_t ParcelSize(uint32_t payload_size) { return HeaderSize + payload_size; }
 
@@ -399,8 +392,8 @@ struct Parcel {
 
     bool Serialize(BufferWriter& bw, const Payload& payload) const {
         return (ParcelSize(payload) <= bw.Available()) && bw.Write(Header) &&
-                bw.Write(sequential_id_) && bw.Write(payload.Size()) &&
-                bw.Write(static_cast<int16_t>(payload.type_)) && payload.Serialize(bw);
+                bw.Write(sequential_id) && bw.Write(payload.Size()) &&
+                bw.Write(static_cast<int16_t>(payload.type)) && payload.Serialize(bw);
     }
 
     static std::pair<ParseResult, std::unique_ptr<Payload>> Deserialize(BufferReader& br,
@@ -408,7 +401,9 @@ struct Parcel {
         uint32_t payload_size;
         // Ensure the parcel isn't corrupted and it's enough data to deserialize
         auto res = CanReadParcel(br);
-        if (res != ParseResult::Success) return {res, std::unique_ptr<Payload>(nullptr)};
+        if (res != ParseResult::Success) {
+            return {res, std::unique_ptr<Payload>(nullptr)};
+        }
 
         if (!br.MovePos(sizeof(uint32_t)) ||
             !((parcel_id != nullptr) ? br.Read(*parcel_id) : (br.MovePos(sizeof(uint32_t)) > 0)) ||

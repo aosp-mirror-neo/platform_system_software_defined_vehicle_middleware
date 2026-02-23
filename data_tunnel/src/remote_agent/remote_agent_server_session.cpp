@@ -68,13 +68,13 @@ void RemoteAgentServerSession::DumpStats(std::ostream& out_stream) const {
 
 bool RemoteAgentServerSession::HandleLastMessageRequest(const Payload_LastMessageRequest& request,
                                                         RawBuffer& send_buffer) {
-    auto& topic_name = request.topic_name_;
+    auto& topic_name = request.topic_name;
     ALOGD("RemoteAgentServerSession(%s): Last message request for %s", peer_vm_name_.c_str(),
           topic_name.c_str());
 
     Payload_LastMessageResult response;
-    response.topic_name_ = topic_name;
-    response.result_ = Payload_LastMessageResult::Result_Failure;
+    response.topic_name = topic_name;
+    response.result = Payload_LastMessageResult::Result_Failure;
 
     // Try to fetch the last message and populate the payload
     auto topic = topic_manager_.FindTopic(topic_name, /* local_only= */ true);
@@ -87,8 +87,8 @@ bool RemoteAgentServerSession::HandleLastMessageRequest(const Payload_LastMessag
             ALOGW("RemoteAgentServerSession(%s): Unable to get last message from %s.",
                   peer_vm_name_.c_str(), topic_name.c_str());
         } else {
-            response.result_ = Payload_LastMessageResult::Result_Ok;
-            response.buffer_ = RawBuffer(*message);
+            response.result = Payload_LastMessageResult::Result_Ok;
+            response.buffer = RawBuffer(*message);
         }
     }
 
@@ -158,7 +158,7 @@ void RemoteAgentServerSession::ConnectionThread(
             should_continue = exporter.HandleSubscribeRequest(*sub_request, send_buffer);
         } else {
             ALOGE("RemoteAgentServerSession(%s): Received unsupported payload type: %d",
-                  peer_vm_name_.c_str(), payload->type_);
+                  peer_vm_name_.c_str(), payload->type);
         }
     }
 }

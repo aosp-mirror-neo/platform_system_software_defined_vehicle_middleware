@@ -218,7 +218,7 @@ void RemoteAgentClient::DumpStats(std::ostream& out_stream) const {
 
 void RemoteAgentClient::HandleLastMessageResult(
         const Payload_LastMessageResult& last_message_result) {
-    const auto& topic_name = last_message_result.topic_name_;
+    const auto& topic_name = last_message_result.topic_name;
     ALOGD("RemoteAgentClient(%s): LastMessage result for %s", peer_vm_name_.c_str(),
           topic_name.c_str());
     std::unique_lock<std::mutex> guard(lock_);
@@ -231,13 +231,13 @@ void RemoteAgentClient::HandleLastMessageResult(
         return;
     }
 
-    if (last_message_result.result_ != Payload_LastMessageResult::Result_Ok) {
+    if (last_message_result.result != Payload_LastMessageResult::Result_Ok) {
         waiting_entry.mapped().promise_.set_value(base::unexpected(
                 ::sdv::SdvStatus(::sdv::SdvStatusCode::kInternal, "Peer returned failure")));
         return;
     }
 
-    auto& buffer = last_message_result.buffer_;
+    auto& buffer = last_message_result.buffer;
     std::vector<uint8_t> message_data(buffer.Ptr(), buffer.Ptr() + buffer.Size());
     waiting_entry.mapped().promise_.set_value(LastMessageResult(std::move(message_data)));
 }
@@ -245,11 +245,11 @@ void RemoteAgentClient::HandleLastMessageResult(
 void RemoteAgentClient::HandleSubscribeResult(const Payload_SubscribeResult& subscribe_result) {
     ALOGD("RemoteAgentClient(%s): Subscribe result for pub %u, Result: %u, message size: %u, "
           "message count %u, has_last_message: %u",
-          peer_vm_name_.c_str(), subscribe_result.subscriber_pub_id_, subscribe_result.result_,
-          subscribe_result.message_size_, subscribe_result.message_count_,
-          subscribe_result.has_last_message_);
+          peer_vm_name_.c_str(), subscribe_result.subscriber_pub_id, subscribe_result.result,
+          subscribe_result.message_size, subscribe_result.message_count,
+          subscribe_result.has_last_message);
 
-    const auto& publication_id = subscribe_result.subscriber_pub_id_;
+    const auto& publication_id = subscribe_result.subscriber_pub_id;
 
     std::unique_lock<std::mutex> guard(lock_);
     // Ensure the topic is one we've actually imported.
@@ -283,32 +283,32 @@ void RemoteAgentClient::HandleSubscribeResult(const Payload_SubscribeResult& sub
         return;
     }
 
-    if (subscribe_result.result_ != Payload_SubscribeResult::Result_Ok) {
+    if (subscribe_result.result != Payload_SubscribeResult::Result_Ok) {
         ALOGE("RemoteAgentClient(%s): Subscribe to %s failed.  Destroying local topic.",
               peer_vm_name_.c_str(), topic_name.c_str());
         return;
     }
 
-    if (subscribe_result.message_size_ != metadata.message_size ||
-        subscribe_result.message_count_ != metadata.message_count) {
+    if (subscribe_result.message_size != metadata.message_size ||
+        subscribe_result.message_count != metadata.message_count) {
         ALOGE("RemoteAgentClient(%s): %s metadata mismatch: Local: %zu bytes x %zu msgs; "
               "Remote: %u bytes x %u msgs.  Destroying local topic.",
               peer_vm_name_.c_str(), topic_name.c_str(), metadata.message_size,
-              metadata.message_count, subscribe_result.message_size_,
-              subscribe_result.message_count_);
+              metadata.message_count, subscribe_result.message_size,
+              subscribe_result.message_count);
         return;
     }
 
-    if (subscribe_result.has_last_message_) {
-        if (subscribe_result.last_message_content_.Size() != metadata.message_size) {
+    if (subscribe_result.has_last_message) {
+        if (subscribe_result.last_message_content.Size() != metadata.message_size) {
             ALOGE("RemoteAgentClient(%s): Deserialization assertion failure!  Received "
                   "SubscribeResult with has_last_message_ true but wrong "
                   "last_message_content_.Size()!",
                   peer_vm_name_.c_str());
             return;
         }
-        if (!topic.Write(subscribe_result.last_message_content_.Ptr(),
-                         subscribe_result.message_size_)) {
+        if (!topic.Write(subscribe_result.last_message_content.Ptr(),
+                         subscribe_result.message_size)) {
             ALOGE("RemoteAgentClient(%s): Unable to write data to %s!", peer_vm_name_.c_str(),
                   topic_name.c_str());
             return;
@@ -326,7 +326,7 @@ void RemoteAgentClient::HandleSubscribeResult(const Payload_SubscribeResult& sub
 }
 
 void RemoteAgentClient::HandleTopicRawData(const Payload_TopicRawData& topic_raw_data) {
-    const auto publication_id = topic_raw_data.subscriber_pub_id_;
+    const auto publication_id = topic_raw_data.subscriber_pub_id;
 
     std::unique_lock guard(lock_);
     auto subscription_it = subscriptions_.find(publication_id);
@@ -358,16 +358,16 @@ void RemoteAgentClient::HandleTopicRawData(const Payload_TopicRawData& topic_raw
         return;
     }
 
-    if (!topic.Write(topic_raw_data.buffer_.Ptr(), topic_raw_data.data_size_)) {
+    if (!topic.Write(topic_raw_data.buffer.Ptr(), topic_raw_data.data_size)) {
         ALOGW("RemoteAgentClient(%s): Unable to write data to %s.", peer_vm_name_.c_str(),
               topic_name.c_str());
         return;
     }
-    topic.NotifyWritten(topic_raw_data.data_size_ / topic.GetMetadata().message_size);
+    topic.NotifyWritten(topic_raw_data.data_size / topic.GetMetadata().message_size);
 }
 
 void RemoteAgentClient::HandleTopicDestroyed(const Payload_TopicDestroyed& topic_destroyed) {
-    const auto publication_id = topic_destroyed.subscriber_pub_id_;
+    const auto publication_id = topic_destroyed.subscriber_pub_id;
     std::unique_lock guard(lock_);
     auto extracted = subscriptions_.extract(publication_id);
     if (extracted.empty()) {
@@ -417,7 +417,7 @@ void RemoteAgentClient::HandleConnectionMessages() {
             HandleTopicDestroyed(*topic_destroyed);
         } else {
             ALOGE("RemoteAgentClient(%s): Received unexpected payload type %d",
-                  peer_vm_name_.c_str(), payload->type_);
+                  peer_vm_name_.c_str(), payload->type);
         }
     }
 

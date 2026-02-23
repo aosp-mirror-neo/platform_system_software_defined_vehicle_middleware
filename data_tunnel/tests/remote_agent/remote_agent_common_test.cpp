@@ -50,19 +50,19 @@ TEST_F(RemoteAgentCommonTest, MakeFqinString) {
 
 TEST_F(RemoteAgentCommonTest, SendPayload_Success) {
     proto::Payload_LastMessageRequest sent_payload;
-    sent_payload.topic_name_ = kTestTopicName;
+    sent_payload.topic_name = kTestTopicName;
     ASSERT_TRUE(SendPayload(connection_, sent_payload, 1234, buffer_));
 
     auto payload = connection_.GetNextSentDataIfPayload<proto::Payload_LastMessageRequest>();
     ASSERT_TRUE(payload);
-    ASSERT_EQ(payload->topic_name_, kTestTopicName);
+    ASSERT_EQ(payload->topic_name, kTestTopicName);
 
     ASSERT_EQ(connection_.RemainingSentDataCount(), 0);
 }
 
 TEST_F(RemoteAgentCommonTest, SendPayload_FailsWithTooSmallBuffer) {
     proto::Payload_LastMessageRequest sent_payload;
-    sent_payload.topic_name_ = kTestTopicName;
+    sent_payload.topic_name = kTestTopicName;
     RawBuffer small_buffer(1);
     ASSERT_FALSE(SendPayload(connection_, sent_payload, 1234, small_buffer));
     ASSERT_FALSE(connection_.GetNextSentData(/* timeout_seconds= */ 2));
@@ -72,7 +72,7 @@ TEST_F(RemoteAgentCommonTest, SendPayload_FailsWhenSendDataFails) {
     connection_.SetSendDataReturnValue(false);
 
     proto::Payload_LastMessageRequest sent_payload;
-    sent_payload.topic_name_ = kTestTopicName;
+    sent_payload.topic_name = kTestTopicName;
     ASSERT_FALSE(SendPayload(connection_, sent_payload, 4321, buffer_));
     ASSERT_TRUE(connection_.GetNextSentData());  // Send data was called.
 }
@@ -87,7 +87,7 @@ TEST_F(RemoteAgentCommonTest, ReceivePayload_Failure) {
 
 TEST_F(RemoteAgentCommonTest, ReceivePayload_ExactlyOne) {
     proto::Payload_LastMessageRequest sent_payload;
-    sent_payload.topic_name_ = kTestTopicName;
+    sent_payload.topic_name = kTestTopicName;
     connection_.EnqueueParcelForReceive(123, sent_payload);
 
     uint32_t parcel_id;
@@ -96,16 +96,16 @@ TEST_F(RemoteAgentCommonTest, ReceivePayload_ExactlyOne) {
     ASSERT_EQ(result, proto::Parcel::ParseResult::Success);
     ASSERT_EQ(parcel_id, 123);
     ASSERT_NE(payload.get(), nullptr);
-    ASSERT_EQ(payload->type_, proto::Payload::Type::LastMessageRequest);
+    ASSERT_EQ(payload->type, proto::Payload::Type::LastMessageRequest);
     const auto* lmreq_payload =
             static_cast<const proto::Payload_LastMessageRequest*>(payload.get());
-    ASSERT_EQ(lmreq_payload->topic_name_, kTestTopicName);
+    ASSERT_EQ(lmreq_payload->topic_name, kTestTopicName);
     ASSERT_EQ(connection_.ReceiveCallCount(), 1);
 }
 
 TEST_F(RemoteAgentCommonTest, ReceivePayload_OnePayloadInTwoParts) {
     proto::Payload_LastMessageRequest sent_payload;
-    sent_payload.topic_name_ = kTestTopicName;
+    sent_payload.topic_name = kTestTopicName;
     proto::Parcel parcel(456);
     BufferWriter serialize_writer(buffer_);
     parcel.Serialize(serialize_writer, sent_payload);
@@ -120,13 +120,12 @@ TEST_F(RemoteAgentCommonTest, ReceivePayload_OnePayloadInTwoParts) {
     BufferWriter receive_writer(buffer_);
     auto [result, payload] = ReceivePayload(connection_, &parcel_id, receive_writer);
     ASSERT_EQ(result, proto::Parcel::ParseResult::Success);
-    std::cout << "AAAAA Received " << parcel_id << std::endl;
     ASSERT_EQ(parcel_id, 456);
     ASSERT_NE(payload.get(), nullptr);
-    ASSERT_EQ(payload->type_, proto::Payload::Type::LastMessageRequest);
+    ASSERT_EQ(payload->type, proto::Payload::Type::LastMessageRequest);
     const auto* lmreq_payload =
             static_cast<const proto::Payload_LastMessageRequest*>(payload.get());
-    ASSERT_EQ(lmreq_payload->topic_name_, kTestTopicName);
+    ASSERT_EQ(lmreq_payload->topic_name, kTestTopicName);
     ASSERT_EQ(connection_.ReceiveCallCount(), 2);
 }
 
@@ -137,7 +136,7 @@ TEST_F(RemoteAgentCommonTest, ReceivePayload_TwoPayloadsInOnePart) {
     // First Parcel
     {
         proto::Payload_LastMessageRequest sent_payload;
-        sent_payload.topic_name_ = kTestTopicName;
+        sent_payload.topic_name = kTestTopicName;
         proto::Parcel parcel(789);
         parcel.Serialize(serialize_writer, sent_payload);
     }
@@ -145,8 +144,8 @@ TEST_F(RemoteAgentCommonTest, ReceivePayload_TwoPayloadsInOnePart) {
     // Second Parcel
     {
         proto::Payload_SubscribeRequest sent_payload;
-        sent_payload.topic_name_ = kTestTopicName;
-        sent_payload.subscriber_pub_id_ = kTestTopicSubId;
+        sent_payload.topic_name = kTestTopicName;
+        sent_payload.subscriber_pub_id = kTestTopicSubId;
         proto::Parcel parcel(101112);
         parcel.Serialize(serialize_writer, sent_payload);
     }
@@ -162,10 +161,10 @@ TEST_F(RemoteAgentCommonTest, ReceivePayload_TwoPayloadsInOnePart) {
         ASSERT_EQ(result, proto::Parcel::ParseResult::Success);
         ASSERT_EQ(parcel_id, 789);
         ASSERT_NE(payload.get(), nullptr);
-        ASSERT_EQ(payload->type_, proto::Payload::Type::LastMessageRequest);
+        ASSERT_EQ(payload->type, proto::Payload::Type::LastMessageRequest);
         const auto* lmreq_payload =
                 static_cast<const proto::Payload_LastMessageRequest*>(payload.get());
-        ASSERT_EQ(lmreq_payload->topic_name_, kTestTopicName);
+        ASSERT_EQ(lmreq_payload->topic_name, kTestTopicName);
         ASSERT_EQ(connection_.ReceiveCallCount(), 1);
     }
 
@@ -175,11 +174,11 @@ TEST_F(RemoteAgentCommonTest, ReceivePayload_TwoPayloadsInOnePart) {
         ASSERT_EQ(result, proto::Parcel::ParseResult::Success);
         ASSERT_EQ(parcel_id, 101112);
         ASSERT_NE(payload.get(), nullptr);
-        ASSERT_EQ(payload->type_, proto::Payload::Type::SubscribeRequest);
+        ASSERT_EQ(payload->type, proto::Payload::Type::SubscribeRequest);
         const auto* subreq_payload =
                 static_cast<const proto::Payload_SubscribeRequest*>(payload.get());
-        ASSERT_EQ(subreq_payload->topic_name_, kTestTopicName);
-        ASSERT_EQ(subreq_payload->subscriber_pub_id_, kTestTopicSubId);
+        ASSERT_EQ(subreq_payload->topic_name, kTestTopicName);
+        ASSERT_EQ(subreq_payload->subscriber_pub_id, kTestTopicSubId);
         // No additional ReceiveData call
         ASSERT_EQ(connection_.ReceiveCallCount(), 1);
     }

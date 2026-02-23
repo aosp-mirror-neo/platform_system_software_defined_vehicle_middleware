@@ -71,7 +71,7 @@ RemoteAgentTopicExporter::ExportedTopic::ExportedTopic(Topic& topic, int32_t sub
       callback_id(callback_id),
       data_payload(data_payload_capacity) {
     const auto& metadata = topic.GetMetadata();
-    data_payload.subscriber_pub_id_ = subscriber_pub_id;
+    data_payload.subscriber_pub_id = subscriber_pub_id;
     required_send_buffer_size =
             Parcel::ParcelSize(Payload_TopicRawData::PayloadSize(data_payload_capacity));
 }
@@ -94,15 +94,15 @@ RemoteAgentTopicExporter::ExportedTopic::~ExportedTopic() {
 
 bool RemoteAgentTopicExporter::HandleSubscribeRequest(const Payload_SubscribeRequest& sub_request,
                                                       RawBuffer& send_buffer) {
-    const auto& topic_name = sub_request.topic_name_;
-    const auto subscriber_pub_id = sub_request.subscriber_pub_id_;
+    const auto& topic_name = sub_request.topic_name;
+    const auto subscriber_pub_id = sub_request.subscriber_pub_id;
     ALOGD("RemoteAgentTopicExporter(%s): Request to subscribe to %s", vm_name_.c_str(),
           topic_name.c_str());
 
     // Failure payload, if needed.
     Payload_SubscribeResult result_payload;
-    result_payload.subscriber_pub_id_ = subscriber_pub_id;
-    result_payload.result_ = Payload_SubscribeResult::Result_Failure;
+    result_payload.subscriber_pub_id = subscriber_pub_id;
+    result_payload.result = Payload_SubscribeResult::Result_Failure;
 
     auto topic = topic_manager_.FindTopic(topic_name, /*local_only*/ true);
     if (!topic) {
@@ -193,23 +193,23 @@ void RemoteAgentTopicExporter::MaybeSendSubscribeResult(ExportedTopic& exported_
 
     auto& metadata = exported_topic.topic.GetMetadata();
     Payload_SubscribeResult payload;
-    payload.subscriber_pub_id_ = exported_topic.subscriber_pub_id;
-    payload.result_ = Payload_SubscribeResult::Result_Ok;
-    payload.message_size_ = metadata.message_size;
-    payload.message_count_ = metadata.message_count;
-    payload.has_last_message_ = 0;
+    payload.subscriber_pub_id = exported_topic.subscriber_pub_id;
+    payload.result = Payload_SubscribeResult::Result_Ok;
+    payload.message_size = metadata.message_size;
+    payload.message_count = metadata.message_count;
+    payload.has_last_message = 0;
 
     // Try to include an initial message if there is one available.
     if (exported_topic.reader.AvailableToRead() >= metadata.message_size) {
-        payload.last_message_content_.Resize(metadata.message_size, false);
+        payload.last_message_content.Resize(metadata.message_size, false);
 
         // Since reader would have just been created and its read pointer set one message behind the
         // write pointer, risk of an overflow is minimal.  But retry a few times in a loop anyways.
         static constexpr int kMaxAttempts = 3;
         for (int attempt_count = kMaxAttempts; attempt_count > 0; attempt_count--) {
-            if (exported_topic.reader.Read(payload.last_message_content_.Ptr(),
+            if (exported_topic.reader.Read(payload.last_message_content.Ptr(),
                                            metadata.message_size)) {
-                payload.has_last_message_ = 1;
+                payload.has_last_message = 1;
                 break;
             } else {
                 ALOGW("RemoteAgentTopicExporter(%s): Overflow while reading last message for "
@@ -219,7 +219,7 @@ void RemoteAgentTopicExporter::MaybeSendSubscribeResult(ExportedTopic& exported_
                       attempt_count - 1);
             }
         }
-        if (!payload.has_last_message_) {
+        if (!payload.has_last_message) {
             ALOGE("RemoteAgentTopicExporter(%s): Complete failure to read last message for "
                   "SubscribeResult for topic %s due to repeated overflows!  Consider "
                   "increasing message_count.",
@@ -252,8 +252,8 @@ void RemoteAgentTopicExporter::ProcessTopicDataAvailable(ExportedTopic& exported
     size_t available = reader.AvailableToRead();
     bool has_overflowed = false;
     while (available > 0) {
-        size_t read_size = std::min(available, payload.buffer_.Size());
-        if (!reader.Read(payload.buffer_.Ptr(), read_size)) {
+        size_t read_size = std::min(available, payload.buffer.Size());
+        if (!reader.Read(payload.buffer.Ptr(), read_size)) {
             if (has_overflowed) {
                 ALOGE("RemoteAgentTopicExporter(%s): %s repeated overflow.", vm_name_.c_str(),
                       topic.GetMetadata().name.c_str());
@@ -267,7 +267,7 @@ void RemoteAgentTopicExporter::ProcessTopicDataAvailable(ExportedTopic& exported
             continue;
         }
 
-        payload.data_size_ = read_size;
+        payload.data_size = read_size;
         if (!SendPayload(connection_, payload, parcel_id_counter_++, send_buffer)) {
             ALOGE("RemoteAgentTopicExporter(%s): Unable to send topic data for %s",
                   vm_name_.c_str(), topic.GetMetadata().name.c_str());

@@ -330,7 +330,7 @@ TEST_F(RemoteAgentClientManagerTest, FetchLastMessage_SucceedsAndSendsRequestIfC
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_LastMessageRequest>();
     ASSERT_TRUE(payload);
-    EXPECT_EQ(payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(payload->topic_name, kTestTopicName);
 }
 
 TEST_F(RemoteAgentClientManagerTest, RequestSubscribe_FailsBeforeStartup) {
@@ -360,7 +360,7 @@ TEST_F(RemoteAgentClientManagerTest,
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_SubscribeRequest>();
     ASSERT_TRUE(payload);
-    EXPECT_EQ(payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(payload->topic_name, kTestTopicName);
 }
 
 TEST_F(RemoteAgentClientManagerTest, RequestSubscribe_QueuesAndLaterProcessesRequestToUnknownPeer) {
@@ -374,7 +374,7 @@ TEST_F(RemoteAgentClientManagerTest, RequestSubscribe_QueuesAndLaterProcessesReq
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_SubscribeRequest>();
     ASSERT_TRUE(payload);
-    EXPECT_EQ(payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(payload->topic_name, kTestTopicName);
 }
 
 TEST_F(RemoteAgentClientManagerTest,
