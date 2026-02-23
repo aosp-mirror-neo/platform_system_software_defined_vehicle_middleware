@@ -16,8 +16,8 @@
 
 //! SDV Middleware Clientlib methods related to availability.
 
-use crate::{subscriber, to_unit_name};
-use sdv_mw_rs_comms::{Availability, Communicate, SubscribeOptions, UnitName, UnitQuery};
+use crate::subscriber;
+use sdv_mw_rs_comms::{Availability, Communicate, UnitName, UnitQuery};
 use sdv_status_rs::SdvResult;
 use std::pin::Pin;
 
@@ -35,13 +35,8 @@ use std::pin::Pin;
 pub async fn create_registration_event_stream<Channel: subscriber::Channel>(
     comms: &dyn Communicate,
     channel: &Channel,
-    options: &SubscribeOptions,
 ) -> SdvResult<Pin<Box<dyn futures::Stream<Item = Availability> + Send>>> {
-    let unit_query = if Channel::IS_MULTIPUB {
-        UnitQuery::Type(Channel::type_name()?)
-    } else {
-        UnitQuery::Name(to_unit_name(channel, options)?)
-    };
+    let unit_query = UnitQuery::Topic((Channel::type_name()?, channel.get_name().to_string()));
     comms.create_registration_event_stream(&unit_query).await
 }
 
