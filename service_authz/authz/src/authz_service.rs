@@ -22,10 +22,22 @@ use crate::{AclPolicyProvider, AuthzEnforcementFlag, AuthzResult};
 use sdv_comms_id::names::{PackageName, ServiceUnitName, UnitTypeName};
 use sdv_comms_id::ServiceFqin;
 
+use google_sdv_identity::aidl::google::sdv::identity::ServiceFqin::ServiceFqin as ServiceFqinAidl;
+use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition;
 use log::{debug, error, warn};
 use tracing::instrument;
 
 use std::sync::Arc;
+
+/// Trait for retrieving the full definition of a service unit.
+pub trait ServiceUnitRegistry: Send + Sync {
+    /// Returns service unit definition for the specified unit.
+    fn get_service_unit(
+        &self,
+        fqin: &ServiceFqinAidl,
+        unit_name: &str,
+    ) -> Option<ServiceUnitDefinition>;
+}
 
 /// Authz Service.
 pub struct AuthzService {
@@ -39,9 +51,11 @@ impl AuthzService {
     pub fn new(
         acl_policy_provider: Arc<dyn AclPolicyProvider>,
         authz_enforcement_flag: Arc<dyn AuthzEnforcementFlag>,
+        service_unit_registry: Arc<dyn ServiceUnitRegistry>,
     ) -> Self {
         let authz_via_acls = AuthzViaAcls::new(acl_policy_provider.clone());
-        let authz_via_permissions = AuthzViaPermissions::new(acl_policy_provider);
+        let authz_via_permissions =
+            AuthzViaPermissions::new(acl_policy_provider, service_unit_registry);
 
         AuthzService { authz_via_acls, authz_via_permissions, authz_enforcement_flag }
     }
@@ -258,6 +272,18 @@ mod tests {
         }
     }
 
+    struct TestRegistry {}
+
+    impl ServiceUnitRegistry for TestRegistry {
+        fn get_service_unit(
+            &self,
+            _fqin: &ServiceFqinAidl,
+            _unit_name: &str,
+        ) -> Option<ServiceUnitDefinition> {
+            None
+        }
+    }
+
     fn create_test_authz_service(
         object_fqin: &ServiceFqin,
         acl_policy_text_proto: &str,
@@ -279,6 +305,7 @@ mod tests {
         AuthzService::new(
             Arc::new(test_acl_provider),
             Arc::new(TestAuthzEnforcementFlag::new(is_enforcement_flag_enabled)),
+            Arc::new(TestRegistry {}),
         )
     }
 

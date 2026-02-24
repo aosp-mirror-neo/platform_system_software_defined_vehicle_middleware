@@ -30,7 +30,6 @@ rust_defaults {
         "google.sdv.identity-V2-rust",
         "google.sdv.service_discovery.discovery-V2-rust",
         "libanyhow",
-        "libbinder_rs",
         "liblog_rust",
         "libprotobuf",
         "libsdv_authz_policy",

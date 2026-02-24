@@ -685,6 +685,16 @@ impl ServiceRegistry {
     }
 }
 
+impl sdv_authz::ServiceUnitRegistry for ServiceRegistry {
+    fn get_service_unit(
+        &self,
+        fqin: &ServiceFqinV2,
+        unit_name: &str,
+    ) -> Option<google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition>{
+        self.get_service_unit(fqin, unit_name)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
