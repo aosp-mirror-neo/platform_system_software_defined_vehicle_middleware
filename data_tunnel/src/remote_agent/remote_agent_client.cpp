@@ -67,7 +67,7 @@ void RemoteAgentClient::RequestTerminate() {
     // Immediately unregister any publications imported from this peer to prevent would-be
     // subscribers from connecting to them.
     for (const auto& subscription : subscriptions_) {
-        topic_manager_.UnregisterRemoteTopic(subscription.first);
+        topic_manager_.UnregisterRemoteTopic(subscription.second.topic.GetMetadata().name);
     }
     subscriptions_.clear();
 
@@ -136,15 +136,14 @@ void RemoteAgentClient::ActivateConnection() {
         return;
     }
     client_state_ = ClientState::ACTIVE;
-    auto it = subscriptions_.begin();
-    while (it != subscriptions_.end()) {
-        if (!SendSubscribeRequest(it->first).isOk()) {
-            topic_manager_.UnregisterRemoteTopic(it->first);
-            it = subscriptions_.erase(it);
-        } else {
-            ++it;
+    std::erase_if(subscriptions_, [this](const auto& entry) {
+        const auto& topic_name = entry.second.topic.GetMetadata().name;
+        if (SendSubscribeRequest(topic_name, entry.first).isOk()) {
+            return false;
         }
-    }
+        topic_manager_.UnregisterRemoteTopic(topic_name);
+        return true;
+    });
 }
 
 ::sdv::SdvStatus RemoteAgentClient::RequestSubscribe(const std::string& topic_name) {
@@ -167,7 +166,7 @@ void RemoteAgentClient::ActivateConnection() {
                                 "Peer connection is terminating or terminated");
     }
 
-    auto [entry_it, inserted] = subscriptions_.try_emplace(topic_name, *topic);
+    auto [entry_it, inserted] = subscriptions_.try_emplace(topic->GetId(), *topic);
 
     if (!inserted) {
         // It's unexpected that we'd already have an entry; DT agent should only call this
@@ -191,13 +190,14 @@ void RemoteAgentClient::ActivateConnection() {
         return ::sdv::SdvStatus(::sdv::SdvStatusCode::kOk);
     }
 
-    return SendSubscribeRequest(topic_name);
+    return SendSubscribeRequest(topic_name, topic->GetId());
 }
 
-::sdv::SdvStatus RemoteAgentClient::SendSubscribeRequest(const std::string& topic_name) {
+::sdv::SdvStatus RemoteAgentClient::SendSubscribeRequest(const std::string& topic_name,
+                                                         int32_t publication_id) {
     RawBuffer data_buffer(kDefaultBufferSize);
-    if (!SendPayload(*connection_, Payload_SubscribeRequest(topic_name), parcel_id_counter_++,
-                     data_buffer)) {
+    if (!SendPayload(*connection_, Payload_SubscribeRequest(topic_name, publication_id),
+                     parcel_id_counter_++, data_buffer)) {
         return ::sdv::SdvStatus(::sdv::SdvStatusCode::kInternal,
                                 std::format("SendPayload(Payload_SubscribeRequest, {}) failed!",
                                             topic_name));
@@ -243,26 +243,28 @@ void RemoteAgentClient::HandleLastMessageResult(
 }
 
 void RemoteAgentClient::HandleSubscribeResult(const Payload_SubscribeResult& subscribe_result) {
-    ALOGD("RemoteAgentClient(%s): Subscribe result for %s, Result: %u, message size: %u, message "
-          "count %u, has_last_message: %u",
-          peer_vm_name_.c_str(), subscribe_result.topic_name_.c_str(), subscribe_result.result_,
+    ALOGD("RemoteAgentClient(%s): Subscribe result for pub %u, Result: %u, message size: %u, "
+          "message count %u, has_last_message: %u",
+          peer_vm_name_.c_str(), subscribe_result.subscriber_pub_id_, subscribe_result.result_,
           subscribe_result.message_size_, subscribe_result.message_count_,
           subscribe_result.has_last_message_);
 
-    const auto& topic_name = subscribe_result.topic_name_;
+    const auto& publication_id = subscribe_result.subscriber_pub_id_;
 
     std::unique_lock<std::mutex> guard(lock_);
     // Ensure the topic is one we've actually imported.
-    auto subscription_it = subscriptions_.find(topic_name);
+    auto subscription_it = subscriptions_.find(publication_id);
     if (subscription_it == subscriptions_.end()) {
-        ALOGE("RemoteAgentClient(%s): Subscribe result for unrequested topic %s. Ignoring.",
-              topic_name.c_str(), peer_vm_name_.c_str());
+        ALOGE("RemoteAgentClient(%s): Subscribe result for unrequested topic %u. Ignoring.",
+              peer_vm_name_.c_str(), publication_id);
         // TODO(b/432280220): Send unsubscribe request
         return;
     }
 
     auto& subscription = subscription_it->second;
     auto& topic = subscription.topic;
+    const auto& metadata = topic.GetMetadata();
+    const auto& topic_name = metadata.name;
 
     // This cleanup will run any time we return without disabling it, which happens upon success.
     // This lets us early return from any failure without having to duplicate cleanup steps at each.
@@ -271,7 +273,7 @@ void RemoteAgentClient::HandleSubscribeResult(const Payload_SubscribeResult& sub
         guard.unlock();
         // TODO(b/432280220): Send unsubscribe request
         if (topic.IsActive()) {
-            topic_manager_.UnregisterRemoteTopic(subscribe_result.topic_name_);
+            topic_manager_.UnregisterRemoteTopic(topic_name);
         }
     });
 
@@ -287,7 +289,6 @@ void RemoteAgentClient::HandleSubscribeResult(const Payload_SubscribeResult& sub
         return;
     }
 
-    auto& metadata = topic.GetMetadata();
     if (subscribe_result.message_size_ != metadata.message_size ||
         subscribe_result.message_count_ != metadata.message_count) {
         ALOGE("RemoteAgentClient(%s): %s metadata mismatch: Local: %zu bytes x %zu msgs; "
@@ -325,18 +326,22 @@ void RemoteAgentClient::HandleSubscribeResult(const Payload_SubscribeResult& sub
 }
 
 void RemoteAgentClient::HandleTopicRawData(const Payload_TopicRawData& topic_raw_data) {
-    const auto& topic_name = topic_raw_data.topic_name_;
+    const auto publication_id = topic_raw_data.subscriber_pub_id_;
 
     std::unique_lock guard(lock_);
-    auto subscription_it = subscriptions_.find(topic_name);
+    auto subscription_it = subscriptions_.find(publication_id);
     if (subscription_it == subscriptions_.end()) {
-        ALOGE("RemoteAgentClient(%s): Got topic data for unsubscribed topic %s.",
-              peer_vm_name_.c_str(), topic_name.c_str());
+        ALOGE("RemoteAgentClient(%s): Got topic data for unsubscribed publication %u.",
+              peer_vm_name_.c_str(), publication_id);
         // TODO(b/432280220): Send unsubscribe request
         return;
     }
     auto& subscription = subscription_it->second;
     guard.unlock();
+
+    auto& topic = subscription.topic;
+    const auto& metadata = topic.GetMetadata();
+    const auto& topic_name = metadata.name;
 
     if (!subscription.is_active) {
         ALOGW("RemoteAgentClient(%s): Got data for %s before Subscribe result.  Ignoring.",
@@ -344,13 +349,12 @@ void RemoteAgentClient::HandleTopicRawData(const Payload_TopicRawData& topic_raw
         return;
     }
 
-    auto& topic = subscription.topic;
     if (!topic.IsActive()) {
         ALOGW("RemoteAgentClient(%s): Got data for inactive topic %s.  Destroying subscription.",
               peer_vm_name_.c_str(), topic_name.c_str());
         // TODO(b/432280220): Send unsubscribe request
         guard.lock();
-        subscriptions_.erase(topic_name);
+        subscriptions_.erase(publication_id);
         return;
     }
 
@@ -363,15 +367,17 @@ void RemoteAgentClient::HandleTopicRawData(const Payload_TopicRawData& topic_raw
 }
 
 void RemoteAgentClient::HandleTopicDestroyed(const Payload_TopicDestroyed& topic_destroyed) {
-    const auto& topic_name = topic_destroyed.topic_name_;
+    const auto publication_id = topic_destroyed.subscriber_pub_id_;
     std::unique_lock guard(lock_);
-    auto extracted = subscriptions_.extract(topic_name);
+    auto extracted = subscriptions_.extract(publication_id);
     if (extracted.empty()) {
-        ALOGW("RemoteAgentClient(%s): TopicDestroyed for unsubscribed topic %s",
-              peer_vm_name_.c_str(), topic_name.c_str());
+        ALOGW("RemoteAgentClient(%s): TopicDestroyed for unsubscribed topic %u",
+              peer_vm_name_.c_str(), publication_id);
         return;
     }
-    if (!extracted.mapped().is_active) {
+    const auto& subscription = extracted.mapped();
+    const auto& topic_name = subscription.topic.GetMetadata().name;
+    if (!subscription.is_active) {
         ALOGW("RemoteAgentClient(%s): TopicDestroyed for inactive subscription %s",
               peer_vm_name_.c_str(), topic_name.c_str());
         // This shouldn't happen since server should send SubscribeResult before anything else,  but

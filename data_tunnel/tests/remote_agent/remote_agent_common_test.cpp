@@ -29,6 +29,7 @@ using ::testing::Return;
 namespace android::sdv::dt::agent::test {
 
 static const char* kTestTopicName = "test-topic-name";
+static uint32_t kTestTopicSubId = 42;
 class RemoteAgentCommonTest : public testing::Test {
 protected:
     RemoteAgentCommonTest() : buffer_(1024) {}
@@ -145,6 +146,7 @@ TEST_F(RemoteAgentCommonTest, ReceivePayload_TwoPayloadsInOnePart) {
     {
         proto::Payload_SubscribeRequest sent_payload;
         sent_payload.topic_name_ = kTestTopicName;
+        sent_payload.subscriber_pub_id_ = kTestTopicSubId;
         proto::Parcel parcel(101112);
         parcel.Serialize(serialize_writer, sent_payload);
     }
@@ -175,8 +177,9 @@ TEST_F(RemoteAgentCommonTest, ReceivePayload_TwoPayloadsInOnePart) {
         ASSERT_NE(payload.get(), nullptr);
         ASSERT_EQ(payload->type_, proto::Payload::Type::SubscribeRequest);
         const auto* subreq_payload =
-                static_cast<const proto::Payload_LastMessageRequest*>(payload.get());
+                static_cast<const proto::Payload_SubscribeRequest*>(payload.get());
         ASSERT_EQ(subreq_payload->topic_name_, kTestTopicName);
+        ASSERT_EQ(subreq_payload->subscriber_pub_id_, kTestTopicSubId);
         // No additional ReceiveData call
         ASSERT_EQ(connection_.ReceiveCallCount(), 1);
     }

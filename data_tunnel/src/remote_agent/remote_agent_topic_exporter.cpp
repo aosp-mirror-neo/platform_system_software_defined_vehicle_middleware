@@ -62,21 +62,23 @@ RemoteAgentTopicExporter::~RemoteAgentTopicExporter() {
     }
 }
 
-RemoteAgentTopicExporter::ExportedTopic::ExportedTopic(Topic& topic, Topic::Reader reader,
-                                                       uint32_t callback_id,
+RemoteAgentTopicExporter::ExportedTopic::ExportedTopic(Topic& topic, int32_t sub_pub_id,
+                                                       Topic::Reader reader, uint32_t callback_id,
                                                        size_t data_payload_capacity) :
       topic(topic),
+      subscriber_pub_id(sub_pub_id),
       reader(std::move(reader)),
       callback_id(callback_id),
       data_payload(data_payload_capacity) {
     const auto& metadata = topic.GetMetadata();
-    data_payload.topic_name_ = metadata.name;
-    required_send_buffer_size = Parcel::ParcelSize(
-            Payload_TopicRawData::PayloadSizeForTopic(metadata.name, data_payload_capacity));
+    data_payload.subscriber_pub_id_ = subscriber_pub_id;
+    required_send_buffer_size =
+            Parcel::ParcelSize(Payload_TopicRawData::PayloadSize(data_payload_capacity));
 }
 
 RemoteAgentTopicExporter::ExportedTopic::ExportedTopic(ExportedTopic&& other) :
       topic(other.topic),
+      subscriber_pub_id(other.subscriber_pub_id),
       reader(std::move(other.reader)),
       callback_id(other.callback_id),
       data_payload(std::move(other.data_payload)),
@@ -93,12 +95,13 @@ RemoteAgentTopicExporter::ExportedTopic::~ExportedTopic() {
 bool RemoteAgentTopicExporter::HandleSubscribeRequest(const Payload_SubscribeRequest& sub_request,
                                                       RawBuffer& send_buffer) {
     const auto& topic_name = sub_request.topic_name_;
+    const auto subscriber_pub_id = sub_request.subscriber_pub_id_;
     ALOGD("RemoteAgentTopicExporter(%s): Request to subscribe to %s", vm_name_.c_str(),
           topic_name.c_str());
 
     // Failure payload, if needed.
     Payload_SubscribeResult result_payload;
-    result_payload.topic_name_ = topic_name;
+    result_payload.subscriber_pub_id_ = subscriber_pub_id;
     result_payload.result_ = Payload_SubscribeResult::Result_Failure;
 
     auto topic = topic_manager_.FindTopic(topic_name, /*local_only*/ true);
@@ -141,7 +144,8 @@ bool RemoteAgentTopicExporter::HandleSubscribeRequest(const Payload_SubscribeReq
 
     auto [entry, inserted] =
             exported_topics_.try_emplace(topic_id,
-                                         ExportedTopic(*topic, std::move(*reader), callback_id,
+                                         ExportedTopic(*topic, subscriber_pub_id,
+                                                       std::move(*reader), callback_id,
                                                        data_payload_capacity));
 
     guard.unlock();
@@ -189,7 +193,7 @@ void RemoteAgentTopicExporter::MaybeSendSubscribeResult(ExportedTopic& exported_
 
     auto& metadata = exported_topic.topic.GetMetadata();
     Payload_SubscribeResult payload;
-    payload.topic_name_ = exported_topic.topic.GetMetadata().name;
+    payload.subscriber_pub_id_ = exported_topic.subscriber_pub_id;
     payload.result_ = Payload_SubscribeResult::Result_Ok;
     payload.message_size_ = metadata.message_size;
     payload.message_count_ = metadata.message_count;
@@ -275,10 +279,10 @@ void RemoteAgentTopicExporter::ProcessTopicDataAvailable(ExportedTopic& exported
 
 void RemoteAgentTopicExporter::ProcessTopicException(ExportedTopic& exported_topic,
                                                      RawBuffer& send_buffer) {
-    auto payload = Payload_TopicDestroyed(exported_topic.topic.GetMetadata().name);
+    auto payload = Payload_TopicDestroyed(exported_topic.subscriber_pub_id);
     if (!SendPayload(connection_, payload, parcel_id_counter_++, send_buffer)) {
         ALOGE("RemoteAgentTopicExporter(%s): Unable to send TopicDestroyed for %s",
-              vm_name_.c_str(), payload.topic_name_.c_str());
+              vm_name_.c_str(), exported_topic.topic.GetMetadata().name.c_str());
     }
 }
 

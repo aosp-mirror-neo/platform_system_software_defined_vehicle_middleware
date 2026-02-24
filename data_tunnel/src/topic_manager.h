@@ -61,7 +61,7 @@ private:
     // Locally available topics.
     // topic_id_to_name_map_, active_topics_ and topic_id_counter_ can be accessed only with
     // active_topics_lock_ locked
-    int32_t topic_id_counter_ = 0;
+    int32_t topic_id_counter_ = 1;
     std::map<core::TopicId, std::string> topic_id_to_name_map_;
     std::map<std::string, std::unique_ptr<Topic>> active_topics_;
     mutable std::mutex active_topics_lock_;

@@ -56,6 +56,7 @@ private:
     // unregistered when we're done with it.
     struct ExportedTopic final {
         Topic& topic;
+        int32_t subscriber_pub_id;
         Topic::Reader reader;
         uint32_t callback_id;
         proto::Payload_TopicRawData data_payload;
@@ -65,8 +66,8 @@ private:
         std::mutex lock;
         bool destroyed = false;
 
-        ExportedTopic(Topic& topic, Topic::Reader reader, uint32_t callback_id,
-                      size_t data_payload_capacity);
+        ExportedTopic(Topic& topic, int32_t subscriber_pub_id, Topic::Reader reader,
+                      uint32_t callback_id, size_t data_payload_capacity);
         ExportedTopic(ExportedTopic&& o);
         ~ExportedTopic();
     };

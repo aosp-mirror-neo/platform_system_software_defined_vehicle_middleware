@@ -91,6 +91,7 @@ public:
         topic_ = topic_manager_.RegisterTopic(metadata, /* client_id = */ 0, is_remote,
                                               std::move(mq));
         ASSERT_TRUE(topic_);
+        topic_id_ = topic_->GetId();
         auto reader = topic_->CreateReader();
         ASSERT_TRUE(reader);
         topic_reader_.emplace(std::move(*reader));
@@ -102,7 +103,7 @@ public:
         ASSERT_NE(bytes, 0);
 
         Payload_TopicRawData payload(bytes);
-        payload.topic_name_ = kTestTopicName;
+        payload.subscriber_pub_id_ = topic_id_;
         memcpy(payload.buffer_.Ptr(), data, bytes);
         connection_->EnqueueParcelForReceive(777, payload);
     }
@@ -181,11 +182,12 @@ public:
         auto payload = connection_->GetNextSentDataIfPayload<Payload_SubscribeRequest>();
         ASSERT_TRUE(payload);
         ASSERT_EQ(payload->topic_name_, kTestTopicName);
+        ASSERT_EQ(payload->subscriber_pub_id_, topic_id_);
     }
 
     void EnqueueSubscribeResultOkForReceive() {
         Payload_SubscribeResult subscribe_result;
-        subscribe_result.topic_name_ = kTestTopicName;
+        subscribe_result.subscriber_pub_id_ = topic_id_;
         subscribe_result.result_ = Payload_SubscribeResult::Result_Ok;
         subscribe_result.message_size_ = topic_->GetMetadata().message_size;
         subscribe_result.message_count_ = topic_->GetMetadata().message_count;
@@ -199,12 +201,12 @@ public:
         // Give ConnectionThread a chance to work.
         WaitForConditionOrTimeout([&]() {
             auto subs = client_->Subscriptions();
-            return subs.contains(kTestTopicName) && subs.at(kTestTopicName).is_active;
+            return subs.contains(topic_id_) && subs.at(topic_id_).is_active;
         });
 
         // Topic active
         ASSERT_TRUE(topic_manager_.FindTopic(kTestTopicName, /*local_only=*/false));
-        ASSERT_TRUE(client_->Subscriptions().at(kTestTopicName).is_active);
+        ASSERT_TRUE(client_->Subscriptions().at(topic_id_).is_active);
     }
 
 protected:
@@ -213,7 +215,8 @@ protected:
     ConnectionManager::EventHandler* connect_event_handler_ = nullptr;
     StrictMock<MockHandshaker> handshaker_;
     TopicManager topic_manager_;
-    Topic* topic_;
+    Topic* topic_ = nullptr;
+    uint32_t topic_id_ = 0;
     std::optional<Topic::Reader> topic_reader_;
     std::optional<RemoteAgentClient> client_;
     RemoteAgentClient::LastMessageResultFuture pending_last_message_result_;
@@ -452,6 +455,7 @@ TEST_F(RemoteAgentClientTest,
     auto payload = connection_->GetNextSentDataIfPayload<Payload_SubscribeRequest>();
     ASSERT_TRUE(payload);
     EXPECT_EQ(payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(payload->subscriber_pub_id_, topic_id_);
 }
 
 TEST_F(RemoteAgentClientTest,
@@ -467,6 +471,7 @@ TEST_F(RemoteAgentClientTest,
     auto payload = connection_->GetNextSentDataIfPayload<Payload_SubscribeRequest>();
     ASSERT_TRUE(payload);
     EXPECT_EQ(payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(payload->subscriber_pub_id_, topic_id_);
 }
 
 TEST_F(RemoteAgentClientTest, RequestSubscribe_SucceedsForDuplicateButDoesNotResend) {
@@ -525,26 +530,11 @@ TEST_F(RemoteAgentClientTest, RequestSubscribe_FailsWhenTopicIsNotRemote) {
     EXPECT_FALSE(connection_->GetNextSentData(/*timeout_seconds=*/1));
 }
 
-TEST_F(RemoteAgentClientTest, RequestSubscribe_FailsForDuplicateWithDifferentTopic) {
-    PrepareClientWithPendingSubscribeRequest();
-
-    // Unregister and re-create to change the topic instance
-    topic_manager_.UnregisterRemoteTopic(kTestTopicName);
-    CreateTestTopic(/*is_remote=*/true);
-
-    // Subscribe returns failure when no topic was registered.
-    auto subscribe_result = client_->RequestSubscribe(kTestTopicName);
-    EXPECT_EQ(subscribe_result.getStatusCode(), ::sdv::SdvStatusCode::kAlreadyExists);
-
-    // No request sent to peer
-    EXPECT_FALSE(connection_->GetNextSentData(/*timeout_seconds=*/1));
-}
-
 TEST_F(RemoteAgentClientTest, SubscribeResult_IgnoredWhenTopicUnrecognized) {
     PrepareClientWithPendingSubscribeRequest();
 
     Payload_SubscribeResult subscribe_result;
-    subscribe_result.topic_name_ = "unknown-topic-name";
+    subscribe_result.subscriber_pub_id_ = 31337;
     subscribe_result.result_ = Payload_SubscribeResult::Result_Failure;
     connection_->EnqueueParcelForReceive(484, subscribe_result);
 
@@ -553,14 +543,14 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_IgnoredWhenTopicUnrecognized) {
 
     // Topic unaffected.
     EXPECT_TRUE(topic_manager_.FindTopic(kTestTopicName, /*local_only=*/false));
-    EXPECT_FALSE(client_->Subscriptions().at(kTestTopicName).is_active);
+    EXPECT_FALSE(client_->Subscriptions().at(topic_id_).is_active);
 }
 
 TEST_F(RemoteAgentClientTest, SubscribeResult_UnregistersTopicOnFailure) {
     PrepareClientWithPendingSubscribeRequest();
 
     Payload_SubscribeResult subscribe_result;
-    subscribe_result.topic_name_ = kTestTopicName;
+    subscribe_result.subscriber_pub_id_ = topic_id_;
     subscribe_result.result_ = Payload_SubscribeResult::Result_Failure;
     connection_->EnqueueParcelForReceive(242, subscribe_result);
 
@@ -570,14 +560,14 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_UnregistersTopicOnFailure) {
 
     // Topic unregistered and no longer among imports.
     EXPECT_FALSE(topic_manager_.FindTopic(kTestTopicName, /*local_only=*/false));
-    EXPECT_FALSE(client_->Subscriptions().contains(kTestTopicName));
+    EXPECT_FALSE(client_->Subscriptions().contains(topic_id_));
 }
 
 TEST_F(RemoteAgentClientTest, SubscribeResult_UnregistersTopicOnMessageSizeMismatch) {
     PrepareClientWithPendingSubscribeRequest();
 
     Payload_SubscribeResult subscribe_result;
-    subscribe_result.topic_name_ = kTestTopicName;
+    subscribe_result.subscriber_pub_id_ = topic_id_;
     subscribe_result.result_ = Payload_SubscribeResult::Result_Ok;
     subscribe_result.message_size_ = kTestMessageSize + 2;
     subscribe_result.message_count_ = kTestMessageCount;
@@ -589,14 +579,14 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_UnregistersTopicOnMessageSizeMisma
 
     // Topic unregistered and no longer among imports.
     EXPECT_FALSE(topic_manager_.FindTopic(kTestTopicName, /*local_only=*/false));
-    EXPECT_FALSE(client_->Subscriptions().contains(kTestTopicName));
+    EXPECT_FALSE(client_->Subscriptions().contains(topic_id_));
 }
 
 TEST_F(RemoteAgentClientTest, SubscribeResult_UnregistersTopicOnMessageCountMismatch) {
     PrepareClientWithPendingSubscribeRequest();
 
     Payload_SubscribeResult subscribe_result;
-    subscribe_result.topic_name_ = kTestTopicName;
+    subscribe_result.subscriber_pub_id_ = topic_id_;
     subscribe_result.result_ = Payload_SubscribeResult::Result_Ok;
     subscribe_result.message_size_ = kTestMessageSize;
     subscribe_result.message_count_ = kTestMessageCount * 2;
@@ -608,7 +598,7 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_UnregistersTopicOnMessageCountMism
 
     // Topic unregistered and no longer among imports.
     EXPECT_FALSE(topic_manager_.FindTopic(kTestTopicName, /*local_only=*/false));
-    EXPECT_FALSE(client_->Subscriptions().contains(kTestTopicName));
+    EXPECT_FALSE(client_->Subscriptions().contains(topic_id_));
 }
 
 TEST_F(RemoteAgentClientTest, SubscribeResult_OkMakesSubscriptionActiveAndAcceptingData) {
@@ -624,7 +614,7 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_OkMakesSubscriptionActiveAndAccept
     EXPECT_FALSE(on_ready_result);  // Not yet ready.
 
     Payload_SubscribeResult subscribe_result;
-    subscribe_result.topic_name_ = kTestTopicName;
+    subscribe_result.subscriber_pub_id_ = topic_id_;
     subscribe_result.result_ = Payload_SubscribeResult::Result_Ok;
     subscribe_result.message_size_ = kTestMessageSize;
     subscribe_result.message_count_ = kTestMessageCount;
@@ -632,10 +622,9 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_OkMakesSubscriptionActiveAndAccept
     connection_->EnqueueParcelForReceive(242, subscribe_result);
 
     // Give ConnectionThread a chance to work.
-    WaitForConditionOrTimeout(
-            [&]() { return client_->Subscriptions().at(kTestTopicName).is_active; });
+    WaitForConditionOrTimeout([&]() { return client_->Subscriptions().at(topic_id_).is_active; });
 
-    EXPECT_TRUE(client_->Subscriptions().at(kTestTopicName).is_active);
+    EXPECT_TRUE(client_->Subscriptions().at(topic_id_).is_active);
 
     // Check that readiness callback fired.
     ASSERT_TRUE(on_ready_result);
@@ -665,7 +654,7 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_OkWithLastMessageWritesMessageToTo
     TestMessageType sent_last_message = 912812;
 
     Payload_SubscribeResult subscribe_result;
-    subscribe_result.topic_name_ = kTestTopicName;
+    subscribe_result.subscriber_pub_id_ = topic_id_;
     subscribe_result.result_ = Payload_SubscribeResult::Result_Ok;
     subscribe_result.message_size_ = kTestMessageSize;
     subscribe_result.message_count_ = kTestMessageCount;
@@ -675,10 +664,9 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_OkWithLastMessageWritesMessageToTo
     connection_->EnqueueParcelForReceive(242, subscribe_result);
 
     // Give ConnectionThread a chance to work.
-    WaitForConditionOrTimeout(
-            [&]() { return client_->Subscriptions().at(kTestTopicName).is_active; });
+    WaitForConditionOrTimeout([&]() { return client_->Subscriptions().at(topic_id_).is_active; });
 
-    EXPECT_TRUE(client_->Subscriptions().at(kTestTopicName).is_active);
+    EXPECT_TRUE(client_->Subscriptions().at(topic_id_).is_active);
 
     // Last message available since provided in result.
     ASSERT_EQ(topic_reader_->AvailableToRead(), kTestMessageSize);
@@ -708,7 +696,7 @@ TEST_F(RemoteAgentClientTest, TopicRawData_IgnoredIfNoSubscription) {
 TEST_F(RemoteAgentClientTest, TopicRawData_IgnoredIfSubscriptionInactive) {
     PrepareClientWithPendingSubscribeRequest();
 
-    ASSERT_FALSE(client_->Subscriptions().at(kTestTopicName).is_active);
+    ASSERT_FALSE(client_->Subscriptions().at(topic_id_).is_active);
     ASSERT_EQ(topic_reader_->AvailableToRead(), 0);
 
     EnqueueTestTopicMessagesForReceive({123, 456});
@@ -724,7 +712,7 @@ TEST_F(RemoteAgentClientTest, Subscription_BecomesInactiveOnDisconnectAndReactiv
     PrepareClientWithActiveSubscription();
 
     // Ensure subscription is active to start out.
-    ASSERT_TRUE(client_->Subscriptions().at(kTestTopicName).is_active);
+    ASSERT_TRUE(client_->Subscriptions().at(topic_id_).is_active);
 
     // Simulate failure.
 
@@ -742,35 +730,35 @@ TEST_F(RemoteAgentClientTest, Subscription_BecomesInactiveOnDisconnectAndReactiv
               std::future_status::ready);
 
     // Subscription marked inactive by disconnect.
-    EXPECT_FALSE(client_->Subscriptions().at(kTestTopicName).is_active);
+    EXPECT_FALSE(client_->Subscriptions().at(topic_id_).is_active);
 
     // Receive a connect result and return to ACTIVE.
     CompleteConnection();
 
-    // Should have sent out a new suscribe request.
+    // Should have sent out a new subscribe request.
     auto resubscribe_payload = connection_->GetNextSentDataIfPayload<Payload_SubscribeRequest>();
     ASSERT_TRUE(resubscribe_payload);
     ASSERT_EQ(resubscribe_payload->topic_name_, kTestTopicName);
+    ASSERT_EQ(resubscribe_payload->subscriber_pub_id_, topic_id_);
 
     // Simulate receiving subscribe result.
     EnqueueSubscribeResultOkForReceive();
 
     // Give ConnectionThread a chance to work.
-    WaitForConditionOrTimeout(
-            [&]() { return client_->Subscriptions().at(kTestTopicName).is_active; });
+    WaitForConditionOrTimeout([&]() { return client_->Subscriptions().at(topic_id_).is_active; });
 
     // Subscription has returned to active.
-    EXPECT_TRUE(client_->Subscriptions().at(kTestTopicName).is_active);
+    EXPECT_TRUE(client_->Subscriptions().at(topic_id_).is_active);
 }
 
 TEST_F(RemoteAgentClientTest, TopicDestroyed_IgnoredForUnsubscribedTopic) {
     PrepareClientWithActiveConnection();
     CreateTestTopic(/*is_remote=*/true);
 
-    ASSERT_FALSE(client_->Subscriptions().contains(kTestTopicName));
+    ASSERT_FALSE(client_->Subscriptions().contains(topic_id_));
 
     Payload_TopicDestroyed payload;
-    payload.topic_name_ = kTestTopicName;
+    payload.subscriber_pub_id_ = topic_id_;
     connection_->EnqueueParcelForReceive(894, payload);
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -782,17 +770,17 @@ TEST_F(RemoteAgentClientTest, TopicDestroyed_IgnoredForUnsubscribedTopic) {
 TEST_F(RemoteAgentClientTest, TopicDestroyed_ProcessedForInactiveSubscription) {
     PrepareClientWithPendingSubscribeRequest();
 
-    ASSERT_TRUE(client_->Subscriptions().contains(kTestTopicName));
-    ASSERT_FALSE(client_->Subscriptions().at(kTestTopicName).is_active);
+    ASSERT_TRUE(client_->Subscriptions().contains(topic_id_));
+    ASSERT_FALSE(client_->Subscriptions().at(topic_id_).is_active);
 
     Payload_TopicDestroyed payload;
-    payload.topic_name_ = kTestTopicName;
+    payload.subscriber_pub_id_ = topic_id_;
     connection_->EnqueueParcelForReceive(894, payload);
 
-    WaitForConditionOrTimeout([&]() { return !client_->Subscriptions().contains(kTestTopicName); });
+    WaitForConditionOrTimeout([&]() { return !client_->Subscriptions().contains(topic_id_); });
 
     // Subscription removed
-    EXPECT_FALSE(client_->Subscriptions().contains(kTestTopicName));
+    EXPECT_FALSE(client_->Subscriptions().contains(topic_id_));
 
     // Topic was destroyed
     EXPECT_FALSE(topic_manager_.FindTopic(kTestTopicName, /*local_only*/ false));
@@ -801,17 +789,17 @@ TEST_F(RemoteAgentClientTest, TopicDestroyed_ProcessedForInactiveSubscription) {
 TEST_F(RemoteAgentClientTest, TopicDestroyed_ProcessedForActiveSubscription) {
     PrepareClientWithActiveSubscription();
 
-    ASSERT_TRUE(client_->Subscriptions().contains(kTestTopicName));
-    ASSERT_TRUE(client_->Subscriptions().at(kTestTopicName).is_active);
+    ASSERT_TRUE(client_->Subscriptions().contains(topic_id_));
+    ASSERT_TRUE(client_->Subscriptions().at(topic_id_).is_active);
 
     Payload_TopicDestroyed payload;
-    payload.topic_name_ = kTestTopicName;
+    payload.subscriber_pub_id_ = topic_id_;
     connection_->EnqueueParcelForReceive(894, payload);
 
-    WaitForConditionOrTimeout([&]() { return !client_->Subscriptions().contains(kTestTopicName); });
+    WaitForConditionOrTimeout([&]() { return !client_->Subscriptions().contains(topic_id_); });
 
     // Subscription removed
-    EXPECT_FALSE(client_->Subscriptions().contains(kTestTopicName));
+    EXPECT_FALSE(client_->Subscriptions().contains(topic_id_));
 
     // Topic was destroyed
     EXPECT_FALSE(topic_manager_.FindTopic(kTestTopicName, /*local_only*/ false));
