@@ -62,33 +62,18 @@ impl AuthzService {
             object_service_unit_name,
         );
 
-        if let AuthzResult::Permitted(_) = acl_result {
-            debug!("Permitted by ACLs: {subject_fqin} to access {object_log_identifier}");
-            return self.handle_authz_result(subject_fqin, object_log_identifier, acl_result);
-        }
+        let permission_result = if feature_flags::enable_permissions() {
+            self.authz_via_permissions.check_authorization_for_service_unit(
+                subject_fqin,
+                object_fqin,
+                object_service_unit_name,
+            )
+        } else {
+            AuthzResult::ImplicitlyDenied("Permissions are disabled".to_string())
+        };
 
-        if feature_flags::enable_permissions() {
-            let permissions_result =
-                self.authz_via_permissions.check_authorization_for_service_unit(
-                    subject_fqin,
-                    object_fqin,
-                    object_service_unit_name,
-                );
-
-            if let AuthzResult::Permitted(_) = permissions_result {
-                debug!(
-                    "Permitted by permissions: {subject_fqin} to access {object_log_identifier}"
-                );
-                return self.handle_authz_result(
-                    subject_fqin,
-                    object_log_identifier,
-                    permissions_result,
-                );
-            }
-        }
-
-        // Neither permitted, so we'll use the ACL result for logging denial.
-        self.handle_authz_result(subject_fqin, object_log_identifier, acl_result)
+        // Use both results to make final decision and log denial if needed.
+        self.handle_authz_result(subject_fqin, object_log_identifier, acl_result, permission_result)
     }
 
     /// Returns whether Subject FQIN is authorized for the Object Unit Type.
@@ -106,45 +91,50 @@ impl AuthzService {
             object_package_name,
             object_unit_type_name,
         );
-        if let AuthzResult::Permitted(_) = acl_result {
-            debug!("Permitted by ACLs: {subject_fqin} to access {object_log_identifier}");
-            return self.handle_authz_result(subject_fqin, object_log_identifier, acl_result);
-        }
 
-        if feature_flags::enable_permissions() {
-            let permissions_result = self.authz_via_permissions.check_authorization_for_unit_type(
+        let permission_result = if feature_flags::enable_permissions() {
+            self.authz_via_permissions.check_authorization_for_unit_type(
                 subject_fqin,
                 object_package_name,
                 object_unit_type_name,
-            );
-            if let AuthzResult::Permitted(_) = permissions_result {
-                debug!(
-                    "Permitted by permissions: {subject_fqin} to access {object_log_identifier}"
-                );
-                return self.handle_authz_result(
-                    subject_fqin,
-                    object_log_identifier,
-                    permissions_result,
-                );
-            }
-        }
+            )
+        } else {
+            AuthzResult::ImplicitlyDenied("Permissions are disabled".to_string())
+        };
 
-        // Neither permitted. Return ACL result for logging.
-        self.handle_authz_result(subject_fqin, object_log_identifier, acl_result)
+        // Use both results to make final decision and log denial if needed.
+        self.handle_authz_result(subject_fqin, object_log_identifier, acl_result, permission_result)
     }
 
     fn handle_authz_result(
         &self,
         subject_fqin: &ServiceFqin,
         object_log_identifier: String,
-        authz_result: AuthzResult,
+        authz_result_from_acls: AuthzResult,
+        authz_result_from_permissions: AuthzResult,
     ) -> bool {
-        let (is_authorized, audit_msg) = convert_authz_result(authz_result);
+        let (is_authorized_by_acls, audit_msg_from_acls) =
+            convert_authz_result(authz_result_from_acls);
+        let (is_authorized_by_permissions, audit_msg_from_permissions) =
+            convert_authz_result(authz_result_from_permissions);
 
-        if is_authorized {
+        if is_authorized_by_acls {
             debug!(
-                "{object_log_identifier} allows access to {subject_fqin}, audit message: {audit_msg}"
+                "{object_log_identifier} allows access to {subject_fqin}, audit message: {audit_msg_from_acls}"
             );
+        }
+
+        if is_authorized_by_permissions {
+            debug!(
+                "{subject_fqin} declares permission to access {object_log_identifier}, audit message: {audit_msg_from_permissions}"
+            );
+        }
+
+        if is_authorized_by_acls != is_authorized_by_permissions {
+            debug!("Access [subject: {subject_fqin}] to [object: {object_log_identifier}] mismatch: ACLs[{is_authorized_by_acls}], Permissions[{is_authorized_by_permissions}]");
+        }
+
+        if is_authorized_by_acls || is_authorized_by_permissions {
             return true;
         }
 
@@ -153,13 +143,19 @@ impl AuthzService {
             //   1. Access is granted even though `Subject` is not authorized to the `Object`;
             //   2. Access violation is logged.
             warn!(
-                "Authz violation. Access is granted by flag. {object_log_identifier} denies access to {subject_fqin}, audit message: {audit_msg}"
+                "Authz violation. Access is granted by flag. {object_log_identifier} denies access to {subject_fqin}, audit message: {audit_msg_from_acls}"
+            );
+            warn!(
+                "Authz violation. Access is granted by flag. {subject_fqin} does not declare permission to access {object_log_identifier}, audit message: {audit_msg_from_permissions}"
             );
             return true;
         }
 
         error!(
-            "Authz violation. {object_log_identifier} denies access to {subject_fqin}, audit message: {audit_msg}"
+            "Authz violation. {object_log_identifier} denies access to {subject_fqin}, audit message: {audit_msg_from_acls}"
+        );
+        error!(
+            "Authz violation. {subject_fqin} does not declare permission to access {object_log_identifier}, audit message: {audit_msg_from_permissions}"
         );
         false
     }
