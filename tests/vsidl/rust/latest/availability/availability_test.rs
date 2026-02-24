@@ -62,7 +62,6 @@ mod test {
         let mut availability_stream = sdv::mw::clientlib::create_registration_event_stream(
             sdv_comms.as_ref(),
             subscriber::Channel::<TirePressure>::CHANNEL_ZERO,
-            &SubscribeOptions::default(),
         )
         .await
         .expect("Availability stream creation failed");
@@ -108,7 +107,6 @@ mod test {
         let pressure_pub = publishing_bundle
             .take_publisher(publisher::Channel::<TirePressure>::CHANNEL_ZERO)
             .expect("taking publisher Channel::CHANNEL_ZERO failed.");
-
         // SLEEP to ensure the topic multiplexer is created on a separate process.
         thread::sleep(TOPIC_PROCESSING_DURATION);
 
@@ -186,7 +184,6 @@ mod test {
         let mut availability_stream = sdv::mw::clientlib::create_registration_event_stream(
             sdv_comms.as_ref(),
             hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
-            &SubscribeOptions::default(),
         )
         .await
         .expect("Availability stream creation failed");

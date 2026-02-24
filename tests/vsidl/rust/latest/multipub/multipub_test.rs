@@ -73,7 +73,8 @@ mod test {
             )
             .expect("taking footwell pub failed.");
 
-        // AND GIVEN a 'multipub' subscriber and observer (see VSIDL declaration).
+        // AND GIVEN a 'multipub' subscriber, observer
+        // and history reader (see VSIDL declaration).
         let subscriber = sdv::mw::clientlib::create_subscriber(
             sdv_comms.as_ref(),
             hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
@@ -88,6 +89,13 @@ mod test {
         )
         .await
         .expect("Create CabinTemperature observer failed.");
+        let history_reader = sdv::mw::clientlib::create_history(
+            sdv_comms.as_ref(),
+            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
+            &SubscribeOptions::builder().message_count(10).build().unwrap(),
+        )
+        .await
+        .expect("Create CabinTemperature history reader failed.");
 
         // SLEEP to ensure the multiplexer is created on a separate process.
         thread::sleep(MULTIPUB_PROCESSING_DURATION);
@@ -130,17 +138,15 @@ mod test {
         assert!(read.contains(&cabin_temp));
         assert!(read.contains(&footwell_temp));
 
-        // WHEN trying to get history on a multipub message.
-        let result = sdv::mw::clientlib::create_history(
-            sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
-            &SubscribeOptions::default(),
-        )
-        .await;
-
-        // THEN an error code is returned, suggesting this is not supported.
-        assert!(result.is_err());
-        assert_eq!(result.err().unwrap().status_code(), SdvStatusCode::Unimplemented);
+        let history_buf: Vec<u32> = history_reader
+            .read_from_history(5)
+            .unwrap()
+            .iter()
+            .map(|message| message.temperature)
+            .collect();
+        assert_eq!(history_buf.len(), 2);
+        assert!(history_buf.contains(&cabin_temp));
+        assert!(history_buf.contains(&footwell_temp));
 
         // WHEN trying to instant read a multipub message.
         let result = sdv::mw::clientlib::create_instant_reader(
@@ -221,5 +227,17 @@ mod test {
             .collect();
         assert_eq!(read.len(), 1);
         assert!(read.contains(&passenger_temp));
+
+        // AND THEN history reader can reads new and old messages.
+        let history_buf: Vec<u32> = history_reader
+            .read_from_history(5)
+            .unwrap()
+            .iter()
+            .map(|message| message.temperature)
+            .collect();
+        assert_eq!(history_buf.len(), 3);
+        assert!(history_buf.contains(&cabin_temp));
+        assert!(history_buf.contains(&footwell_temp));
+        assert!(history_buf.contains(&passenger_temp));
     }
 }

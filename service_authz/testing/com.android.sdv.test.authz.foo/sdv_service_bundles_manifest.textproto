@@ -28,5 +28,5 @@ sdv_service_bundle_metadata {
   # Path to the orchestration config file.
   orchestration_config_path: "etc/orch/authz_tested_service_orch.textproto"
   # Path to the ACLs policy file.
-  access_control_list_policy_path: "etc/acls/authz_tested_service_acls.textproto"
+  authorization_policy_path: "etc/acls/authz_tested_service_acls.textproto"
 }

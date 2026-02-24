@@ -19,7 +19,7 @@ import "sdv_sd_mesh/api/identity/identity.proto";
 import "sdv_sd_mesh/api/service_discovery/discovery.proto";
 import "sdv_sd_mesh/api/service_discovery/metadata.proto";
 
-import "sdv/authz/policy/acl_policy.proto";
+import "sdv/authz/policy/authz_policy.proto";
 
 service MeshManager {
   // Subscribes to AddServiceUnitEvent, RemoveServiceUnitEvent, and RemoveByIdentityEvent events.
@@ -93,7 +93,7 @@ message GetPeerLocalAclsResponse {
     // Required.
     string service_bundle_name = 2;
     // Required.
-    sdv.authz.policy.acl_policy.AclPolicy acl_policy = 3;
+    sdv.authz.policy.authz_policy.AuthzPolicy acl_policy = 3;
   }
 
   // Required.

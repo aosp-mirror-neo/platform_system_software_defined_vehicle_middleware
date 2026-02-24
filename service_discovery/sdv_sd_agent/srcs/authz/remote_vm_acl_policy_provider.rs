@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use sdv_authz::{AclPolicyModel, SingleVmAclPolicyProvider};
-use sdv_authz_policy_proto_rust::acl_policy::AclPolicy as AclPolicyProto;
+use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
 use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName};
 
 use anyhow::{anyhow, Context};

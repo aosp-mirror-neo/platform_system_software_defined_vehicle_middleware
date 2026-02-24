@@ -676,7 +676,7 @@ mod test {
     };
     use protobuf::text_format;
     use sdv_authz::{AclPolicyModel, AclPolicyProvider, AuthzEnforcementFlag, AuthzService};
-    use sdv_authz_policy_proto_rust::acl_policy::AclPolicy as AclPolicyProto;
+    use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
     use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName, VmName};
     use std::{
         collections::{HashMap, HashSet},

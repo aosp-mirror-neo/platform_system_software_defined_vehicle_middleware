@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use protobuf::text_format::parse_from_str;
-use sdv_authz_policy_proto_rust::acl_policy::AclPolicy;
+use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy;
 use std::fs;
 
 const TEST_TEXTPROTO_PATH: &str = "sdv/authz/policy/testdata/authz_policy_permissions.textproto";
@@ -21,7 +21,7 @@ const TEST_TEXTPROTO_PATH: &str = "sdv/authz/policy/testdata/authz_policy_permis
 #[test]
 fn test_parse_textproto_with_permissions() {
     let textproto_content = fs::read_to_string(TEST_TEXTPROTO_PATH).unwrap();
-    let policy: AclPolicy = parse_from_str(&textproto_content).unwrap();
+    let policy: AuthzPolicy = parse_from_str(&textproto_content).unwrap();
 
     assert_eq!(policy.publisher.len(), 1);
     assert_eq!(policy.publisher[0].message, "test.package.MessageType");

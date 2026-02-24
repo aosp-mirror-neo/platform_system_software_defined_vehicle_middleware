@@ -147,7 +147,7 @@ mod tests {
     use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition;
     use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::IServiceDiscoveryAgent::MockIServiceDiscoveryAgent;
     use protobuf::text_format;
-    use sdv_authz_policy_proto_rust::acl_policy::AclPolicy as AclPolicyProto;
+    use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
     use sdv_comms_id::names::{ServiceName as ServiceBundleName, VmName};
     use std::str::FromStr;
 

@@ -21,7 +21,7 @@ sdv_service_bundle_metadata {
   version_number: 0
   version_name: "0.1 Alpha"
   native_library_path: "lib64/liboem_authz_service_bundle_test.so"
-  access_control_list_policy_path: "etc/config/access_control/AuthzTestAclPolicy.textproto"
+  authorization_policy_path: "etc/config/access_control/AuthzTestAclPolicy.textproto"
 }
 
 # SDV authz test without ACL policy.

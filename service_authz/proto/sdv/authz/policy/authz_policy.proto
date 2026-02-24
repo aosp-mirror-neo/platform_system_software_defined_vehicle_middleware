@@ -14,14 +14,14 @@
 
 syntax = "proto3";
 
-package sdv.authz.policy.acl_policy;
+package sdv.authz.policy.authz_policy;
 
-// AclPolicy defines the Access control policies for Unit Types and Service
-// Units.
+// AuthzPolicy defines the authorization policies for Unit Types and Service
+// Units (i.e. ACLs and permissions).
 //
 // Service bundle manifest file may include a path to a policy file that
 // includes an AclPolicy proto.
-message AclPolicy {
+message AuthzPolicy {
   // Optional. List of ACLs.
   //
   // ACL names should be unique for this AclPolicy message.

@@ -1148,7 +1148,7 @@ mod tests {
     #[tokio::test]
     async fn unlocked_service_get_peer_local_acls() {
         use protobuf::text_format;
-        use sdv_authz_policy_proto_rust::acl_policy::AclPolicy as AclPolicyProto;
+        use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
         use std::str::FromStr;
 
         let vvm_config = Arc::new(prepare_test_vm_config().unwrap());

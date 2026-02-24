@@ -193,7 +193,6 @@ mod test {
         let mut availability_stream = clientlib::create_registration_event_stream(
             comms.as_ref(),
             subscriber::Channel::<TirePressure>::FRONT_LEFT,
-            &SubscribeOptions::default(),
         )
         .await
         .expect("Availability stream creation failed");
