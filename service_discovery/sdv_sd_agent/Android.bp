@@ -158,7 +158,7 @@ rust_binary {
     vendor: true,
     stem: "sdv_sd_agent",
     apex_available: [
-        "com.google.sdv.comms",
+        "com.android.sdv.comms",
     ],
     visibility: ["//system/software_defined_vehicle/sdv_gateway/sdv_comms_for_ivi/apex:__pkg__"],
     shared_libs: [
