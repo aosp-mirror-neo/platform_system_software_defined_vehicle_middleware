@@ -18,7 +18,7 @@
 use crate::{
     pubsub_traits::{Publication, Publish, Subscribe},
     rpc_traits::{ClientTransport, ServerTransport},
-    types::{Availability, ClientAttributes, PublisherAttributes, ServerAttributes},
+    types::{Availability, ClientAttributes, ClientOptions, PublisherAttributes, ServerAttributes},
     ByteBuffersStream, SubscribeOptions, TypeName, UnitQuery,
 };
 use async_trait::async_trait;
@@ -145,6 +145,14 @@ pub trait Communicate: Send + Sync {
     async fn create_client_transport(
         &self,
         attributes: &ClientAttributes,
+    ) -> SdvResult<Box<dyn ClientTransport>>;
+
+    /// create an object implementing ClientTransport with TypeName and Channel
+    async fn create_client_transport_for_channel(
+        &self,
+        type_name: &TypeName,
+        channel: &str,
+        options: &ClientOptions,
     ) -> SdvResult<Box<dyn ClientTransport>>;
 
     /// creates a stream of registration events

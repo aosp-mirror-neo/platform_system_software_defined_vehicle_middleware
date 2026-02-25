@@ -192,6 +192,8 @@ pub enum UnitQuery {
     Type(TypeName),
     /// query by Topic
     Topic((TypeName, String)),
+    /// query by Channel
+    Channel((TypeName, String)),
 }
 
 /// PublisherAttributes
@@ -576,6 +578,8 @@ impl ClientOptionsBuilder {
 pub struct ServerAttributes {
     /// server service_unit_name
     server_name: String,
+    /// server channel name
+    channel: String,
     /// TypeName
     type_name: TypeName,
     /// server options
@@ -591,6 +595,10 @@ impl ServerAttributes {
     pub fn get_server_name(&self) -> &str {
         &self.server_name
     }
+    /// server channel name
+    pub fn get_channel(&self) -> &str {
+        &self.channel
+    }
     /// TypeName of the service interface
     pub fn get_type_name(&self) -> &TypeName {
         &self.type_name
@@ -604,6 +612,7 @@ impl ServerAttributes {
 #[derive(Clone, Default, Debug)]
 pub struct ServerAttributesBuilder {
     server_name: String,
+    channel: String,
     type_name: Option<TypeName>,
     server_options: ServerOptions,
 }
@@ -612,6 +621,11 @@ impl ServerAttributesBuilder {
     /// set the server service_unit_name
     pub fn server_name(mut self, server_name: impl Into<String>) -> Self {
         self.server_name = server_name.into();
+        self
+    }
+    /// set the server channel name
+    pub fn channel(mut self, channel: impl Into<String>) -> Self {
+        self.channel = channel.into();
         self
     }
     /// set the TypeName of the service interface
@@ -636,6 +650,7 @@ impl ServerAttributesBuilder {
         };
         Ok(ServerAttributes {
             server_name: self.server_name,
+            channel: self.channel,
             type_name,
             options: self.server_options,
         })
@@ -932,5 +947,31 @@ mod test {
         let server_options = result.unwrap();
         assert_eq!(server_options.get_timeout_in_sec(), 487236);
         assert_eq!(server_options.get_max_request_size(), Some(93947));
+    }
+
+    #[test]
+    fn test_server_attributes_builder_with_channel() {
+        let server_name = "test-server-unit";
+        let channel_name = "test-channel-name";
+        let package_name = "test.pkg.name";
+        let type_name = TypeName::builder().package_name(package_name).build().unwrap();
+        let timeout_in_sec: u32 = 123;
+        let server_options =
+            ServerOptions::builder().timeout_in_sec(timeout_in_sec).build().unwrap();
+
+        let result = ServerAttributes::builder()
+            .server_name(server_name)
+            .channel(channel_name)
+            .type_name(type_name.clone())
+            .server_options(server_options)
+            .build();
+
+        assert!(result.is_ok());
+        let server_attributes = result.unwrap();
+
+        assert_eq!(server_attributes.get_server_name(), server_name);
+        assert_eq!(server_attributes.get_channel(), channel_name);
+        assert_eq!(server_attributes.get_type_name(), &type_name);
+        assert_eq!(server_attributes.get_server_options().get_timeout_in_sec(), timeout_in_sec);
     }
 }
