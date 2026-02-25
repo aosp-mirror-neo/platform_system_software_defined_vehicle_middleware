@@ -141,7 +141,7 @@ protected:
         std::promise<void> connect_promise;
         EXPECT_CALL(connection_manager_,
                     Connect(Eq(peer_address),
-                            Eq("peer-vm-name:google.sdv.dt.IDataTunnelAgent/default"), _))
+                            Eq("peer-vm-name:com.android.sdv.dt.IDataTunnelAgent/default"), _))
                 .WillOnce([&](auto&, auto&, auto& eh) {
                     event_handler_ = &eh;
                     connect_promise.set_value();

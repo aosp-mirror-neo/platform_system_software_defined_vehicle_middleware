@@ -38,11 +38,11 @@ static const char* kSelfVmName = "self_vm";
 static const char* kPeerVmName_1 = "peer_vm_1";
 static const char* kPeerVmName_2 = "peer_vm_2";
 
-// EncodedNameForCert("peer_vm_1:google.sdv.dt.IDataTunnelAgent/default")
-static const char* kPeerEncodedIdentity_1 = "8ugkptjiqkt0odn9rlodhtdvts7hlmk79vsmiv2ad1qulbnffh9g";
+// EncodedNameForCert("peer_vm_1:com.android.sdv.dt.IDataTunnelAgent/default")
+static const char* kPeerEncodedIdentity_1 = "456qtdgtj9vgmjj273vt3dh215r3qfar57g8vbemocj6iaiv4k00";
 
-// EncodedNameForCert("peer_vm_2:google.sdv.dt.IDataTunnelAgent/default")
-static const char* kPeerEncodedIdentity_2 = "hd0g6qbe2hpar3s6osjkdlkt31jhs1gdhuod8g0th0sl08haffu0";
+// EncodedNameForCert("peer_vm_2:com.android.sdv.dt.IDataTunnelAgent/default")
+static const char* kPeerEncodedIdentity_2 = "v2kccpjo4ct81v85hugk8vnuc989hkhh107dt8ct2nm7l833l7pg";
 
 class RemoteAgentHandshakerTest : public ::testing::Test {
 protected:

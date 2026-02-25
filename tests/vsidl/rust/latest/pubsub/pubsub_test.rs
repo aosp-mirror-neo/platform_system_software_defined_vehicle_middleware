@@ -678,7 +678,7 @@ mod test {
             .publish(&TirePressure { pressure: pressure_after_recreation, ..Default::default() })
             .expect("pressure_pub publishing failed.");
 
-        // THEN history does not receive any message from this new publisher
+        // THEN history does receive the message from this new publisher
         thread::sleep(PUBLISHER_DROP_SIGNAL_PROPAGATION);
         let read_history = history.read_from_history(2).unwrap();
         assert_eq!(read_history.len(), 2);
