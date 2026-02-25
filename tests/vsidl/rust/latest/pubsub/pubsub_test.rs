@@ -377,7 +377,7 @@ mod test {
         .await;
         assert!(instant_reader.is_err());
         let _ =
-            instant_reader.inspect_err(|e| assert_eq!(e.status_code(), SdvStatusCode::Unavailable));
+            instant_reader.inspect_err(|e| assert_eq!(e.status_code(), SdvStatusCode::NotFound));
     }
 
     #[tokio::test]
@@ -585,6 +585,9 @@ mod test {
             .publish(&TirePressure { pressure, ..Default::default() })
             .expect("pressure_pub publishing failed.");
 
+        // THEN instant_read reads Internal error.
+        thread::sleep(HISTORY_PROCESSING_DURATION);
+
         // THEN we can read last message.
         let instant_read = instant_reader.read_latest_message().await.unwrap();
         assert!(instant_read.is_some());
@@ -595,15 +598,17 @@ mod test {
 
         // THEN instant_read reads Internal error.
         thread::sleep(HISTORY_PROCESSING_DURATION);
-        let instant_read = instant_reader.read_latest_message().await;
-        assert!(instant_read.is_err());
-        assert_eq!(instant_read.unwrap_err().status_code(), SdvStatusCode::Internal);
+        // THEN we can still read last message.
+        let instant_read = instant_reader.read_latest_message().await.unwrap();
+        assert!(instant_read.is_some());
+        assert_eq!(instant_read.unwrap().pressure, pressure);
 
         // THEN after all signal are propagated, instant_read reads Internal error.
         thread::sleep(PUBLISHER_DROP_SIGNAL_PROPAGATION);
-        let instant_read = instant_reader.read_latest_message().await;
-        assert!(instant_read.is_err());
-        assert_eq!(instant_read.unwrap_err().status_code(), SdvStatusCode::Internal);
+        // THEN we can read last message.
+        let instant_read = instant_reader.read_latest_message().await.unwrap();
+        assert!(instant_read.is_some());
+        assert_eq!(instant_read.unwrap().pressure, pressure);
 
         // WHEN the publisher is re-created
         let publisher = clientlib::create_publisher(

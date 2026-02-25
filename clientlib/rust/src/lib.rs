@@ -38,10 +38,6 @@ pub use rpc_server::*;
 pub mod availability;
 pub use availability::*;
 
-/// Utils
-pub(crate) mod utility;
-pub(crate) use utility::to_unit_name;
-
 /// A trait for vsidlc-generated types (channels and services) to provide their logical type
 /// identifier.
 ///
