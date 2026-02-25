@@ -238,6 +238,21 @@ impl Communicate for SdvComms {
         Ok(Box::new(crate::pubsub_impl::SdvHistory::new(dt_history)))
     }
 
+    async fn create_instant_reader_handle(
+        &self,
+        type_name: &TypeName,
+        topic_name: &str,
+    ) -> SdvResult<Box<dyn sdv_mw_rs_comms::InstantRead>> {
+        let unit_type = UnitType::builder()
+            .set_sdv_package_name(type_name.get_package_name())
+            .set_unit_type_name(type_name.get_type_name())
+            .build()?;
+        let dt_instant_reader =
+            sdv_comms::dt::InstantReader::create_for_topic(self.context, &unit_type, topic_name)
+                .await?;
+        Ok(Box::new(crate::pubsub_impl::SdvTopicInstantReader::new(dt_instant_reader)))
+    }
+
     async fn create_client_transport(
         &self,
         attributes: &ClientAttributes,
@@ -1849,6 +1864,65 @@ mod test {
         // THEN response has error due to time out
         assert!(response.is_err());
         assert_eq!(response.unwrap_err().status_code(), SdvStatusCode::Cancelled);
+    }
+
+    #[tokio::test]
+    async fn test_sdv_instant_reader() {
+        // We need to init Binder for the event registration stream
+        // as Binder is used internally by SDV Service Discovery.
+        // Events are not emitted unless `binder::ProcessState::start_thread_pool()`
+        // is called beforehand.
+        binder::ProcessState::start_thread_pool();
+
+        let bundle_name: &str = "TopicInstantReaderTest";
+        let service_unit_name: &str = "pressure-publication";
+        let topic_name: &str = "pressure-channel";
+
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{VM}:{PACKAGE}.{bundle_name}/sample"))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = Arc::new(SdvComms { context });
+
+        // GIVEN a publisher
+        let publisher = new_pressure_publisher(
+            comms.clone(),
+            service_unit_name,
+            Some(TYPE_NAME),
+            Some(topic_name),
+            PublisherMetadata::builder().message_count(10).message_size(5).build().unwrap(),
+        )
+        .await;
+
+        // AND WHEN an instant reader is created before the publication of any messages
+        let type_name =
+            TypeName::builder().package_name(PACKAGE).type_name(TYPE_NAME).build().unwrap();
+        let reader_before_publication = InstantReader::<Pressure>::new(
+            comms.create_instant_reader_handle(&type_name, topic_name).await.unwrap(),
+        );
+        // THEN no message is received
+        assert!(reader_before_publication.read_latest_message().await.unwrap().is_none());
+
+        // WHEN 2 messages are published
+        let pressure_msg1 = Pressure { pressure: 1234, ..Default::default() };
+        let pressure_msg2 = Pressure { pressure: 5678, ..Default::default() };
+        publisher.publish_batch(&[pressure_msg1.clone(), pressure_msg2.clone()]).unwrap();
+
+        // AND WHEN an instant reader is created
+        let type_name =
+            TypeName::builder().package_name(PACKAGE).type_name(TYPE_NAME).build().unwrap();
+        let reader_after_publication = InstantReader::<Pressure>::new(
+            comms.create_instant_reader_handle(&type_name, topic_name).await.unwrap(),
+        );
+
+        // Allow time for message to propagate
+        tokio::time::sleep(TOPIC_CREATION_DURATION).await;
+
+        // THEN the latest message can be read
+        let read_instant = reader_before_publication.read_latest_message().await.unwrap().unwrap();
+        assert_eq!(read_instant.pressure, 5678); // Latest message
+        let read_instant = reader_after_publication.read_latest_message().await.unwrap().unwrap();
+        assert_eq!(read_instant.pressure, 5678); // Latest message
     }
 
     #[tokio::test]

@@ -277,6 +277,20 @@ impl Communicate for LocalComms {
         }
     }
 
+    async fn create_instant_reader_handle(
+        &self,
+        _type_name: &TypeName,
+        topic_name: &str,
+    ) -> SdvResult<Box<dyn sdv_mw_rs_comms::InstantRead>> {
+        let msg_queues = self.msg_queues.lock().unwrap();
+        match msg_queues.get(topic_name) {
+            Some(msg_q_arc) => {
+                Ok(Box::new(crate::pubsub_impl::LocalInstantReader::new(msg_q_arc.clone())))
+            }
+            None => Err(SdvStatus::new(SdvStatusCode::Unavailable)),
+        }
+    }
+
     async fn create_server_transport(
         &self,
         _attributes: &ServerAttributes,
@@ -861,5 +875,37 @@ mod test {
         assert_eq!(messages[0].pressure, 5678);
         assert_eq!(messages[1].pressure, 9012);
         assert_eq!(messages[2].pressure, 3456);
+    }
+
+    #[tokio::test]
+    async fn test_instant_reader() {
+        let comms = LocalComms::new();
+        let publisher = Publisher::<Pressure>::new(
+            comms
+                .create_publish(&get_pressure_pub_attr(DEFAULT_PUBLISHER_NAME, DEFAULT_COUNT))
+                .await
+                .unwrap(),
+        );
+
+        // GIVEN 2 messages are published from a publisher:
+        let mut pressure_msg_1 = Pressure::new();
+        pressure_msg_1.pressure = 1234;
+
+        let mut pressure_msg_2 = Pressure::new();
+        pressure_msg_2.pressure = 2345;
+
+        let _ = publisher.publish_batch(&[pressure_msg_1, pressure_msg_2]);
+
+        // WHEN creating an instant reader
+        let reader = InstantReader::<Pressure>::new(
+            comms
+                .create_instant_reader_handle(&get_pressure_type_name(), DEFAULT_TOPIC_NAME)
+                .await
+                .unwrap(),
+        );
+
+        // AND WHEN reading the latest message:
+        // THEN msg_2 is returned:
+        assert_eq!(reader.read_latest_message().await.unwrap().unwrap().pressure, 2345);
     }
 }
