@@ -228,9 +228,8 @@ protected:
 
         ALOGI("%s: Connection established", ToString().c_str());
 
-        // Since connect succeeded, create a done_promise_ to ensure destruction doesn't
-        // complete until OnDone() runs.
-        event_handler_.OnConnectionManagerEvent(std::unique_ptr<IConnection>(this));
+        // Since connect succeeded, send the connection to the client application.
+        event_handler_.OnConnectionManagerEvent(IConnectionHolder(this));
     }
 
     // Must be called by subclasses' OnDone() reactor method implementations.

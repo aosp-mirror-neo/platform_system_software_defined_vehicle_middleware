@@ -111,6 +111,29 @@ public:
     virtual std::optional<std::string> AuthenticatedIdentity() const = 0;
 };
 
+// IConnectionHolder serves as a RAII holder for any IConnection returned from ConnectionManager to
+// that class's clients.
+//
+// It provides mostly the same interface as std::unique_ptr (minus release()), and by default
+// behaves the same, deleting the managed IConnection when the IConnectionHolder is destroyed, or on
+// a call to reset().
+//
+// But it allows an IConnection implementation to override this default behavior and instead
+// retake ownership of the connection once the client code is done with it, without the client
+// application needing to make any explicit calls to make that happen.
+//
+// This is useful when there are blocking operations needed to shut down a connection that have to
+// happen before the IConnection can be destroyed: Passing ownership back to the IConnection
+// implementation to handle those operations means the client application need not wait on them.
+class IConnectionHolder : public std::unique_ptr<IConnection, std::function<void(IConnection*)>> {
+public:
+    using Releaser = std::function<void(IConnection*)>;
+    IConnectionHolder(IConnection* conn = nullptr,
+                      Releaser releaser = std::default_delete<IConnection>()) :
+          std::unique_ptr<IConnection, Releaser>(conn, std::move(releaser)) {}
+    IConnection* release() = delete;
+};
+
 // Interface to access trusted root certificates to check peer certs.
 struct TrustedRootsAccessor {
     virtual ~TrustedRootsAccessor() = default;
@@ -123,8 +146,7 @@ public:
     // TODO: Replace EventHandler interface with std::function<> callback
     struct EventHandler {
         virtual ~EventHandler() = default;
-        virtual void OnConnectionManagerEvent(
-                ::sdv::SdvResult<std::unique_ptr<IConnection>> connection) = 0;
+        virtual void OnConnectionManagerEvent(::sdv::SdvResult<IConnectionHolder> connection) = 0;
     };
 
     // Ssl Configuration

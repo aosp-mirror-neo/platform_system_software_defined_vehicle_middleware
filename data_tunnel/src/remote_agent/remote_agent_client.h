@@ -82,7 +82,7 @@ private:
     // and updating client_state_ if needed.
     void DeactivateConnection();
 
-    void OnConnectionManagerEvent(::sdv::SdvResult<std::unique_ptr<IConnection>>);
+    void OnConnectionManagerEvent(::sdv::SdvResult<IConnectionHolder>);
 
     void ConnectionThread(ConnectionManager&, const RemoteAgentHandshaker&);
 
@@ -128,12 +128,12 @@ private:
     // Used to pass new connection to ConnectionThread; can't just assign
     // connection_ because it may be occupied in a receive wait.
     std::condition_variable pending_connection_ready_;
-    std::optional<::sdv::SdvResult<std::unique_ptr<IConnection>>> pending_connection_result_;
+    std::optional<::sdv::SdvResult<IConnectionHolder>> pending_connection_result_;
 
     // Outbound connection to "Server" DT Agent.
     // Only modified by connection_thread; can only be used by code outside of connection_thread_
     // when connection_state_ is ACTIVE and lock_ is held.
-    std::unique_ptr<IConnection> connection_;
+    IConnectionHolder connection_;
 
     // Thread executing ConnectionThread
     std::jthread connection_thread_;

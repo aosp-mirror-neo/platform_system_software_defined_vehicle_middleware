@@ -162,8 +162,8 @@ protected:
     }
 
     void CompleteClientConnection() {
-        auto owned_connection = std::make_unique<FakeConnection>();
-        connection_ = owned_connection.get();
+        auto [owned_connection, deleter] = MakeFakeConnection();
+        connection_ = static_cast<FakeConnection*>(owned_connection.get());
 
         // Client will request handshake and get success.
         std::promise<void> handshake_promise;

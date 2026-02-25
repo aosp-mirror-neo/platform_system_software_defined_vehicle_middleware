@@ -38,7 +38,7 @@ using proto::Payload_LastMessageRequest;
 using proto::Payload_LastMessageResult;
 using proto::Payload_SubscribeRequest;
 
-RemoteAgentServerSession::RemoteAgentServerSession(std::unique_ptr<IConnection> connection,
+RemoteAgentServerSession::RemoteAgentServerSession(IConnectionHolder connection,
                                                    const RemoteAgentHandshaker& handshaker,
                                                    HandshakeCallback handshake_cb,
                                                    TopicManager& topic_manager) :

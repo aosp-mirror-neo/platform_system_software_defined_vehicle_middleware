@@ -27,7 +27,7 @@ namespace android::sdv::dt::agent {
 
 class TestEventHandler : public ConnectionManager::EventHandler {
 public:
-    void OnConnectionManagerEvent(::sdv::SdvResult<std::unique_ptr<IConnection>> result) override {
+    void OnConnectionManagerEvent(::sdv::SdvResult<IConnectionHolder> result) override {
         if (result.ok()) {
             connection_promise_.set_value(std::move(result.value()));
         } else {
@@ -36,12 +36,10 @@ public:
         }
     }
 
-    std::future<std::unique_ptr<IConnection>> GetFuture() {
-        return connection_promise_.get_future();
-    }
+    std::future<IConnectionHolder> GetFuture() { return connection_promise_.get_future(); }
 
 private:
-    std::promise<std::unique_ptr<IConnection>> connection_promise_;
+    std::promise<IConnectionHolder> connection_promise_;
 };
 
 class GrpcConnectionBaseTest : public ::testing::Test {
@@ -83,16 +81,16 @@ protected:
         client_connection_ = client_future.get();
         server_connection_ = server_future.get();
 
-        ASSERT_NE(client_connection_, nullptr);
-        ASSERT_NE(server_connection_, nullptr);
+        ASSERT_NE(client_connection_.get(), nullptr);
+        ASSERT_NE(server_connection_.get(), nullptr);
     }
 
     std::unique_ptr<ConnectionManager> server_manager_;
     std::unique_ptr<ConnectionManager> client_manager_;
     std::unique_ptr<TestEventHandler> server_event_handler_;
     std::unique_ptr<TestEventHandler> client_event_handler_;
-    std::unique_ptr<IConnection> server_connection_;
-    std::unique_ptr<IConnection> client_connection_;
+    IConnectionHolder server_connection_;
+    IConnectionHolder client_connection_;
 };
 
 TEST_F(GrpcConnectionBaseTest, ConnectAndDisconnect) {

@@ -202,6 +202,24 @@ TEST_F(RemoteAgentServerTest, Startup_FailsOnTransportRegistrationFailure) {
                                  transport_support_agent_));
 }
 
+TEST_F(RemoteAgentServerTest, DropsConnectionReceivedWhileShutdown) {
+    // Startup server to get event handler, then shut it down again.
+    StartupServer();
+    auto* event_handler = event_handler_;
+
+    // Shutdown will unregister service unit.
+    EXPECT_CALL(*service_registration_agent_, unregisterServiceUnit(Eq(kUnitName)))
+            .WillOnce(Return(ndk::ScopedAStatus::ok()));
+
+    server_.Shutdown();
+    server_started_ = false;  // Prevents destructor from expecting unregister call.
+
+    auto [connection, releaser] = MakeFakeConnection();
+
+    EXPECT_CALL(*releaser, Call(Eq(connection.get())));
+    event_handler->OnConnectionManagerEvent(std::move(connection));
+}
+
 TEST_F(RemoteAgentServerTest, AcceptsConnectionAndSpawnsSession) {
     StartupServer();
 
@@ -213,7 +231,8 @@ TEST_F(RemoteAgentServerTest, AcceptsConnectionAndSpawnsSession) {
         return std::optional<std::string>(kTestVmName);
     });
 
-    event_handler_->OnConnectionManagerEvent(std::make_unique<FakeConnection>());
+    auto [connection, deleter] = MakeFakeConnection();
+    event_handler_->OnConnectionManagerEvent(std::move(connection));
 
     WaitForConditionOrTimeout([&]() { return server_.GetTotalSessionCount() == 1; });
     EXPECT_TRUE(server_.GetPairedClientVmNames().empty());
@@ -229,8 +248,8 @@ TEST_F(RemoteAgentServerTest, AcceptsConnectionAndSpawnsSession) {
 TEST_F(RemoteAgentServerTest, ReplacesExistingSessionForVmWithNew) {
     StartupServer();
 
-    auto first_connection_owned = std::make_unique<FakeConnection>();
-    auto* first_connection = first_connection_owned.get();
+    auto [first_connection_owned, first_deleter] = MakeFakeConnection();
+    auto* first_connection = static_cast<FakeConnection*>(first_connection_owned.get());
 
     EXPECT_CALL(handshaker_, PerformHandshake(_, Eq(std::nullopt))).WillOnce(Return(kTestVmName));
 
@@ -248,8 +267,8 @@ TEST_F(RemoteAgentServerTest, ReplacesExistingSessionForVmWithNew) {
         return std::optional<std::string>(kTestVmName);
     });
 
-    auto second_connection_owned = std::make_unique<FakeConnection>();
-    auto* second_connection = second_connection_owned.get();
+    auto [second_connection_owned, second_deleter] = MakeFakeConnection();
+    auto* second_connection = static_cast<FakeConnection*>(second_connection_owned.get());
     event_handler_->OnConnectionManagerEvent(std::move(second_connection_owned));
 
     // Wait until second session shows up.
@@ -274,13 +293,12 @@ TEST_F(RemoteAgentServerTest, ReplacesExistingSessionForVmWithNew) {
 
 TEST_F(RemoteAgentServerTest, CleansUpTerminatedSessions_OnNewConnection) {
     StartupServer();
-    auto first_connection_owned = std::make_unique<FakeConnection>();
-    auto* first_connection = first_connection_owned.get();
+    auto [first_connection_owned, first_deleter] = MakeFakeConnection();
+    auto* first_connection = static_cast<FakeConnection*>(first_connection_owned.get());
 
     // First connection handshake.
     EXPECT_CALL(handshaker_,
-                PerformHandshake(Address(static_cast<IConnection*>(first_connection)),
-                                 Eq(std::nullopt)))
+                PerformHandshake(Address(first_connection_owned.get()), Eq(std::nullopt)))
             .WillOnce(Return(kTestVmName));
     event_handler_->OnConnectionManagerEvent(std::move(first_connection_owned));
 
@@ -292,16 +310,14 @@ TEST_F(RemoteAgentServerTest, CleansUpTerminatedSessions_OnNewConnection) {
     EXPECT_TRUE(server_.GetPairedClientVmNames().contains(kTestVmName));
     EXPECT_EQ(server_.GetTotalSessionCount(), 1);
 
-    auto second_connection_owned = std::make_unique<FakeConnection>();
-    auto* second_connection = second_connection_owned.get();
+    auto [second_connection_owned, second_deleter] = MakeFakeConnection();
 
     // Get a new connection for a different VM; handshake will block and wait for main
     // thread so we can inspect connections present at that point, after OnConnectionManagerEvent
     // has run but before OnHandshakeSuccess does.
     std::promise<void> handshake_block;
     EXPECT_CALL(handshaker_,
-                PerformHandshake(Address(static_cast<IConnection*>(second_connection)),
-                                 Eq(std::nullopt)))
+                PerformHandshake(Address(second_connection_owned.get()), Eq(std::nullopt)))
             .WillOnce([&](auto&, auto) {
                 handshake_block.get_future().get();
                 return kSecondTestVmName;
@@ -325,26 +341,23 @@ TEST_F(RemoteAgentServerTest, CleansUpTerminatedSessions_OnNewConnection) {
 
 TEST_F(RemoteAgentServerTest, CleansUpTerminatedSessions_OnHandshakeSuccess) {
     StartupServer();
-    auto first_connection_owned = std::make_unique<FakeConnection>();
-    auto* first_connection = first_connection_owned.get();
+    auto [first_connection_owned, first_deleter] = MakeFakeConnection();
+    auto* first_connection = static_cast<FakeConnection*>(first_connection_owned.get());
 
     // First connection handshake.
     EXPECT_CALL(handshaker_,
-                PerformHandshake(Address(static_cast<IConnection*>(first_connection)),
-                                 Eq(std::nullopt)))
+                PerformHandshake(Address(first_connection_owned.get()), Eq(std::nullopt)))
             .WillOnce(Return(kTestVmName));
     event_handler_->OnConnectionManagerEvent(std::move(first_connection_owned));
 
-    auto second_connection_owned = std::make_unique<FakeConnection>();
-    auto* second_connection = second_connection_owned.get();
+    auto [second_connection_owned, second_deleter] = MakeFakeConnection();
 
     // Get a new connection for a different VM; handshake will block and wait for main
     // thread so we can inspect connections present at that point, after OnConnectionManagerEvent
     // has run but before OnHandshakeSuccess does.
     std::promise<void> handshake_block;
     EXPECT_CALL(handshaker_,
-                PerformHandshake(Address(static_cast<IConnection*>(second_connection)),
-                                 Eq(std::nullopt)))
+                PerformHandshake(Address(second_connection_owned.get()), Eq(std::nullopt)))
             .WillOnce([&](auto&, auto) {
                 handshake_block.get_future().get();
                 return kSecondTestVmName;
@@ -384,13 +397,10 @@ TEST_F(RemoteAgentServerTest, OnHandshakeSuccess_IgnoresNullSessionPtr) {
 TEST_F(RemoteAgentServerTest, OnHandshakeSuccess_TerminatesUnknownSession) {
     StartupServer();
 
-    auto connection = std::make_unique<FakeConnection>();
-    auto connection_ptr = connection.get();
+    auto [connection, deleter] = MakeFakeConnection();
 
     // Session will call handshaker on Create and handshake must succeed.
-    EXPECT_CALL(handshaker_,
-                PerformHandshake(Address(static_cast<IConnection*>(connection.get())),
-                                 Eq(std::nullopt)))
+    EXPECT_CALL(handshaker_, PerformHandshake(Address(connection.get()), Eq(std::nullopt)))
             .WillOnce(Return(kTestVmName));
 
     // Create session that will fire OnHandshakeSuccess for a server that doesn't know about it.
@@ -417,7 +427,8 @@ TEST_F(RemoteAgentServerTest, DumpStats) {
     server_.DumpStats(no_sessions_output);
     EXPECT_EQ(no_sessions_output.str(), "\nInbound Remote Agent Connections: NONE\n");
 
-    auto connection = std::make_unique<FakeConnection>();
+    auto [owned_connection, deleter] = MakeFakeConnection();
+    auto connection = static_cast<FakeConnection*>(owned_connection.get());
     EXPECT_CALL(*connection, BytesSent()).WillOnce(Return(13)).WillOnce(Return(14));
     EXPECT_CALL(*connection, BytesReceived()).WillOnce(Return(15)).WillOnce(Return(16));
 
@@ -429,7 +440,7 @@ TEST_F(RemoteAgentServerTest, DumpStats) {
         return std::optional<std::string>(kTestVmName);
     });
 
-    event_handler_->OnConnectionManagerEvent(std::move(connection));
+    event_handler_->OnConnectionManagerEvent(std::move(owned_connection));
     ASSERT_TRUE(WaitForConditionOrTimeout([&]() { return server_.GetTotalSessionCount() == 1; }));
 
     // Check output with unpaired session.

@@ -44,13 +44,12 @@ SocketAddressV4 GetListenAddress(const ConnectionManager& cm) {
     return SocketAddressV4(cm.GetLocalIp(), cm.GetListenPort());
 }
 
-using ConnectResult = ::sdv::SdvResult<std::unique_ptr<IConnection>>;
+using ConnectResult = ::sdv::SdvResult<IConnectionHolder>;
 
 struct TestEventHandler : ConnectionManager::EventHandler {
     TestEventHandler() : result_future_(result_promise_.get_future()) {}
 
-    virtual void OnConnectionManagerEvent(
-            ::sdv::SdvResult<std::unique_ptr<IConnection>> result) override {
+    virtual void OnConnectionManagerEvent(ConnectResult result) override {
         result_promise_.set_value(std::move(result));
     }
 
@@ -67,7 +66,7 @@ struct TestEventHandler : ConnectionManager::EventHandler {
     }
 
     // Barfs if there was an error.
-    std::unique_ptr<IConnection> GetConnection() { return GetConnectResult().value(); }
+    IConnectionHolder GetConnection() { return GetConnectResult().value(); }
 
 private:
     std::promise<ConnectResult> result_promise_;
@@ -200,7 +199,7 @@ TEST_P(DtConnectionManagerTest, GetLocalIpAddress) {
 }
 
 TEST_P(DtConnectionManagerTest, ConcurrentSenders) {
-    std::unique_ptr<IConnection> conn[2];
+    IConnectionHolder conn[2];
     std::tie(conn[0], conn[1]) = SetupConnectedPair();
 
     static const size_t SENDER_COUNT = 16;
@@ -279,8 +278,8 @@ TEST_P(DtConnectionManagerTest, OutboundConnectFails) {
 TEST_P(DtConnectionManagerTest, MultipleClients) {
     TestEventHandler listen_eh[4];
     std::unique_ptr<ConnectionManager> cm[4];
-    std::unique_ptr<IConnection> s_conn[3];
-    std::unique_ptr<IConnection> c_conn[3];
+    IConnectionHolder s_conn[3];
+    IConnectionHolder c_conn[3];
 
     for (int i = 0; i < 4; i++) {
         cm[i] = GetParam().first(listen_eh[i]);
@@ -321,8 +320,8 @@ TEST_P(DtConnectionManagerTest, MultipleClients) {
 TEST_P(DtConnectionManagerTest, MultipleServers) {
     TestEventHandler listen_eh[4];
     std::unique_ptr<ConnectionManager> cm[4];
-    std::unique_ptr<IConnection> s_conn[3];
-    std::unique_ptr<IConnection> c_conn[3];
+    IConnectionHolder s_conn[3];
+    IConnectionHolder c_conn[3];
 
     for (int i = 0; i < 4; i++) {
         cm[i] = GetParam().first(listen_eh[i]);

@@ -37,8 +37,7 @@ public:
     //   handshaker: Used to complete handshake in connection_thread_
     //   handshake_cb: Callback to be fired on successful handshake to report peer VM name
     //   topic_manager: Used to retrieve local topic data to send to peer
-    RemoteAgentServerSession(std::unique_ptr<IConnection> connection,
-                             const RemoteAgentHandshaker& handshaker,
+    RemoteAgentServerSession(IConnectionHolder connection, const RemoteAgentHandshaker& handshaker,
                              HandshakeCallback handshake_cb, TopicManager& topic_manager);
 
     RemoteAgentServerSession(const RemoteAgentServerSession&) = delete;
@@ -62,7 +61,7 @@ private:
     // Executed by connection_thread_; all reads from connection_ happen here.
     void ConnectionThread(const RemoteAgentHandshaker&, HandshakeCallback);
 
-    std::unique_ptr<IConnection> connection_;
+    IConnectionHolder connection_;
     TopicManager& topic_manager_;
     std::string peer_vm_name_;
     std::atomic<uint32_t> parcel_id_counter_;
