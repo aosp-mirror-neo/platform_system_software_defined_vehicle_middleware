@@ -19,4 +19,5 @@ mod error;
 mod field_type;
 mod map;
 mod message;
+mod repeated;
 mod simple;

@@ -19,4 +19,6 @@ pub mod protobuf {
     pub use crate::reflection::codec::writer::IProtobufWriter;
     pub use crate::reflection::codec::writer::PublicationWriter;
     pub use crate::reflection::codec::writer::RpcWriter;
+
+    pub use crate::reflection::codec::reader::ProtobufReader;
 }

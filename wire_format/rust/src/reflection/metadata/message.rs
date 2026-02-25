@@ -19,10 +19,19 @@ use protobuf::reflect::MessageDescriptor;
 use protobuf::reflect::RuntimeFieldType;
 use protobuf::reflect::RuntimeType;
 use protobuf::reflect::Syntax;
+use protobuf::rt::WireType;
 
+use crate::reflection::codec::api::protobuf::ProtobufReader;
+use crate::reflection::message::api::protobuf::DynamicMessage;
+use crate::reflection::message::api::protobuf::DynamicMessageField;
+use crate::reflection::message::api::protobuf::SingularField;
 use crate::reflection::metadata::error::MetadataBuildError;
+use crate::reflection::metadata::field_type::ProtobufSimpleType;
 use crate::reflection::metadata::map::MapMetadata;
+use crate::reflection::metadata::repeated::parse_repeated_field;
 use crate::reflection::metadata::simple::SimpleMetadata;
+
+const PROTO_ANY_FULL_NAME: &str = "google.protobuf.Any";
 
 /// Protobuf Message metadata that contains information relevant to wire format de/serialization, message
 /// full name, field names declared in the message and fields whose presence can be tracked
@@ -52,6 +61,26 @@ pub enum FieldMetadata {
     Map(Box<MapMetadata>),
 }
 
+impl FieldMetadata {
+    fn parse_from_reader(
+        &self,
+        reader: &mut ProtobufReader,
+        wire_type: WireType,
+    ) -> anyhow::Result<DynamicMessageField> {
+        match self {
+            FieldMetadata::Singular(singular_metadata) => Ok(DynamicMessageField::Singular(
+                singular_metadata.parse_from_reader(reader, wire_type)?,
+            )),
+            FieldMetadata::Repeated(singular_metadata) => Ok(DynamicMessageField::Repeated(
+                parse_repeated_field(reader, wire_type, singular_metadata)?,
+            )),
+            FieldMetadata::Map(map_metadata) => {
+                Ok(DynamicMessageField::Map(map_metadata.parse_from_reader(reader, wire_type)?))
+            }
+        }
+    }
+}
+
 /// Singular (non-repeated, non-map) metadata
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SingularTypeMetadata {
@@ -59,6 +88,23 @@ pub enum SingularTypeMetadata {
     Simple(SimpleMetadata),
     /// Message field type
     Message(Box<MessageMetadata>),
+}
+
+impl SingularTypeMetadata {
+    pub(crate) fn parse_from_reader(
+        &self,
+        reader: &mut ProtobufReader,
+        wire_type: WireType,
+    ) -> anyhow::Result<SingularField> {
+        match self {
+            SingularTypeMetadata::Simple(simple_metadata) => {
+                Ok(SingularField::Simple(simple_metadata.parse_from_reader(reader, wire_type)?))
+            }
+            SingularTypeMetadata::Message(message_metadata) => Ok(SingularField::Message(
+                Box::new(message_metadata.parse_message_field_from_reader(reader, wire_type)?),
+            )),
+        }
+    }
 }
 
 impl MessageMetadata {
@@ -133,6 +179,31 @@ impl MessageMetadata {
         ))
     }
 
+    /// Build metadata for the `google.protobuf.Any` message type
+    pub fn build_any_metadata() -> MessageMetadata {
+        let mut fields_metadata = HashMap::new();
+        let mut field_name_to_number = HashMap::new();
+
+        let type_url_field_metadata = FieldMetadata::Singular(SingularTypeMetadata::Simple(
+            SimpleMetadata::new(ProtobufSimpleType::String),
+        ));
+        let value_field_metadata = FieldMetadata::Singular(SingularTypeMetadata::Simple(
+            SimpleMetadata::new(ProtobufSimpleType::Bytes),
+        ));
+
+        fields_metadata.insert(1, type_url_field_metadata);
+        fields_metadata.insert(2, value_field_metadata);
+        field_name_to_number.insert("type_url".to_owned(), 1);
+        field_name_to_number.insert("value".to_owned(), 2);
+        Self::new(
+            Syntax::Proto3,
+            PROTO_ANY_FULL_NAME.to_owned(),
+            fields_metadata,
+            field_name_to_number,
+            HashSet::new(),
+        )
+    }
+
     /// Get metadata for field with number `field_number`
     pub fn get_field_metadata(&self, field_number: &u32) -> Option<&FieldMetadata> {
         self.fields_metadata.get(field_number)
@@ -143,6 +214,16 @@ impl MessageMetadata {
         self.field_name_to_number
             .get(field_name)
             .and_then(|field_number| self.fields_metadata.get(field_number))
+    }
+
+    /// Get the field number for field with name `field_name`
+    pub fn get_field_number(&self, field_name: &str) -> Option<&u32> {
+        self.field_name_to_number.get(field_name)
+    }
+
+    /// Returns an iterator over all the fields' metadata along with their field number
+    pub fn fields(&self) -> impl Iterator<Item = (&u32, &FieldMetadata)> {
+        self.fields_metadata.iter()
     }
 
     /// Checks whether a field with number `field_number` tracks its presence in the message.
@@ -221,12 +302,82 @@ impl MessageMetadata {
             Ok(FieldMetadata::Repeated(SingularTypeMetadata::Message(Box::new(message_metadata))))
         }
     }
+
+    /// Create a default instance of the message
+    pub fn create_default_instance(&self) -> DynamicMessage {
+        DynamicMessage::new(self.get_message_full_name().to_owned())
+    }
+
+    /// Parse a `DynamicMessage` from bytes
+    pub fn parse_from_bytes(&self, bytes: &[u8]) -> anyhow::Result<DynamicMessage> {
+        let mut reader = ProtobufReader::new(bytes);
+        self.parse_message_from_reader(&mut reader, -1)
+    }
+
+    /// Parse a `DynamicMessage` from bytes prefixed with the message's serialized length
+    pub fn parse_from_bytes_length_delimited(
+        &self,
+        bytes: &[u8],
+    ) -> anyhow::Result<DynamicMessage> {
+        let mut reader = ProtobufReader::new(bytes);
+        let length = reader.read_raw_varint32()?;
+        reader.push_limit(u64::from(length))?;
+        self.parse_message_from_reader(&mut reader, -1)
+    }
+
+    pub(crate) fn parse_message_field_from_reader(
+        &self,
+        reader: &mut ProtobufReader,
+        wire_type: WireType,
+    ) -> anyhow::Result<DynamicMessage> {
+        if wire_type != WireType::LengthDelimited {
+            anyhow::bail!("Unexpected wire type, expected length delimited wire type for message, found {wire_type:?}")
+        }
+        let length = reader.read_raw_varint32()?;
+        self.parse_message_from_reader(reader, i64::from(length))
+    }
+
+    pub(crate) fn parse_message_from_reader(
+        &self,
+        reader: &mut ProtobufReader,
+        length: i64,
+    ) -> anyhow::Result<DynamicMessage> {
+        let mut message = DynamicMessage::new(self.get_message_full_name().to_owned());
+        let initial_reader_position = reader.pos();
+        let mut read_bytes = 0;
+        while !reader.eof()? && (length == -1 || read_bytes < length) {
+            let Some(field_tag) = reader.read_raw_tag_or_eof()? else {
+                anyhow::bail!("Unexpected EOF")
+            };
+            let wire_type = WireType::new(field_tag & 0x7).ok_or_else(|| {
+                anyhow::anyhow!("Invalid wire type: {}. Field tag: {}", field_tag & 0x7, field_tag)
+            })?;
+            let field_number = field_tag >> 3;
+
+            if let Some(field_metadata) = self.get_field_metadata(&field_number) {
+                let message_field = field_metadata.parse_from_reader(reader, wire_type)?;
+                message.add_field(field_number, message_field)?;
+            } else {
+                reader.skip_field(wire_type)?;
+            }
+            read_bytes = (reader.pos() - initial_reader_position) as i64;
+        }
+        if length != -1 && read_bytes != length {
+            anyhow::bail!(
+                "Length mismatch: expected to read {length} bytes, but read {read_bytes} bytes",
+            )
+        }
+        Ok(message)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::reflection::metadata::{field_type::ProtobufSimpleType, map::MapKeyType};
-    use protobuf::{descriptor::field_descriptor_proto::Type, reflect::FileDescriptor};
+    use protobuf::{
+        descriptor::field_descriptor_proto::Type,
+        reflect::{FileDescriptor, Syntax},
+    };
 
     use super::*;
 
@@ -545,5 +696,171 @@ mod tests {
             repeated_field_metadata.unwrap_err(),
             MetadataBuildError::RepeatedTypeExpected("TestProto.a".to_owned())
         );
+    }
+
+    #[test]
+    fn test_parse_message_from_reader_integration() {
+        use crate::reflection::message::api::protobuf::{
+            DynamicMessageField, MapField, RepeatedField, SimpleField, SimpleRepeatedField,
+            SingularField,
+        };
+
+        let file_content = r#"
+            syntax = "proto3";
+            message TestMessage {
+                int32 id = 1;
+                string name = 2;
+                repeated int32 values = 3;
+                NestedMessage nested = 4;
+                map<string, string> properties = 5;
+            }
+            message NestedMessage {
+                bool active = 1;
+            }
+        "#;
+        let file_descriptor = mock_file_descriptor("test_integration.proto", file_content);
+        let message_descriptor = file_descriptor
+            .message_by_full_name(".TestMessage")
+            .expect("Message descriptor must be created");
+
+        // Create a dynamic message using protobuf crate
+        let mut message = message_descriptor.new_instance();
+
+        // Set fields using reflection
+        let id_field = message_descriptor.field_by_name("id").unwrap();
+        id_field.set_singular_field(message.as_mut(), protobuf::reflect::ReflectValueBox::I32(123));
+
+        let name_field = message_descriptor.field_by_name("name").unwrap();
+        name_field.set_singular_field(
+            message.as_mut(),
+            protobuf::reflect::ReflectValueBox::String("test".to_string()),
+        );
+
+        let values_field = message_descriptor.field_by_name("values").unwrap();
+        let mut repeated = values_field.mut_repeated(message.as_mut());
+        repeated.push(protobuf::reflect::ReflectValueBox::I32(10));
+        repeated.push(protobuf::reflect::ReflectValueBox::I32(20));
+
+        let nested_field = message_descriptor.field_by_name("nested").unwrap();
+        let RuntimeType::Message(nested_desc) = nested_field.singular_runtime_type() else {
+            panic!("Unexpected field type for nested: {}", nested_field);
+        };
+        let mut nested_msg = nested_desc.new_instance();
+        let active_field = nested_desc.field_by_name("active").unwrap();
+        active_field.set_singular_field(
+            nested_msg.as_mut(),
+            protobuf::reflect::ReflectValueBox::Bool(true),
+        );
+        nested_field.set_singular_field(
+            message.as_mut(),
+            protobuf::reflect::ReflectValueBox::Message(nested_msg),
+        );
+
+        let properties_field = message_descriptor.field_by_name("properties").unwrap();
+        let mut map = properties_field.mut_map(message.as_mut());
+        map.insert(
+            protobuf::reflect::ReflectValueBox::String("key1".to_string()),
+            protobuf::reflect::ReflectValueBox::String("value1".to_string()),
+        );
+
+        // Serialize
+        let bytes = message.write_to_bytes_dyn().unwrap();
+
+        // Parse using MessageMetadata
+        let metadata = MessageMetadata::build(&message_descriptor).unwrap();
+        let mut reader = ProtobufReader::new(&bytes);
+        let parsed_message = metadata.parse_message_from_reader(&mut reader, -1).unwrap();
+
+        // Verify id
+        let id_field_num = 1;
+        let field = parsed_message.get_message_field(&id_field_num).unwrap();
+        if let DynamicMessageField::Singular(SingularField::Simple(SimpleField::Int32(val))) = field
+        {
+            assert_eq!(*val, 123);
+        } else {
+            panic!("Unexpected field type for id: {:?}", field);
+        }
+
+        // Verify name
+        let name_field_num = 2;
+        let field = parsed_message.get_message_field(&name_field_num).unwrap();
+        if let DynamicMessageField::Singular(SingularField::Simple(SimpleField::String(val))) =
+            field
+        {
+            assert_eq!(val, "test");
+        } else {
+            panic!("Unexpected field type for name: {:?}", field);
+        }
+
+        // Verify values
+        let values_field_num = 3;
+        let field = parsed_message.get_message_field(&values_field_num).unwrap();
+        if let DynamicMessageField::Repeated(RepeatedField::Simple(SimpleRepeatedField::Int32(
+            vals,
+        ))) = field
+        {
+            assert_eq!(*vals, vec![10, 20]);
+        } else {
+            panic!("Unexpected field type for values: {:?}", field);
+        }
+
+        // Verify nested
+        let nested_field_num = 4;
+        let field = parsed_message.get_message_field(&nested_field_num).unwrap();
+        if let DynamicMessageField::Singular(SingularField::Message(nested_msg)) = field {
+            let active_field_num = 1;
+            let active = nested_msg.get_message_field(&active_field_num).unwrap();
+            if let DynamicMessageField::Singular(SingularField::Simple(SimpleField::Bool(val))) =
+                active
+            {
+                assert!(val);
+            } else {
+                panic!("Unexpected field type for nested.active: {:?}", active);
+            }
+        } else {
+            panic!("Unexpected field type for nested: {:?}", field);
+        }
+
+        // Verify map
+        let properties_field_num = 5;
+        let field = parsed_message.get_message_field(&properties_field_num).unwrap();
+        if let DynamicMessageField::Map(MapField::String(map)) = field {
+            let val = map.get(&"key1".to_string()).unwrap();
+            if let SingularField::Simple(SimpleField::String(s)) = val {
+                assert_eq!(s, "value1");
+            } else {
+                panic!("Unexpected value type for map entry: {:?}", val);
+            }
+        } else {
+            panic!("Unexpected field type for properties: {:?}", field);
+        }
+    }
+
+    #[test]
+    fn test_build_any_metadata() {
+        let metadata = MessageMetadata::build_any_metadata();
+
+        assert_eq!(metadata.get_message_full_name(), PROTO_ANY_FULL_NAME);
+        assert_eq!(metadata.syntax, Syntax::Proto3);
+        assert_eq!(metadata.fields_metadata.len(), 2);
+        assert_eq!(metadata.field_name_to_number.len(), 2);
+
+        // Check type_url field
+        let type_url_field = metadata.get_field_metadata(&1).expect("type_url field missing");
+        if let FieldMetadata::Singular(SingularTypeMetadata::Simple(simple)) = type_url_field {
+            assert_eq!(simple.get_field_type(), ProtobufSimpleType::String);
+        } else {
+            panic!("Unexpected metadata for type_url");
+        }
+        assert_eq!(metadata.get_field_number("type_url"), Some(&1));
+
+        // Check value field
+        let value_field = metadata.get_field_metadata(&2).expect("value field missing");
+        if let FieldMetadata::Singular(SingularTypeMetadata::Simple(simple)) = value_field {
+            assert_eq!(simple.get_field_type(), ProtobufSimpleType::Bytes);
+        } else {
+            panic!("Unexpected metadata for value");
+        }
+        assert_eq!(metadata.get_field_number("value"), Some(&2));
     }
 }
