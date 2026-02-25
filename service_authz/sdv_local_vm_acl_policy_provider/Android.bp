@@ -35,7 +35,7 @@ rust_defaults {
         "libsdv_authz_policy",
         "libsdv_authz_policy_proto_rust",
         "libsdv_comms_id",
-        "google.sdv.service_bundles_registry-V2-rust",
+        "google.sdv.service_bundles_registry-V3-rust",
     ],
 }
 
