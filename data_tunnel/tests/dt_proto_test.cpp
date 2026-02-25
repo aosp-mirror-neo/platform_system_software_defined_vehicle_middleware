@@ -121,7 +121,8 @@ TEST(DataTunnelProto, ParcelSerialization) {
     RawBuffer buffer(kLargeBufferSize);
     ASSERT_TRUE(CheckPayloadSerialization(buffer, proto::Payload_Ping("8")));
     ASSERT_TRUE(CheckPayloadSerialization(buffer, proto::Payload_Pong(32)));
-    ASSERT_TRUE(CheckPayloadSerialization(buffer, proto::Payload_SubscribeRequest("Topic A")));
+    ASSERT_TRUE(
+            CheckPayloadSerialization(buffer, proto::Payload_SubscribeRequest("Topic A", 1234)));
     ASSERT_TRUE(CheckPayloadSerialization(buffer, proto::Payload_SubscribeResult()));
 }
 
@@ -158,7 +159,7 @@ TEST(DataTunnelProto, TopicRawData_DeserializationFailsWithoutResizeUntilAllData
 
     // Write a serialized Payload_TopicRawData; duplicating code from Serialize()
     // rather than calling that function because it wants to write the buffer.
-    ASSERT_TRUE(writer.Write("Topic A"));                    // topic_name_
+    ASSERT_TRUE(writer.Write(1234));                         // subscriber_pub_id
     ASSERT_TRUE(writer.Write(static_cast<uint32_t>(4096)));  // data_size_
 
     // Attempt to deserialize payload; will fail due to insufficient data and will not

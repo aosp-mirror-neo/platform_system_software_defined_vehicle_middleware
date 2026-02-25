@@ -15,9 +15,10 @@
 //! Authz Service.
 
 use crate::authz_via_acls::AuthzViaAcls;
-#[cfg(feature = "permissions")]
 use crate::authz_via_permissions::AuthzViaPermissions;
+use crate::feature_flags;
 use crate::{AclPolicyProvider, AuthzEnforcementFlag, AuthzResult};
+
 use sdv_comms_id::names::{PackageName, ServiceUnitName, UnitTypeName};
 use sdv_comms_id::ServiceFqin;
 
@@ -29,7 +30,6 @@ use std::sync::Arc;
 /// Authz Service.
 pub struct AuthzService {
     authz_via_acls: AuthzViaAcls,
-    #[cfg(feature = "permissions")]
     authz_via_permissions: AuthzViaPermissions,
     authz_enforcement_flag: Arc<dyn AuthzEnforcementFlag>,
 }
@@ -41,15 +41,9 @@ impl AuthzService {
         authz_enforcement_flag: Arc<dyn AuthzEnforcementFlag>,
     ) -> Self {
         let authz_via_acls = AuthzViaAcls::new(acl_policy_provider.clone());
-        #[cfg(feature = "permissions")]
         let authz_via_permissions = AuthzViaPermissions::new(acl_policy_provider);
 
-        AuthzService {
-            authz_via_acls,
-            #[cfg(feature = "permissions")]
-            authz_via_permissions,
-            authz_enforcement_flag,
-        }
+        AuthzService { authz_via_acls, authz_via_permissions, authz_enforcement_flag }
     }
 
     /// Returns whether Subject FQIN is authorized for the Object Service Unit.
@@ -67,19 +61,20 @@ impl AuthzService {
             object_fqin,
             object_service_unit_name,
         );
+
         if let AuthzResult::Permitted(_) = acl_result {
             debug!("Permitted by ACLs: {subject_fqin} to access {object_log_identifier}");
             return self.handle_authz_result(subject_fqin, object_log_identifier, acl_result);
         }
 
-        #[cfg(feature = "permissions")]
-        {
+        if feature_flags::enable_permissions() {
             let permissions_result =
                 self.authz_via_permissions.check_authorization_for_service_unit(
                     subject_fqin,
                     object_fqin,
                     object_service_unit_name,
                 );
+
             if let AuthzResult::Permitted(_) = permissions_result {
                 debug!(
                     "Permitted by permissions: {subject_fqin} to access {object_log_identifier}"
@@ -116,8 +111,7 @@ impl AuthzService {
             return self.handle_authz_result(subject_fqin, object_log_identifier, acl_result);
         }
 
-        #[cfg(feature = "permissions")]
-        {
+        if feature_flags::enable_permissions() {
             let permissions_result = self.authz_via_permissions.check_authorization_for_unit_type(
                 subject_fqin,
                 object_package_name,

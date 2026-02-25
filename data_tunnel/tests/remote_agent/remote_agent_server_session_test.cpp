@@ -47,6 +47,7 @@ namespace {
 
 static const char* kTestVmName = "testvm2";
 static const char* kTestTopicName = "test-topic-name";
+static uint32_t kTestTopicSubId = 42;
 
 class RemoteAgentServerSessionTest : public ::testing::Test {
 protected:
@@ -282,12 +283,13 @@ TEST_F(RemoteAgentServerSessionTest, Subscription_FullFlow) {
 
     WriteTestTopicMessages({15, 25});
 
-    connection_->EnqueueParcelForReceive(1234, Payload_SubscribeRequest(kTestTopicName));
+    connection_->EnqueueParcelForReceive(1234,
+                                         Payload_SubscribeRequest(kTestTopicName, kTestTopicSubId));
 
     // Get a subscribe result including the last message content.
     auto sub_result_payload = connection_->GetNextSentDataIfPayload<Payload_SubscribeResult>();
     ASSERT_TRUE(sub_result_payload);
-    EXPECT_EQ(sub_result_payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(sub_result_payload->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(sub_result_payload->result_, Payload_SubscribeResult::Result_Ok);
     EXPECT_EQ(sub_result_payload->message_size_, kTestMessageSize);
     EXPECT_EQ(sub_result_payload->message_count_, kTestMessageCount);
@@ -305,7 +307,7 @@ TEST_F(RemoteAgentServerSessionTest, Subscription_FullFlow) {
 
     auto data_payload_2 = connection_->GetNextSentDataIfPayload<Payload_TopicRawData>();
     ASSERT_TRUE(data_payload_2);
-    EXPECT_EQ(data_payload_2->topic_name_, kTestTopicName);
+    EXPECT_EQ(data_payload_2->subscriber_pub_id_, kTestTopicSubId);
     EXPECT_EQ(data_payload_2->data_size_, 2 * kTestMessageSize);
     EXPECT_GE(data_payload_2->buffer_.Size(), 2 * kTestMessageSize);
     const auto* messages_2 =
@@ -317,7 +319,7 @@ TEST_F(RemoteAgentServerSessionTest, Subscription_FullFlow) {
 
     auto destroyed_payload = connection_->GetNextSentDataIfPayload<Payload_TopicDestroyed>();
     ASSERT_TRUE(destroyed_payload);
-    EXPECT_EQ(destroyed_payload->topic_name_, kTestTopicName);
+    EXPECT_EQ(destroyed_payload->subscriber_pub_id_, kTestTopicSubId);
 }
 
 }  // namespace

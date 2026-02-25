@@ -21,8 +21,8 @@ mod authz_guard;
 mod authz_result;
 mod authz_service;
 mod authz_via_acls;
-#[cfg(feature = "permissions")]
 mod authz_via_permissions;
+mod feature_flags;
 mod multi_vm_authz_guard;
 mod parse_acl_policy_proto;
 mod single_vm_acl_policy_provider;

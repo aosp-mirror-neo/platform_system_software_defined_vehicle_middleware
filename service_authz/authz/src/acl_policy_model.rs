@@ -17,14 +17,11 @@
 use crate::parse_acl_policy_proto::parse_acl_policy_from_proto;
 
 use std::collections::HashMap;
-#[cfg(feature = "permissions")]
 use std::collections::HashSet;
 
 use sdv_authz_policy::Acl;
 use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
-#[cfg(feature = "permissions")]
 use sdv_comms::sd::UnitType;
-#[cfg(feature = "permissions")]
 use sdv_comms_id::names::TopicName;
 use sdv_comms_id::names::{ServiceUnitName, UnitTypeName};
 
@@ -37,41 +34,15 @@ pub struct AclPolicyModel {
     service_units_acls: HashMap<ServiceUnitName, Vec<Acl>>,
     unit_types_acls: HashMap<UnitTypeName, Vec<Acl>>,
 
-    #[cfg(feature = "permissions")]
     pub(crate) publish_permissions: HashSet<(UnitType, Option<TopicName>)>,
-    #[cfg(feature = "permissions")]
     pub(crate) subscribe_permissions: HashSet<(UnitType, Option<TopicName>)>,
-    #[cfg(feature = "permissions")]
     pub(crate) serve_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
-    #[cfg(feature = "permissions")]
     pub(crate) call_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
-    #[cfg(feature = "permissions")]
     pub(crate) allow_read_all: bool,
 }
 
 impl AclPolicyModel {
     pub(crate) fn new(
-        service_units_acls: HashMap<ServiceUnitName, Vec<Acl>>,
-        unit_types_acls: HashMap<UnitTypeName, Vec<Acl>>,
-    ) -> AclPolicyModel {
-        AclPolicyModel {
-            service_units_acls,
-            unit_types_acls,
-            #[cfg(feature = "permissions")]
-            publish_permissions: HashSet::new(),
-            #[cfg(feature = "permissions")]
-            subscribe_permissions: HashSet::new(),
-            #[cfg(feature = "permissions")]
-            serve_permissions: HashSet::new(),
-            #[cfg(feature = "permissions")]
-            call_permissions: HashSet::new(),
-            #[cfg(feature = "permissions")]
-            allow_read_all: false,
-        }
-    }
-
-    #[cfg(feature = "permissions")]
-    pub(crate) fn new_with_permissions(
         service_units_acls: HashMap<ServiceUnitName, Vec<Acl>>,
         unit_types_acls: HashMap<UnitTypeName, Vec<Acl>>,
         publish_permissions: HashSet<(UnitType, Option<TopicName>)>,
@@ -115,14 +86,12 @@ impl AclPolicyModel {
     }
 
     /// Returns whether there is permission to publishto the given topic.
-    #[cfg(feature = "permissions")]
     pub fn can_publish(&self, publication_type: &UnitType, topic: &TopicName) -> bool {
         self.publish_permissions.contains(&(publication_type.clone(), Some(topic.clone())))
             || self.publish_permissions.contains(&(publication_type.clone(), None))
     }
 
     /// Returns whether there is permission to subscribe to the given topic.
-    #[cfg(feature = "permissions")]
     pub fn can_subscribe(&self, publication_type: &UnitType, topic: &TopicName) -> bool {
         if self.allow_read_all {
             return true;
@@ -133,14 +102,12 @@ impl AclPolicyModel {
     }
 
     /// Returns whether there is permission to serve the given service unit.
-    #[cfg(feature = "permissions")]
     pub fn can_serve(&self, service: &UnitType, service_unit: &ServiceUnitName) -> bool {
         self.serve_permissions.contains(&(service.clone(), Some(service_unit.clone())))
             || self.serve_permissions.contains(&(service.clone(), None))
     }
 
     /// Returns whether there is permission to call the given service unit.
-    #[cfg(feature = "permissions")]
     pub fn can_call(&self, service: &UnitType, service_unit: &ServiceUnitName) -> bool {
         if self.allow_read_all {
             return true;
@@ -162,6 +129,7 @@ impl TryFrom<AclPolicyProto> for AclPolicyModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feature_flags;
 
     use std::str::FromStr;
 
@@ -257,9 +225,12 @@ mod tests {
         assert!(!acl_policy.has_unit_type(&UnitTypeName::from_str("TemperatureTopic").unwrap()));
     }
 
-    #[cfg(feature = "permissions")]
     #[test]
     fn test_permissions_logic() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+
         let proto: AclPolicyProto = text_format::parse_from_str(
             r#"
             publisher {
@@ -323,9 +294,12 @@ mod tests {
         assert!(!acl_policy.can_call(&nav_server, &hvac_unit));
     }
 
-    #[cfg(feature = "permissions")]
     #[test]
     fn test_blanket_read_permission_logic() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+
         let proto: AclPolicyProto = text_format::parse_from_str(
             r#"
             publisher {
@@ -363,9 +337,12 @@ mod tests {
         assert!(!acl_policy.can_publish(&tire_topic, &any_topic_name));
     }
 
-    #[cfg(feature = "permissions")]
     #[test]
     fn test_mixed_acls_and_permissions() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+
         // This test ensures that the presence of permission fields does not interfere
         // with ACL parsing, and vice versa.
         let proto: AclPolicyProto = text_format::parse_from_str(

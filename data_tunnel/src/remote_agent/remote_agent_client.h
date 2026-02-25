@@ -61,12 +61,12 @@ public:
     };
 
     // Exists to support testing.
-    std::unordered_map<std::string, Subscription> Subscriptions() { return subscriptions_; }
+    std::unordered_map<int32_t, Subscription> Subscriptions() { return subscriptions_; }
 
     void DumpStats(std::ostream& out_stream) const;
 
 private:
-    ::sdv::SdvStatus SendSubscribeRequest(const std::string& publication_name);
+    ::sdv::SdvStatus SendSubscribeRequest(const std::string& topic_name, int32_t publication_id);
 
     // Moves the connection from CONNECT_WAIT to ACTIVE, executing any pending operations that were
     // waiting for this transition.
@@ -105,8 +105,8 @@ private:
     };
     std::unordered_map<std::string, LastMessageRequest> last_message_requests_;
 
-    // List of remote topics imported from this peer.  Guarded by lock_.
-    std::unordered_map<std::string, Subscription> subscriptions_;
+    // List of remote topics imported from this peer.  Key is internal pub_id.  Guarded by lock_.
+    std::unordered_map<int32_t, Subscription> subscriptions_;
 
     // State of the Client.
     enum class ClientState {

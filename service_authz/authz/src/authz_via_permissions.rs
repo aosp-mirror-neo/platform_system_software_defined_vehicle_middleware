@@ -24,7 +24,7 @@ use sdv_comms_id::{
 use std::sync::Arc;
 
 use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::IServiceDiscoveryAgent::{
-    BnServiceDiscoveryAgent, BpServiceDiscoveryAgent, IServiceDiscoveryAgent
+    BpServiceDiscoveryAgent, IServiceDiscoveryAgent
 };
 use google_sdv_identity::aidl::google::sdv::identity::ServiceFqin::ServiceFqin as ServiceFqinAidl;
 
@@ -52,6 +52,7 @@ impl AuthzViaPermissions {
     }
 
     /// Internal constructor for dependency injection.
+    #[cfg(test)]
     fn new_with_sd_agent(
         provider: Arc<dyn AclPolicyProvider>,
         sd_agent: binder::Strong<dyn IServiceDiscoveryAgent>,
@@ -142,6 +143,7 @@ mod tests {
     use super::*;
     use crate::AclPolicyModel;
     use crate::TestAclPolicyProvider;
+    use crate::feature_flags;
     use binder::BinderFeatures;
     use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::UnitType::UnitType as AidlUnitType;
     use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition;
@@ -150,6 +152,8 @@ mod tests {
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
     use sdv_comms_id::names::{ServiceName as ServiceBundleName, VmName};
     use std::str::FromStr;
+
+    use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::IServiceDiscoveryAgent::BnServiceDiscoveryAgent;
 
     fn setup_mock_sd_agent(
         response: binder::Result<Option<ServiceUnitDefinition>>,
@@ -162,6 +166,10 @@ mod tests {
 
     #[test]
     fn test_check_authorization_success() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+
         // 1. Setup Policy: Allow calls to 'TargetType' on specific unit 'correct-unit'
         let mut test_provider = TestAclPolicyProvider::new();
         test_provider.set_authz_policy(
@@ -171,11 +179,11 @@ mod tests {
             AclPolicyModel::try_from(
                 text_format::parse_from_str::<AclPolicyProto>(
                     r#"
-                client {
-                    service: "com.server.TargetType"
-                    channel: "correct-unit"
-                }
-            "#,
+                        client {
+                            service: "com.server.TargetType"
+                            channel: "correct-unit"
+                        }
+                    "#,
                 )
                 .unwrap(),
             )
