@@ -87,7 +87,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Outbound_Secure_Success) {
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Since security is enabled connection is queried for cert details when we get peer ping.
     EXPECT_CALL(connection_, AuthenticatedVmName()).WillOnce(Return(kPeerVmName_1));
@@ -118,7 +118,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Inbound_Secure_Success) {
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Since security is enabled connection is queried for cert details when we get peer ping.
     EXPECT_CALL(connection_, AuthenticatedVmName()).WillOnce(Return(kPeerVmName_1));
@@ -149,7 +149,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Outbound_Insecure_Success) {
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt of expected peer ping.
     connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
@@ -173,7 +173,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Inbound_Insecure_Success) {
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt of expected peer ping.
     connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
@@ -197,7 +197,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_FailsOnMissingPong) {
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt of expected peer ping.
     connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
@@ -221,7 +221,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_FailsOnNonPong) {
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt of expected peer ping.
     connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
@@ -245,7 +245,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnMissingAuthIden
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Since security is enabled connection is queried for cert details when we get peer ping.
     EXPECT_CALL(connection_, AuthenticatedVmName()).WillOnce(Return(kPeerVmName_1));
@@ -270,7 +270,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnIncorrectAuthId
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Since security is enabled connection is queried for cert details when we get peer ping.
     EXPECT_CALL(connection_, AuthenticatedVmName()).WillOnce(Return(kPeerVmName_1));
@@ -295,7 +295,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnMissingAuthVmNa
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Since security is enabled connection is queried for cert details when we get peer ping.
     EXPECT_CALL(connection_, AuthenticatedVmName()).WillOnce(Return(std::nullopt));
@@ -319,7 +319,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnIncorrectAuthVm
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Since security is enabled connection is queried for cert details when we get peer ping.
     EXPECT_CALL(connection_, AuthenticatedVmName()).WillOnce(Return(kPeerVmName_2));
@@ -343,7 +343,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Outbound_FailsOnUnexpectedPin
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt of peer ping with unexpected VM name.
     connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_2));
@@ -364,7 +364,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_FailsOnMissingPing) {
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt failure.
     connection_.EnqueueReceiveFailure();
@@ -385,7 +385,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_FailsOnNonPing) {
 
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
-    EXPECT_EQ(ping_payload->vm_name_, kSelfVmName);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt of non-ping payload.
     connection_.EnqueueParcelForReceive(123, Payload_Pong());

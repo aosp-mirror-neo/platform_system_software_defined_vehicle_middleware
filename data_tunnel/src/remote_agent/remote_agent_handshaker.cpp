@@ -112,11 +112,11 @@ std::optional<std::string> RemoteAgentHandshaker::PerformHandshake(
     auto* ping_payload = maybe_ping_payload->As<proto::Payload_Ping>();
     if (!ping_payload) {
         ALOGE("PerformHandshake(%s): Unexpected payload %d instead of Ping.",
-              connection.ToString().c_str(), maybe_ping_payload->type_);
+              connection.ToString().c_str(), maybe_ping_payload->type);
         return std::nullopt;
     }
 
-    const auto& ping_peer_vm_name = ping_payload->vm_name_;
+    const auto& ping_peer_vm_name = ping_payload->vm_name;
 
     // Check that ping VM name matches expected vm name, if any (only for outbound connections)
     if (expected_peer_vm_name && *expected_peer_vm_name != ping_peer_vm_name) {
@@ -148,9 +148,9 @@ std::optional<std::string> RemoteAgentHandshaker::PerformHandshake(
         return std::nullopt;
     }
 
-    if (maybe_pong_payload->type_ != proto::Payload::Pong) {
+    if (maybe_pong_payload->type != proto::Payload::Pong) {
         ALOGE("PerformHandshake(%s, %s): Unexpected payload %d instead of Pong.",
-              connection.ToString().c_str(), ping_peer_vm_name.c_str(), maybe_pong_payload->type_);
+              connection.ToString().c_str(), ping_peer_vm_name.c_str(), maybe_pong_payload->type);
         return std::nullopt;
     }
 

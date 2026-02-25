@@ -107,23 +107,122 @@ TEST(DataTunnelProto, BufferReaderWriterOperations) {
     // TODO: Test Cut And Move
 }
 
-static bool CheckPayloadSerialization(RawBuffer& buffer, const proto::Payload& payload) {
+template <typename PayloadType>
+std::unique_ptr<PayloadType> SerializeAndDeserialize(const PayloadType& payload) {
+    RawBuffer buffer(kLargeBufferSize);
     BufferWriter writer(buffer);
     proto::Parcel parcel(64);
-    if (!parcel.Serialize(writer, payload)) return false;
+    if (!parcel.Serialize(writer, payload)) {
+        return nullptr;
+    }
     BufferReader reader(writer);
     auto result = proto::Parcel::Deserialize(reader, NULL);
-    return result.first == proto::Parcel::ParseResult::Success && result.second &&
-            *result.second.get() == payload;
+    if (result.first != proto::Parcel::ParseResult::Success || !result.second) {
+        return nullptr;
+    }
+    return std::unique_ptr<PayloadType>(static_cast<PayloadType*>(result.second.release()));
 }
 
-TEST(DataTunnelProto, ParcelSerialization) {
-    RawBuffer buffer(kLargeBufferSize);
-    ASSERT_TRUE(CheckPayloadSerialization(buffer, proto::Payload_Ping("8")));
-    ASSERT_TRUE(CheckPayloadSerialization(buffer, proto::Payload_Pong(32)));
-    ASSERT_TRUE(
-            CheckPayloadSerialization(buffer, proto::Payload_SubscribeRequest("Topic A", 1234)));
-    ASSERT_TRUE(CheckPayloadSerialization(buffer, proto::Payload_SubscribeResult()));
+TEST(DataTunnelProto, Serialization_Ping) {
+    auto payload = SerializeAndDeserialize(proto::Payload_Ping("vmname2"));
+    ASSERT_TRUE(!!payload);
+    EXPECT_EQ(payload->vm_name, "vmname2");
+}
+
+TEST(DataTunnelProto, Serialization_Pong) {
+    auto payload = SerializeAndDeserialize(proto::Payload_Pong(32));
+    ASSERT_TRUE(!!payload);
+    EXPECT_EQ(payload->ping_id, 32U);
+}
+
+TEST(DataTunnelProto, Serialization_SubscribeRequest) {
+    auto payload = SerializeAndDeserialize(proto::Payload_SubscribeRequest("Topic A", 1234));
+    ASSERT_TRUE(!!payload);
+    EXPECT_EQ(payload->topic_name, "Topic A");
+    EXPECT_EQ(payload->subscriber_pub_id, 1234);
+}
+
+TEST(DataTunnelProto, Serialization_SubscribeResult) {
+    proto::Payload_SubscribeResult original;
+    original.result = 1;
+    original.message_size = sizeof(uint32_t);
+    original.message_count = 15;
+    original.subscriber_pub_id = 17;
+    original.has_last_message = 0;
+    original.last_message_content.Resize(0, false);
+
+    // First check with no last message data.
+    auto no_data = SerializeAndDeserialize(original);
+    ASSERT_TRUE(!!no_data);
+    EXPECT_EQ(no_data->result, 1U);
+    EXPECT_EQ(no_data->message_size, sizeof(uint32_t));
+    EXPECT_EQ(no_data->message_count, 15U);
+    EXPECT_EQ(no_data->subscriber_pub_id, 17);
+    EXPECT_EQ(no_data->has_last_message, 0U);
+    EXPECT_EQ(no_data->last_message_content.Size(), 0U);
+
+    // Add last message data and try again.
+    original.has_last_message = 1;
+    original.last_message_content.Resize(sizeof(uint32_t), true);
+    *(reinterpret_cast<uint32_t*>(original.last_message_content.Ptr())) = 0xDEADBEEF;
+    auto with_data = SerializeAndDeserialize(original);
+    ASSERT_TRUE(!!with_data);
+    EXPECT_EQ(with_data->result, 1U);
+    EXPECT_EQ(with_data->message_size, sizeof(uint32_t));
+    EXPECT_EQ(with_data->message_count, 15U);
+    EXPECT_EQ(with_data->subscriber_pub_id, 17);
+    EXPECT_EQ(with_data->has_last_message, 1U);
+    EXPECT_EQ(with_data->last_message_content.Size(), sizeof(uint32_t));
+    EXPECT_EQ(*(reinterpret_cast<uint32_t*>(with_data->last_message_content.Ptr())), 0xDEADBEEF);
+}
+
+TEST(DataTunnelProto, Serialization_TopicRawData) {
+    proto::Payload_TopicRawData original_payload(sizeof(uint32_t));
+    original_payload.subscriber_pub_id = 11;
+    *(reinterpret_cast<uint32_t*>(original_payload.buffer.Ptr())) = 0xDEADBEEF;
+
+    // First check with no last message data.
+    auto deserialized_payload = SerializeAndDeserialize(original_payload);
+    ASSERT_TRUE(!!deserialized_payload);
+    EXPECT_EQ(deserialized_payload->subscriber_pub_id, 11);
+    EXPECT_EQ(deserialized_payload->data_size, sizeof(uint32_t));
+    EXPECT_EQ(*(reinterpret_cast<uint32_t*>(deserialized_payload->buffer.Ptr())), 0xDEADBEEF);
+}
+
+TEST(DataTunnelProto, Serialization_TopicDestroyed) {
+    auto payload = SerializeAndDeserialize(proto::Payload_TopicDestroyed(1234));
+    ASSERT_TRUE(!!payload);
+    EXPECT_EQ(payload->subscriber_pub_id, 1234);
+}
+
+TEST(DataTunnelProto, Serialization_LastMessageRequest) {
+    auto payload = SerializeAndDeserialize(proto::Payload_LastMessageRequest("Topic A"));
+    ASSERT_TRUE(!!payload);
+    EXPECT_EQ(payload->topic_name, "Topic A");
+}
+
+TEST(DataTunnelProto, Serialization_LastMessageResult) {
+    proto::Payload_LastMessageResult original_payload;
+    original_payload.topic_name = "pub-name";
+
+    // First check failure case with no data.
+    original_payload.result = proto::Payload_LastMessageResult::Result_Failure;
+    auto payload_no_data = SerializeAndDeserialize(original_payload);
+    ASSERT_TRUE(!!payload_no_data);
+    EXPECT_EQ(payload_no_data->topic_name, "pub-name");
+    EXPECT_EQ(payload_no_data->result, proto::Payload_LastMessageResult::Result_Failure);
+    EXPECT_EQ(payload_no_data->buffer.Size(), 0U);
+
+    // Now check success case with data present
+    original_payload.result = proto::Payload_LastMessageResult::Result_Ok;
+    original_payload.buffer.Resize(sizeof(uint32_t), false);
+    *(reinterpret_cast<uint32_t*>(original_payload.buffer.Ptr())) = 0xDEADBEEF;
+    auto payload_with_data = SerializeAndDeserialize(original_payload);
+    ASSERT_TRUE(!!payload_with_data);
+    EXPECT_EQ(payload_with_data->topic_name, "pub-name");
+    EXPECT_EQ(payload_with_data->result, proto::Payload_LastMessageResult::Result_Ok);
+    ASSERT_EQ(payload_with_data->buffer.Size(), sizeof(uint32_t));
+    EXPECT_EQ(*(reinterpret_cast<uint32_t*>(payload_with_data->buffer.Ptr())), 0xDEADBEEF);
 }
 
 TEST(DataTunnelProto, LastMessageResult_DeserializationFailsWithoutResizeUntilAllDataAvailable) {
@@ -134,14 +233,14 @@ TEST(DataTunnelProto, LastMessageResult_DeserializationFailsWithoutResizeUntilAl
     // rather than calling that function because it wants to write the buffer.
     ASSERT_TRUE(writer.Write("Topic A"));                                    // topic_name_
     ASSERT_TRUE(writer.Write(proto::Payload_LastMessageResult::Result_Ok));  // result_
-    ASSERT_TRUE(writer.Write(static_cast<uint32_t>(4096)));                  // buffer_.Size()
+    ASSERT_TRUE(writer.Write(static_cast<uint32_t>(4096)));                  // buffer.Size()
 
     // Attempt to deserialize payload; will fail due to insufficient data and will not
-    // resize the buffer_ in the payload object.
+    // resize the buffer in the payload object.
     proto::Payload_LastMessageResult payload;
     BufferReader reader(writer);
     EXPECT_FALSE(payload.Deserialize(reader));
-    EXPECT_EQ(payload.buffer_.Size(), static_cast<size_t>(0));
+    EXPECT_EQ(payload.buffer.Size(), static_cast<size_t>(0));
 
     // "write" the amount of data specified in the payload header and create new reader that
     // sees added data.
@@ -150,7 +249,7 @@ TEST(DataTunnelProto, LastMessageResult_DeserializationFailsWithoutResizeUntilAl
 
     // Now deserialize succeeds and buffer resized.
     EXPECT_TRUE(payload.Deserialize(reader_2));
-    EXPECT_EQ(payload.buffer_.Size(), static_cast<size_t>(4096));
+    EXPECT_EQ(payload.buffer.Size(), static_cast<size_t>(4096));
 }
 
 TEST(DataTunnelProto, TopicRawData_DeserializationFailsWithoutResizeUntilAllDataAvailable) {
@@ -163,11 +262,11 @@ TEST(DataTunnelProto, TopicRawData_DeserializationFailsWithoutResizeUntilAllData
     ASSERT_TRUE(writer.Write(static_cast<uint32_t>(4096)));  // data_size_
 
     // Attempt to deserialize payload; will fail due to insufficient data and will not
-    // resize the buffer_ in the payload object.
+    // resize the buffer in the payload object.
     proto::Payload_TopicRawData payload(1024);
     BufferReader reader(writer);
     EXPECT_FALSE(payload.Deserialize(reader));
-    EXPECT_EQ(payload.buffer_.Size(), static_cast<size_t>(1024));
+    EXPECT_EQ(payload.buffer.Size(), static_cast<size_t>(1024));
 
     // "write" the amount of data specified in the payload header and create new reader that
     // sees added data.
@@ -176,7 +275,7 @@ TEST(DataTunnelProto, TopicRawData_DeserializationFailsWithoutResizeUntilAllData
 
     // Now deserialize succeeds and resizes the payload's buffer
     EXPECT_TRUE(payload.Deserialize(reader_2));
-    EXPECT_EQ(payload.buffer_.Size(), static_cast<size_t>(4096));
+    EXPECT_EQ(payload.buffer.Size(), static_cast<size_t>(4096));
 }
 
 TEST(DataTunnelProto, SubscribeResult_DeserializationFailsWithoutResizeUntilAllDataAvailable) {
@@ -192,12 +291,12 @@ TEST(DataTunnelProto, SubscribeResult_DeserializationFailsWithoutResizeUntilAllD
     ASSERT_TRUE(writer.Write(static_cast<uint8_t>(1)));    // has_last_message_
 
     // Attempt to deserialize payload; will fail due to insufficient data and will not
-    // resize the buffer_ in the payload object.
+    // resize the buffer in the payload object.
     proto::Payload_SubscribeResult payload;
     BufferReader reader(writer);
     EXPECT_FALSE(payload.Deserialize(reader));
 
-    EXPECT_EQ(payload.last_message_content_.Size(), static_cast<size_t>(0));
+    EXPECT_EQ(payload.last_message_content.Size(), static_cast<size_t>(0));
 
     // "write" the amount of data specified in the payload header and create new reader that
     // sees added data.
@@ -206,9 +305,8 @@ TEST(DataTunnelProto, SubscribeResult_DeserializationFailsWithoutResizeUntilAllD
 
     // Now deserialize succeeds and resizes the payload's buffer
     ASSERT_TRUE(payload.Deserialize(reader_2));
-    EXPECT_EQ(payload.last_message_content_.Size(), static_cast<size_t>(16));
+    EXPECT_EQ(payload.last_message_content.Size(), static_cast<size_t>(16));
 }
-// TODO: Add more DataTunnel protocol tests
 
 }  // namespace android::sdv::dt::agent::test
 

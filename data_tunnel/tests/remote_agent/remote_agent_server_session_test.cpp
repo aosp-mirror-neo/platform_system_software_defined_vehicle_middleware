@@ -207,9 +207,9 @@ TEST_F(RemoteAgentServerSessionTest, LastMessage_FailsForUnknownTopic) {
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_LastMessageResult>();
     ASSERT_TRUE(payload);
-    EXPECT_EQ(payload->topic_name_, kTestTopicName);
-    EXPECT_EQ(payload->result_, Payload_LastMessageResult::Result_Failure);
-    EXPECT_EQ(payload->buffer_.Size(), 0);
+    EXPECT_EQ(payload->topic_name, kTestTopicName);
+    EXPECT_EQ(payload->result, Payload_LastMessageResult::Result_Failure);
+    EXPECT_EQ(payload->buffer.Size(), 0);
 }
 
 TEST_F(RemoteAgentServerSessionTest, LastMessage_FailsForRemoteTopic) {
@@ -220,9 +220,9 @@ TEST_F(RemoteAgentServerSessionTest, LastMessage_FailsForRemoteTopic) {
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_LastMessageResult>();
     ASSERT_TRUE(payload);
-    EXPECT_EQ(payload->topic_name_, kTestTopicName);
-    EXPECT_EQ(payload->result_, Payload_LastMessageResult::Result_Failure);
-    EXPECT_EQ(payload->buffer_.Size(), 0);
+    EXPECT_EQ(payload->topic_name, kTestTopicName);
+    EXPECT_EQ(payload->result, Payload_LastMessageResult::Result_Failure);
+    EXPECT_EQ(payload->buffer.Size(), 0);
 }
 
 TEST_F(RemoteAgentServerSessionTest, LastMessage_SucceedsWithEmptyBufferForEmptyTopic) {
@@ -233,9 +233,9 @@ TEST_F(RemoteAgentServerSessionTest, LastMessage_SucceedsWithEmptyBufferForEmpty
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_LastMessageResult>();
     ASSERT_TRUE(payload);
-    EXPECT_EQ(payload->topic_name_, kTestTopicName);
-    EXPECT_EQ(payload->result_, Payload_LastMessageResult::Result_Ok);
-    EXPECT_EQ(payload->buffer_.Size(), 0);
+    EXPECT_EQ(payload->topic_name, kTestTopicName);
+    EXPECT_EQ(payload->result, Payload_LastMessageResult::Result_Ok);
+    EXPECT_EQ(payload->buffer.Size(), 0);
 }
 
 TEST_F(RemoteAgentServerSessionTest, LastMessage_Success) {
@@ -247,10 +247,10 @@ TEST_F(RemoteAgentServerSessionTest, LastMessage_Success) {
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_LastMessageResult>();
     ASSERT_TRUE(payload);
-    EXPECT_EQ(payload->topic_name_, kTestTopicName);
-    EXPECT_EQ(payload->result_, Payload_LastMessageResult::Result_Ok);
-    EXPECT_EQ(payload->buffer_.Size(), kTestMessageSize);
-    const auto* message = reinterpret_cast<const TestMessageType*>(payload->buffer_.Ptr());
+    EXPECT_EQ(payload->topic_name, kTestTopicName);
+    EXPECT_EQ(payload->result, Payload_LastMessageResult::Result_Ok);
+    EXPECT_EQ(payload->buffer.Size(), kTestMessageSize);
+    const auto* message = reinterpret_cast<const TestMessageType*>(payload->buffer.Ptr());
     EXPECT_EQ(*message, 31337);
 }
 
@@ -268,10 +268,10 @@ TEST_F(RemoteAgentServerSessionTest, LastMessage_SuccessWithLargeMessages) {
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_LastMessageResult>();
     ASSERT_TRUE(payload);
-    EXPECT_EQ(payload->topic_name_, kTestTopicName);
-    EXPECT_EQ(payload->result_, Payload_LastMessageResult::Result_Ok);
-    EXPECT_EQ(payload->buffer_.Size(), kBigMessageSize);
-    EXPECT_EQ(memcmp(payload->buffer_.Ptr(), &big_messages[1], kBigMessageSize), 0);
+    EXPECT_EQ(payload->topic_name, kTestTopicName);
+    EXPECT_EQ(payload->result, Payload_LastMessageResult::Result_Ok);
+    EXPECT_EQ(payload->buffer.Size(), kBigMessageSize);
+    EXPECT_EQ(memcmp(payload->buffer.Ptr(), &big_messages[1], kBigMessageSize), 0);
 }
 
 // Single happy-path case for working with RemoteAgentTopicExporter; most server-side
@@ -288,14 +288,14 @@ TEST_F(RemoteAgentServerSessionTest, Subscription_FullFlow) {
     // Get a subscribe result including the last message content.
     auto sub_result_payload = connection_->GetNextSentDataIfPayload<Payload_SubscribeResult>();
     ASSERT_TRUE(sub_result_payload);
-    EXPECT_EQ(sub_result_payload->subscriber_pub_id_, kTestTopicSubId);
-    EXPECT_EQ(sub_result_payload->result_, Payload_SubscribeResult::Result_Ok);
-    EXPECT_EQ(sub_result_payload->message_size_, kTestMessageSize);
-    EXPECT_EQ(sub_result_payload->message_count_, kTestMessageCount);
-    EXPECT_EQ(sub_result_payload->has_last_message_, 1);
-    EXPECT_GE(sub_result_payload->last_message_content_.Size(), 1 * kTestMessageSize);
+    EXPECT_EQ(sub_result_payload->subscriber_pub_id, kTestTopicSubId);
+    EXPECT_EQ(sub_result_payload->result, Payload_SubscribeResult::Result_Ok);
+    EXPECT_EQ(sub_result_payload->message_size, kTestMessageSize);
+    EXPECT_EQ(sub_result_payload->message_count, kTestMessageCount);
+    EXPECT_EQ(sub_result_payload->has_last_message, 1);
+    EXPECT_GE(sub_result_payload->last_message_content.Size(), 1 * kTestMessageSize);
     const auto* messages = reinterpret_cast<const TestMessageType*>(
-            sub_result_payload->last_message_content_.Ptr());
+            sub_result_payload->last_message_content.Ptr());
     EXPECT_EQ(messages[0], 25);
 
     // Brief sleep to ensure Exporter processing thread returns to waiting and doesn't
@@ -306,11 +306,10 @@ TEST_F(RemoteAgentServerSessionTest, Subscription_FullFlow) {
 
     auto data_payload_2 = connection_->GetNextSentDataIfPayload<Payload_TopicRawData>();
     ASSERT_TRUE(data_payload_2);
-    EXPECT_EQ(data_payload_2->subscriber_pub_id_, kTestTopicSubId);
-    EXPECT_EQ(data_payload_2->data_size_, 2 * kTestMessageSize);
-    EXPECT_GE(data_payload_2->buffer_.Size(), 2 * kTestMessageSize);
-    const auto* messages_2 =
-            reinterpret_cast<const TestMessageType*>(data_payload_2->buffer_.Ptr());
+    EXPECT_EQ(data_payload_2->subscriber_pub_id, kTestTopicSubId);
+    EXPECT_EQ(data_payload_2->data_size, 2 * kTestMessageSize);
+    EXPECT_GE(data_payload_2->buffer.Size(), 2 * kTestMessageSize);
+    const auto* messages_2 = reinterpret_cast<const TestMessageType*>(data_payload_2->buffer.Ptr());
     EXPECT_EQ(messages_2[0], 35);
     EXPECT_EQ(messages_2[1], 45);
 
@@ -318,7 +317,7 @@ TEST_F(RemoteAgentServerSessionTest, Subscription_FullFlow) {
 
     auto destroyed_payload = connection_->GetNextSentDataIfPayload<Payload_TopicDestroyed>();
     ASSERT_TRUE(destroyed_payload);
-    EXPECT_EQ(destroyed_payload->subscriber_pub_id_, kTestTopicSubId);
+    EXPECT_EQ(destroyed_payload->subscriber_pub_id, kTestTopicSubId);
 }
 
 }  // namespace
