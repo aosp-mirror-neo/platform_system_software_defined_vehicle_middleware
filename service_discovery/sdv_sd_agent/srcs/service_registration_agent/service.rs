@@ -81,11 +81,16 @@ impl ServiceRegistrationAgent {
         app_metadata: &ApplicationMetadata,
         process_identifier: &ProcessIdentifier,
     ) -> binder::Result<RegistrationTokenV2> {
-        self.validate_service_unit_name(service_unit_name)?;
+        let service_unit_name_obj = self.validate_service_unit_name(service_unit_name)?;
 
         let updated_metadata = ensure_publisher_has_topic(app_metadata, service_unit_name);
 
-        match self.is_process_authorized_for_unit_type(process_identifier, unit_type) {
+        match self.is_process_authorized_for_unit_type(
+            process_identifier,
+            unit_type,
+            &updated_metadata,
+            &service_unit_name_obj,
+        ) {
             Ok(true) => {
                 // Process is authorized, so do nothing.
             }
@@ -122,7 +127,7 @@ impl ServiceRegistrationAgent {
         service_unit_name: &str,
         process_identifier: &ProcessIdentifier,
     ) -> binder::Result<()> {
-        self.validate_service_unit_name(service_unit_name)?;
+        let _ = self.validate_service_unit_name(service_unit_name)?;
 
         let Some(_) =
             self.service_registry.remove_local_service_unit(service_unit_name, process_identifier)
@@ -162,6 +167,8 @@ impl ServiceRegistrationAgent {
         &self,
         process_identifier: &ProcessIdentifier,
         unit_type: &UnitTypeAidl,
+        app_metadata: &ApplicationMetadata,
+        service_unit_name: &ServiceUnitName,
     ) -> Result<bool, anyhow::Error> {
         let subject_fqin = self
             .get_process_fqin(process_identifier)
@@ -177,17 +184,20 @@ impl ServiceRegistrationAgent {
             &subject_fqin,
             &object_package_name,
             &object_unit_type_name,
+            app_metadata,
+            service_unit_name,
         ))
     }
 
-    fn validate_service_unit_name(&self, service_unit_name: &str) -> binder::Result<()> {
-        if let Err(err) = ServiceUnitName::from_str(service_unit_name) {
+    fn validate_service_unit_name(
+        &self,
+        service_unit_name: &str,
+    ) -> binder::Result<ServiceUnitName> {
+        ServiceUnitName::from_str(service_unit_name).map_err(|err| {
             let msg = format!("Invalid service unit name {service_unit_name} ({err:?}).");
             error!("{msg}");
-            return Err(Status::new_exception_str(ExceptionCode::ILLEGAL_ARGUMENT, Some(msg)));
-        }
-
-        Ok(())
+            Status::new_exception_str(ExceptionCode::ILLEGAL_ARGUMENT, Some(msg))
+        })
     }
 }
 

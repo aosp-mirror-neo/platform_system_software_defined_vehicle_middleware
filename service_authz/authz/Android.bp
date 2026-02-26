@@ -28,6 +28,7 @@ rust_defaults {
     rustlibs: [
         // keep-sorted start
         "google.sdv.identity-V2-rust",
+        "google.sdv.service_discovery.common-V2-rust",
         "google.sdv.service_discovery.discovery-V2-rust",
         "libanyhow",
         "liblog_rust",
