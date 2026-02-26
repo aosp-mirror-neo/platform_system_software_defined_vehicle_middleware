@@ -61,6 +61,27 @@ use crate::unit_type_utils::deprecate_unit_type_owner;
 
 pub(crate) use unit_name_parameters_wrapper::InternalUnitNameParameters;
 
+/// Populates the topic name if it is currently empty.
+///
+/// Legacy publishers may not have a defined topic field. This function ensures
+/// these publishers remain discoverable by SOA-based subscribers by defaulting
+/// the topic to the publisher's `service_unit_name`.
+fn ensure_publisher_has_topic(
+    app_metadata: &ApplicationMetadata,
+    service_unit_name: &str,
+) -> ApplicationMetadata {
+    let mut modified_app_metadata = app_metadata.clone();
+    if let TypedMetadataAidl::PublisherUnit(ref mut publisher_metadata) =
+        modified_app_metadata.typedMetadata
+    {
+        if publisher_metadata.topic_name.is_empty() {
+            debug!("Publisher topic empty; defaulting to service_unit_name: {}", service_unit_name);
+            publisher_metadata.topic_name = service_unit_name.to_string();
+        }
+    }
+    modified_app_metadata
+}
+
 /// ServiceRegistry provides concurrent access to service units and unit types for both local and remote services.
 #[derive(Default)]
 pub(crate) struct ServiceRegistry {
@@ -471,7 +492,7 @@ impl ServiceRegistry {
             identity: identity.clone(),
             serviceUnitName: service_unit_name.to_string(),
             unitType: unit_type,
-            appMetadata: app_metadata.clone(),
+            appMetadata: ensure_publisher_has_topic(app_metadata, service_unit_name),
             inferredMetadata: InferredMetadata {
                 location: RelativeLocation::LOCATION_LOCAL_SDV_INSTANCE,
             },
@@ -1725,6 +1746,84 @@ mod tests {
                 &unit_type,
                 &topic_name,
                 binder_status_listener
+            )
+            .is_ok());
+    }
+
+    #[test]
+    fn register_listener_by_topic_defaults_to_service_unit_name_succeeds() {
+        let service_registry = ServiceRegistry::default();
+        let unit_type = get_listener_test_default_unit_type();
+        let caller_pid = ProcessIdentifier { pid: 42, uid: 1001 };
+        let service_unit_name = "service_unit_name";
+        // TopicName will default to service_unit_name.
+        let expected_topic_name = TopicName::from_str(service_unit_name).unwrap();
+        let bad_topic_name = TopicName::from_str("wrong_service_unit_name").unwrap();
+
+        // Register the service unit without specifying a topic name.
+        let identity = register_service_unit_for_test_topic(
+            &service_registry,
+            "some_vm_name",
+            &unit_type,
+            &caller_pid,
+            123,
+            None, // No topic name provided
+        );
+
+        let listener = FakeServiceUnitChangeListener::new();
+        let binder_status_listener = listener.wrap_with_authz();
+
+        let bad_listener = FakeServiceUnitChangeListener::new();
+        let bad_binder_status_listener = bad_listener.wrap_with_authz();
+
+        // Register the listener with the topic name expected to be the default.
+        assert!(service_registry
+            .register_service_unit_change_listener_by_topic(
+                &unit_type,
+                &expected_topic_name,
+                binder_status_listener.clone()
+            )
+            .is_ok());
+
+        // Register the listener with the topic name NOT expected to be used.
+        assert!(service_registry
+            .register_service_unit_change_listener_by_topic(
+                &unit_type,
+                &bad_topic_name,
+                bad_binder_status_listener.clone()
+            )
+            .is_ok());
+
+        // Listener should be notified because the topic name defaults to the service unit name.
+        assert_that!(listener.get_num_on_service_unit_registered(), eq(1));
+        assert_that!(listener.get_num_on_service_unit_unregistered(), eq(0));
+
+        // Bad listener should NOT be notified because is listening to a different topic name
+        assert_that!(bad_listener.get_num_on_service_unit_registered(), eq(0));
+        assert_that!(bad_listener.get_num_on_service_unit_unregistered(), eq(0));
+
+        // Remove the service unit.
+        let service_unit_id =
+            ServiceUnitIdentifier { sid: identity.sid.into(), name: service_unit_name.to_string() };
+        service_registry.remove_remote_service_unit(&service_unit_id);
+        assert_that!(listener.get_num_on_service_unit_unregistered(), eq(1));
+        assert_that!(bad_listener.get_num_on_service_unit_unregistered(), eq(0));
+
+        // Unregister the listener.
+        assert!(service_registry
+            .unregister_service_unit_change_listener_by_topic(
+                &unit_type,
+                &expected_topic_name,
+                binder_status_listener
+            )
+            .is_ok());
+
+        // Unregister the listener.
+        assert!(service_registry
+            .unregister_service_unit_change_listener_by_topic(
+                &unit_type,
+                &bad_topic_name,
+                bad_binder_status_listener
             )
             .is_ok());
     }
