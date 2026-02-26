@@ -61,7 +61,7 @@ mod test {
         // AND GIVEN an availability stream.
         let mut availability_stream = sdv::mw::clientlib::create_registration_event_stream(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::CHANNEL_ZERO,
+            subscriber::Channel::<TirePressure>::TOPIC_ZERO,
         )
         .await
         .expect("Availability stream creation failed");
@@ -69,7 +69,7 @@ mod test {
         // WHEN trying to create an observer.
         let result = sdv::mw::clientlib::create_observer(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::CHANNEL_ZERO,
+            subscriber::Channel::<TirePressure>::TOPIC_ZERO,
             &SubscribeOptions::default(),
         )
         .await;
@@ -98,15 +98,16 @@ mod test {
 
         let mut observer = sdv::mw::clientlib::create_observer(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::CHANNEL_ZERO,
+            subscriber::Channel::<TirePressure>::TOPIC_ZERO,
             &SubscribeOptions::default(),
         )
         .await
-        .expect("observer creation for TirePressure::CHANNEL_ZERO failed.");
+        .expect("observer creation for TirePressure::TOPIC_ZERO failed.");
 
         let pressure_pub = publishing_bundle
-            .take_publisher(publisher::Channel::<TirePressure>::CHANNEL_ZERO)
-            .expect("taking publisher Channel::CHANNEL_ZERO failed.");
+            .take_publisher(publisher::Channel::<TirePressure>::TOPIC_ZERO)
+            .expect("taking publisher Channel::TOPIC_ZERO failed.");
+
         // SLEEP to ensure the topic multiplexer is created on a separate process.
         thread::sleep(TOPIC_PROCESSING_DURATION);
 
@@ -152,8 +153,8 @@ mod test {
         let pressure_two = 84723;
 
         let pressure_pub = publishing_bundle
-            .take_publisher(publisher::Channel::<TirePressure>::CHANNEL_ZERO)
-            .expect("taking publisher Channel::CHANNEL_ZERO failed.");
+            .take_publisher(publisher::Channel::<TirePressure>::TOPIC_ZERO)
+            .expect("taking publisher Channel::TOPIC_ZERO failed.");
 
         // SLEEP to ensure the topic multiplexer is created on a separate process.
         thread::sleep(TOPIC_PROCESSING_DURATION);

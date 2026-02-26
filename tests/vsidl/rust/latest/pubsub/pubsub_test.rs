@@ -34,7 +34,7 @@ mod test {
     use vsidl_pubsub_test_proto::tire::TirePressure;
 
     // This is required by Datatunnel to guarantee forwarding the message to the history buffer.
-    const CHANNEL_PROCESSING_DURATION: Duration = Duration::from_millis(200);
+    const TOPIC_PROCESSING_DURATION: Duration = Duration::from_millis(200);
     const HISTORY_PROCESSING_DURATION: Duration = Duration::from_millis(200);
     const PUBLISHER_DROP_SIGNAL_PROPAGATION: Duration = Duration::from_millis(500);
     const OBSERVER_TIMEOUT_DURATION: Duration = Duration::from_millis(200);
@@ -52,7 +52,7 @@ mod test {
 
     async fn setup(
         instance_name: &str,
-        channel_num: &str,
+        topic_num: &str,
     ) -> (
         Arc<SdvComms>,
         sdv::mw::Publisher<TirePressure>,
@@ -66,80 +66,80 @@ mod test {
         sdv::mw::History<TirePressure>,
         sdv::mw::InstantReader<TirePressure>,
     ) {
-        let (pub_channel, sub_channel) = match channel_num {
-            "channel_zero" => (
-                publisher::Channel::<TirePressure>::CHANNEL_ZERO,
-                subscriber::Channel::<TirePressure>::CHANNEL_ZERO,
+        let (pub_topic, sub_topic) = match topic_num {
+            "topic-zero" => (
+                publisher::Channel::<TirePressure>::TOPIC_ZERO,
+                subscriber::Channel::<TirePressure>::TOPIC_ZERO,
             ),
-            "channel_one" => (
-                publisher::Channel::<TirePressure>::CHANNEL_ONE,
-                subscriber::Channel::<TirePressure>::CHANNEL_ONE,
+            "topic-one" => (
+                publisher::Channel::<TirePressure>::TOPIC_ONE,
+                subscriber::Channel::<TirePressure>::TOPIC_ONE,
             ),
-            "channel_two" => (
-                publisher::Channel::<TirePressure>::CHANNEL_TWO,
-                subscriber::Channel::<TirePressure>::CHANNEL_TWO,
+            "topic-two" => (
+                publisher::Channel::<TirePressure>::TOPIC_TWO,
+                subscriber::Channel::<TirePressure>::TOPIC_TWO,
             ),
-            "channel_three" => (
-                publisher::Channel::<TirePressure>::CHANNEL_THREE,
-                subscriber::Channel::<TirePressure>::CHANNEL_THREE,
+            "topic-three" => (
+                publisher::Channel::<TirePressure>::TOPIC_THREE,
+                subscriber::Channel::<TirePressure>::TOPIC_THREE,
             ),
-            "channel_four" => (
-                publisher::Channel::<TirePressure>::CHANNEL_FOUR,
-                subscriber::Channel::<TirePressure>::CHANNEL_FOUR,
+            "topic-four" => (
+                publisher::Channel::<TirePressure>::TOPIC_FOUR,
+                subscriber::Channel::<TirePressure>::TOPIC_FOUR,
             ),
-            "channel_five" => (
-                publisher::Channel::<TirePressure>::CHANNEL_FIVE,
-                subscriber::Channel::<TirePressure>::CHANNEL_FIVE,
+            "topic-five" => (
+                publisher::Channel::<TirePressure>::TOPIC_FIVE,
+                subscriber::Channel::<TirePressure>::TOPIC_FIVE,
             ),
-            "channel_six" => (
-                publisher::Channel::<TirePressure>::CHANNEL_SIX,
-                subscriber::Channel::<TirePressure>::CHANNEL_SIX,
+            "topic-six" => (
+                publisher::Channel::<TirePressure>::TOPIC_SIX,
+                subscriber::Channel::<TirePressure>::TOPIC_SIX,
             ),
-            "channel_seven" => (
-                publisher::Channel::<TirePressure>::CHANNEL_SEVEN,
-                subscriber::Channel::<TirePressure>::CHANNEL_SEVEN,
+            "topic-seven" => (
+                publisher::Channel::<TirePressure>::TOPIC_SEVEN,
+                subscriber::Channel::<TirePressure>::TOPIC_SEVEN,
             ),
-            "channel_eight" => (
-                publisher::Channel::<TirePressure>::CHANNEL_EIGHT,
-                subscriber::Channel::<TirePressure>::CHANNEL_EIGHT,
+            "topic-eight" => (
+                publisher::Channel::<TirePressure>::TOPIC_EIGHT,
+                subscriber::Channel::<TirePressure>::TOPIC_EIGHT,
             ),
-            "channel_nine" => (
-                publisher::Channel::<TirePressure>::CHANNEL_NINE,
-                subscriber::Channel::<TirePressure>::CHANNEL_NINE,
+            "topic-nine" => (
+                publisher::Channel::<TirePressure>::TOPIC_NINE,
+                subscriber::Channel::<TirePressure>::TOPIC_NINE,
             ),
-            "channel_ten" => (
-                publisher::Channel::<TirePressure>::CHANNEL_TEN,
-                subscriber::Channel::<TirePressure>::CHANNEL_TEN,
+            "topic-ten" => (
+                publisher::Channel::<TirePressure>::TOPIC_TEN,
+                subscriber::Channel::<TirePressure>::TOPIC_TEN,
             ),
-            "channel_eleven" => (
-                publisher::Channel::<TirePressure>::CHANNEL_ELEVEN,
-                subscriber::Channel::<TirePressure>::CHANNEL_ELEVEN,
+            "topic-eleven" => (
+                publisher::Channel::<TirePressure>::TOPIC_ELEVEN,
+                subscriber::Channel::<TirePressure>::TOPIC_ELEVEN,
             ),
-            "channel_twelve" => (
-                publisher::Channel::<TirePressure>::CHANNEL_TWELVE,
-                subscriber::Channel::<TirePressure>::CHANNEL_TWELVE,
+            "topic-twelve" => (
+                publisher::Channel::<TirePressure>::TOPIC_TWELVE,
+                subscriber::Channel::<TirePressure>::TOPIC_TWELVE,
             ),
-            "channel_thirteen" => (
-                publisher::Channel::<TirePressure>::CHANNEL_THIRTEEN,
-                subscriber::Channel::<TirePressure>::CHANNEL_THIRTEEN,
+            "topic-thirteen" => (
+                publisher::Channel::<TirePressure>::TOPIC_THIRTEEN,
+                subscriber::Channel::<TirePressure>::TOPIC_THIRTEEN,
             ),
-            "channel_fourteen" => (
-                publisher::Channel::<TirePressure>::CHANNEL_FOURTEEN,
-                subscriber::Channel::<TirePressure>::CHANNEL_FOURTEEN,
+            "topic-fourteen" => (
+                publisher::Channel::<TirePressure>::TOPIC_FOURTEEN,
+                subscriber::Channel::<TirePressure>::TOPIC_FOURTEEN,
             ),
-            "channel_fifteen" | &_ => (
-                publisher::Channel::<TirePressure>::CHANNEL_FIFTEEN,
-                subscriber::Channel::<TirePressure>::CHANNEL_FIFTEEN,
+            "topic-fifteen" | &_ => (
+                publisher::Channel::<TirePressure>::TOPIC_FIFTEEN,
+                subscriber::Channel::<TirePressure>::TOPIC_FIFTEEN,
             ),
         };
 
-        setup_test(instance_name, pub_channel, sub_channel).await
+        setup_test(instance_name, pub_topic, sub_topic).await
     }
 
     async fn setup_test(
         instance_name: &str,
-        pub_channel: &publisher::Channel<TirePressure>,
-        sub_channel: &subscriber::Channel<TirePressure>,
+        pub_topic: &publisher::Channel<TirePressure>,
+        sub_topic: &subscriber::Channel<TirePressure>,
     ) -> (
         Arc<SdvComms>,
         sdv::mw::Publisher<TirePressure>,
@@ -159,28 +159,27 @@ mod test {
         let sdv_comms = create_sdv_comms(instance_name);
 
         // GIVEN a publisher.
-        let publisher = clientlib::create_publisher(sdv_comms.as_ref(), pub_channel)
+        let publisher = clientlib::create_publisher(sdv_comms.as_ref(), pub_topic)
             .await
             .expect("Create TirePressure publisher failed.");
 
         // AND GIVEN different the subscription options to that publisher.
         let subscribe_option =
             &SubscribeOptions::builder().instance_name(instance_name).build().unwrap();
-        let observer =
-            clientlib::create_observer(sdv_comms.as_ref(), sub_channel, subscribe_option)
-                .await
-                .expect("Create TirePressure observer failed.");
+        let observer = clientlib::create_observer(sdv_comms.as_ref(), sub_topic, subscribe_option)
+            .await
+            .expect("Create TirePressure observer failed.");
         let subscriber =
-            clientlib::create_subscriber(sdv_comms.as_ref(), sub_channel, subscribe_option)
+            clientlib::create_subscriber(sdv_comms.as_ref(), sub_topic, subscribe_option)
                 .await
                 .expect("Create TirePressure subscriber failed.");
         let instant_reader =
-            clientlib::create_instant_reader(sdv_comms.as_ref(), sub_channel, subscribe_option)
+            clientlib::create_instant_reader(sdv_comms.as_ref(), sub_topic, subscribe_option)
                 .await
                 .expect("Create TirePressure instant_reader failed.");
         let history = clientlib::create_history(
             sdv_comms.as_ref(),
-            sub_channel,
+            sub_topic,
             &SubscribeOptions::builder()
                 .message_count(HISTORY_BUFFER_SIZE)
                 .instance_name(instance_name)
@@ -191,7 +190,7 @@ mod test {
         .expect("Create TirePressure history failed.");
 
         // Make sure publisher is registered on the channel.
-        tokio::time::sleep(CHANNEL_PROCESSING_DURATION).await;
+        tokio::time::sleep(HISTORY_PROCESSING_DURATION).await;
 
         (sdv_comms, publisher, observer, subscriber, history, instant_reader)
     }
@@ -201,7 +200,7 @@ mod test {
         let instance_name = "pubsub-observer-before-data";
 
         // GIVEN Publisher and all the different subscription option
-        let (_, publisher, mut observer, _, _, _) = setup(instance_name, "channel_zero").await;
+        let (_, publisher, mut observer, _, _, _) = setup(instance_name, "topic-zero").await;
 
         // WHEN we don't publish any data.
         // THEN observer does not get any data
@@ -216,7 +215,7 @@ mod test {
     async fn test_pub_sub_subscriber_before_publishing_data() {
         let instance_name = "pubsub-subscriber-before-data";
         // GIVEN Publisher and all the different subscription option
-        let (_, publisher, _, subscriber, _, _) = setup(instance_name, "channel_one").await;
+        let (_, publisher, _, subscriber, _, _) = setup(instance_name, "topic-one").await;
 
         // WHEN we don't publish any data.
         // THEN subscriber can't retrieve any message
@@ -231,7 +230,7 @@ mod test {
     async fn test_pub_sub_history_before_publishing_data() {
         let instance_name = "pubsub-history-before-data";
         // GIVEN Publisher and all the different subscription option
-        let (_, publisher, _, _, history, _) = setup(instance_name, "channel_two").await;
+        let (_, publisher, _, _, history, _) = setup(instance_name, "topic-two").await;
 
         // WHEN we don't publish any data.
         // THEN history can't retrieve any message
@@ -246,7 +245,7 @@ mod test {
     async fn test_pub_sub_instant_read_before_publishing_data() {
         let instance_name = "pubsub-instant-read-before-data";
         // GIVEN Publisher and all the different subscription option
-        let (_, publisher, _, _, _, instant_reader) = setup(instance_name, "channel_three").await;
+        let (_, publisher, _, _, _, instant_reader) = setup(instance_name, "topic-three").await;
 
         // WHEN we don't publish any data.
         // THEN instant reader can't retrieve any message
@@ -262,7 +261,7 @@ mod test {
 
         // GIVEN Publisher and all the different subscription option
         let (_, pressure_pub, mut observer, subscriber, history, instant_reader) =
-            setup(instance_name, "channel_four").await;
+            setup(instance_name, "topic-four").await;
 
         // THEN subscriber cannot retrieve any message.
         let read = subscriber.read_next_messages(1).unwrap();
@@ -315,7 +314,7 @@ mod test {
             &SubscribeOptions::builder().instance_name(instance_name).build().unwrap();
         let observer = clientlib::create_observer(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::CHANNEL_FIVE,
+            subscriber::Channel::<TirePressure>::TOPIC_FIVE,
             subscribe_option,
         )
         .await;
@@ -332,7 +331,7 @@ mod test {
             &SubscribeOptions::builder().instance_name(instance_name).build().unwrap();
         let subscriber = clientlib::create_subscriber(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::CHANNEL_SIX,
+            subscriber::Channel::<TirePressure>::TOPIC_SIX,
             subscribe_option,
         )
         .await;
@@ -353,7 +352,7 @@ mod test {
 
         let history = clientlib::create_history(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::CHANNEL_SEVEN,
+            subscriber::Channel::<TirePressure>::TOPIC_SEVEN,
             subscribe_option,
         )
         .await;
@@ -368,7 +367,7 @@ mod test {
 
         let instant_reader = clientlib::create_instant_reader(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::CHANNEL_EIGHT,
+            subscriber::Channel::<TirePressure>::TOPIC_EIGHT,
             &SubscribeOptions::builder()
                 .message_count(HISTORY_BUFFER_SIZE)
                 .instance_name(instance_name)
@@ -387,7 +386,7 @@ mod test {
 
         // GIVEN Publisher and all the different subscription option
         let (_, pressure_pub, mut observer, subscriber, history, instant_reader) =
-            setup(instance_name, "channel_nine").await;
+            setup(instance_name, "topic-nine").await;
 
         // WHEN publisher writes more message than buffer size ( buffer size is 8 )
         for n in 1..=10 {
@@ -474,7 +473,7 @@ mod test {
         let instance_name = "pubsub-observer-after-publisher-drop";
         // GIVEN Publisher and all the different subscription option
         let (sdv_comms, pressure_pub, mut observer, _, _, _) =
-            setup(instance_name, "channel_ten").await;
+            setup(instance_name, "topic-ten").await;
 
         // WHEN publishing a message.
         let pressure = 43678;
@@ -497,13 +496,13 @@ mod test {
         // WHEN the publisher is re-created
         let publisher = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            publisher::Channel::<TirePressure>::CHANNEL_TEN,
+            publisher::Channel::<TirePressure>::TOPIC_TEN,
         )
         .await
-        .expect("Create pressure_pub::CHANNEL_TEN failed.");
+        .expect("Create pressure_pub::TOPIC_TEN failed.");
 
-        // Make sure publisher is registered on the channel.
-        tokio::time::sleep(CHANNEL_PROCESSING_DURATION).await;
+        // Make sure publisher is registered on the topic.
+        tokio::time::sleep(TOPIC_PROCESSING_DURATION).await;
 
         // WHEN publishing a new message.
         let pressure_after_recreation = 43679;
@@ -523,7 +522,7 @@ mod test {
 
         // GIVEN Publisher and all the different subscription option
         let (sdv_comms, pressure_pub, _, subscriber, _, _) =
-            setup(instance_name, "channel_eleven").await;
+            setup(instance_name, "topic-eleven").await;
 
         // WHEN publishing a message.
         let pressure = 43678;
@@ -553,13 +552,13 @@ mod test {
         // WHEN the publisher is re-created
         let publisher = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            publisher::Channel::<TirePressure>::CHANNEL_ELEVEN,
+            publisher::Channel::<TirePressure>::TOPIC_ELEVEN,
         )
         .await
-        .expect("Create pressure_pub::CHANNEL_ELEVEN failed.");
+        .expect("Create pressure_pub::TOPIC_ELEVEN failed.");
 
-        // Make sure publisher is registered on the channel.
-        tokio::time::sleep(CHANNEL_PROCESSING_DURATION).await;
+        // Make sure publisher is registered on the topic.
+        tokio::time::sleep(TOPIC_PROCESSING_DURATION).await;
 
         // WHEN publishing a new message.
         let pressure_after_recreation = 43679;
@@ -578,7 +577,7 @@ mod test {
         let instance_name = "pubsub-instant-after-publisher-drop";
         // GIVEN Publisher and all the different subscription option
         let (sdv_comms, pressure_pub, _, _, _, instant_reader) =
-            setup(instance_name, "channel_twelve").await;
+            setup(instance_name, "topic-twelve").await;
 
         // WHEN publishing a message.
         let pressure = 43678;
@@ -609,10 +608,10 @@ mod test {
         // WHEN the publisher is re-created
         let publisher = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            publisher::Channel::<TirePressure>::CHANNEL_TWELVE,
+            publisher::Channel::<TirePressure>::TOPIC_TWELVE,
         )
         .await
-        .expect("Create pressure_pub::CHANNEL_TWELVE failed.");
+        .expect("Create pressure_pub::TOPIC_TWELVE failed.");
 
         // WHEN publishing a new message.
         let pressure_after_recreation = 43679;
@@ -632,7 +631,7 @@ mod test {
         let instance_name = "pubsub-history-after-publisher-drop";
         // GIVEN Publisher and all the different subscription option
         let (sdv_comms, pressure_pub, _, _, history, _) =
-            setup(instance_name, "channel_thirteen").await;
+            setup(instance_name, "topic-thirteen").await;
 
         // WHEN publishing a message.
         let pressure = 43678;
@@ -665,10 +664,10 @@ mod test {
         // WHEN the publisher is re-created
         let publisher = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            publisher::Channel::<TirePressure>::CHANNEL_THIRTEEN,
+            publisher::Channel::<TirePressure>::TOPIC_THIRTEEN,
         )
         .await
-        .expect("Create pressure_pub::CHANNEL_THIRTEEN failed.");
+        .expect("Create pressure_pub::TOPIC_THIRTEEN failed.");
 
         // WHEN publishing a new message.
         let pressure_after_recreation = 43679;
@@ -692,15 +691,15 @@ mod test {
         // GIVEN a publisher.
         let _publisher = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            publisher::Channel::<TirePressure>::CHANNEL_FOURTEEN,
+            publisher::Channel::<TirePressure>::TOPIC_FOURTEEN,
         )
         .await
-        .expect("Create pressure_pub::CHANNEL_FOURTEEN failed.");
+        .expect("Create pressure_pub::TOPIC_FOURTEEN failed.");
 
         // WHEN creating another publisher with same sdv_comms object
         let publisher_2 = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            publisher::Channel::<TirePressure>::CHANNEL_FOURTEEN,
+            publisher::Channel::<TirePressure>::TOPIC_FOURTEEN,
         )
         .await;
 
@@ -720,15 +719,15 @@ mod test {
         // GIVEN a publisher, publishing two messages
         let publisher = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            publisher::Channel::<TirePressure>::CHANNEL_FIFTEEN,
+            publisher::Channel::<TirePressure>::TOPIC_FIFTEEN,
         )
         .await
-        .expect("Create publisher::CHANNEL_FIFTEEN failed.");
+        .expect("Create publisher::TOPIC_FIFTEEN failed.");
 
         // AND GIVEN an observer
         let mut observer_from_beginning = clientlib::create_observer(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::CHANNEL_FIFTEEN,
+            subscriber::Channel::<TirePressure>::TOPIC_FIFTEEN,
             &SubscribeOptions::builder()
                 .instance_name(instance_name)
                 .read_on_subscribe(true)
@@ -738,8 +737,8 @@ mod test {
         .await
         .expect("Create TirePressure observer failed.");
 
-        // Make sure publisher is registered on the channel.
-        tokio::time::sleep(CHANNEL_PROCESSING_DURATION).await;
+        // Make sure publisher is registered on the topic.
+        tokio::time::sleep(TOPIC_PROCESSING_DURATION).await;
 
         // WHEN publishing two messages
         let pressure_1 = 43678;
@@ -765,7 +764,7 @@ mod test {
         // WHEN creating an observer after messages have been published
         let mut observer_read_on_subscribe = clientlib::create_observer(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::CHANNEL_FIFTEEN,
+            subscriber::Channel::<TirePressure>::TOPIC_FIFTEEN,
             &SubscribeOptions::builder()
                 .instance_name(instance_name)
                 .read_on_subscribe(true)
@@ -789,7 +788,7 @@ mod test {
         // WHEN creating an observer without read on subscribe
         let mut observer_no_read_on_subscribe = clientlib::create_observer(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::CHANNEL_FIFTEEN,
+            subscriber::Channel::<TirePressure>::TOPIC_FIFTEEN,
             &SubscribeOptions::builder()
                 .instance_name(instance_name)
                 .read_on_subscribe(false)

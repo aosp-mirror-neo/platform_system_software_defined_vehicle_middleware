@@ -20,7 +20,7 @@ service_bundle {
     name: "SampleBundle"
     publisher {
         message: "SampleMessage"
-        channel: "foo"
+        topic: "foo"
         capacity: 8
     }
 
@@ -31,7 +31,7 @@ service_bundle {
     name: "SampleBundleWithout"
     publisher {
         message: "SampleMessage"
-        channel: "bar"
+        topic: "bar"
         capacity: 8
     }
 }
