@@ -45,7 +45,7 @@ namespace android::sdv::dt::agent::test {
 class FakeConnection : public IConnection {
 public:
     FakeConnection() {
-        // We want to mock Disconnect so we can check for it being called, but we also want
+        // We want to mock RequestDisconnect so we can check for it being called, but we also want
         // a default behavior that will generate SendData / ReceiveData failures as will happen in
         // the real impl.
         ON_CALL((*this), Disconnect()).WillByDefault([this]() {
@@ -139,6 +139,19 @@ private:
 
     bool send_data_return_value_ = true;
 };
+
+// We store the releaser mock function in a shared so that both the test and the callable
+// that we attach to the connection holder can own it.
+using FakeConnectionReleaser = std::shared_ptr<testing::MockFunction<void(IConnection*)>>;
+struct MakeFakeConnectionResult {
+    // Owned FakeConnection implementation of IConnection.
+    IConnectionHolder connection;
+
+    // Releaser that will be called when connection is reset() or destroyed.
+    // Provided to allow tests to EXPECT_CALL deletion.
+    FakeConnectionReleaser releaser;
+};
+MakeFakeConnectionResult MakeFakeConnection();
 
 class MockConnectionManager : public ConnectionManager {
 public:

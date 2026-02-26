@@ -145,8 +145,7 @@ bool RemoteAgentServer::DumpStats(std::ostream& out_stream) const {
     return true;
 }
 
-void RemoteAgentServer::OnConnectionManagerEvent(
-        ::sdv::SdvResult<std::unique_ptr<IConnection>> connection) {
+void RemoteAgentServer::OnConnectionManagerEvent(::sdv::SdvResult<IConnectionHolder> connection) {
     if (!connection.has_value()) {
         ALOGW("RemoteAgentServer: Got inbound connection error: %s",
               connection.error().toString().c_str());

@@ -87,7 +87,7 @@ impl NativeServicesNames {
 
     // Parse a config which contains a <UID>,<LOCAL_FQIN> pair in each line. E.g.:
     // 7500,com.sdv.google.vpm.VpmSystemServiceBundle/default
-    // 7501,com.sdv.google.orchestrator.OrchestratorServiceBundle/default
+    // 7501,com.android.sdv.orchestrator.OrchestratorServiceBundle/default
     // ..
     fn parse_and_extend_map(
         content: &str,

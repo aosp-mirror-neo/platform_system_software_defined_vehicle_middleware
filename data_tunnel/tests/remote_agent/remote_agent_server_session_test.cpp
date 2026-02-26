@@ -52,8 +52,8 @@ static uint32_t kTestTopicSubId = 42;
 class RemoteAgentServerSessionTest : public ::testing::Test {
 protected:
     void PrepareSession() {
-        auto connection = std::make_unique<FakeConnection>();
-        connection_ = connection.get();
+        auto [connection, deleter] = MakeFakeConnection();
+        connection_ = static_cast<FakeConnection*>(connection.get());
 
         EXPECT_CALL(handshaker_,
                     PerformHandshake(Address(static_cast<IConnection*>(connection.get())),
@@ -131,12 +131,11 @@ protected:
 };
 
 TEST_F(RemoteAgentServerSessionTest, Construction_BecomesInactiveOnHandshakeFailure) {
-    auto connection = std::make_unique<FakeConnection>();
-    connection_ = connection.get();
+    auto [connection, deleter] = MakeFakeConnection();
+    connection_ = static_cast<FakeConnection*>(connection.get());
 
     // Will attempt handshake on construction and get failure.
-    EXPECT_CALL(handshaker_,
-                PerformHandshake(Address(static_cast<IConnection*>(connection_)), Eq(std::nullopt)))
+    EXPECT_CALL(handshaker_, PerformHandshake(Address(connection.get()), Eq(std::nullopt)))
             .WillOnce(Return(std::nullopt));
 
     // Handshake callback never fires since handshake fails.
@@ -157,7 +156,7 @@ TEST_F(RemoteAgentServerSessionTest, Construction_BecomesInactiveOnHandshakeFail
 }
 
 TEST_F(RemoteAgentServerSessionTest, Construction_ReportsHandshakeSuccess) {
-    auto connection = std::make_unique<FakeConnection>();
+    auto [connection, deleter] = MakeFakeConnection();
 
     // Will attempt handshake on construction, which returns success with VM name.
     EXPECT_CALL(handshaker_,

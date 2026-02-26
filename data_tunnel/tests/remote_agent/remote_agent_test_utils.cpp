@@ -152,4 +152,15 @@ void FakeConnection::SetSendDataReturnValue(bool return_value) {
     send_data_return_value_ = return_value;
 }
 
+MakeFakeConnectionResult MakeFakeConnection() {
+    auto releaser = std::make_shared<testing::MockFunction<void(IConnection*)>>();
+    IConnectionHolder connection(new FakeConnection(), [releaser](IConnection* conn) {
+        // Call the mock releaser so tests can verify deletion.
+        releaser->AsStdFunction()(conn);
+        // Actually delete
+        delete conn;
+    });
+    return MakeFakeConnectionResult{std::move(connection), std::move(releaser)};
+}
+
 }  // namespace android::sdv::dt::agent::test

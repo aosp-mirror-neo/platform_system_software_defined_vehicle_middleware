@@ -447,7 +447,7 @@ void RemoteAgentClient::DeactivateConnection() {
 }
 
 void RemoteAgentClient::OnConnectionManagerEvent(
-        ::sdv::SdvResult<std::unique_ptr<IConnection>> connection_result) {
+        ::sdv::SdvResult<IConnectionHolder> connection_result) {
     std::unique_lock guard(lock_);
     pending_connection_result_.emplace(std::move(connection_result));
     guard.unlock();
