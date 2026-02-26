@@ -669,6 +669,9 @@ mod test {
         .await
         .expect("Create pressure_pub::TOPIC_THIRTEEN failed.");
 
+        // Wait for multiplexer to register this new publisher
+        thread::sleep(TOPIC_PROCESSING_DURATION);
+
         // WHEN publishing a new message.
         let pressure_after_recreation = 43679;
         publisher
