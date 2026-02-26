@@ -246,6 +246,7 @@ mod test {
         AccessControl::AccessControl,
         UnitType::UnitType as UnitTypeAidl,
     };
+    use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition;
     use protobuf::text_format;
     use sdv_authz::{AclPolicyModel, AclPolicyProvider, AuthzEnforcementFlag};
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
@@ -320,6 +321,18 @@ mod test {
         }
     }
 
+    struct TestRegistry {}
+
+    impl sdv_authz::ServiceUnitRegistry for TestRegistry {
+        fn get_service_unit(
+            &self,
+            _fqin: &ServiceFqinV2,
+            _unit_name: &str,
+        ) -> Option<ServiceUnitDefinition> {
+            None
+        }
+    }
+
     fn create_test_authz_service(
         object_fqin: &ServiceFqin,
         acl_policy_text_proto: &str,
@@ -338,7 +351,11 @@ mod test {
             acl_policy_model,
         );
 
-        AuthzService::new(Arc::new(test_provider), authz_enforcement_flag)
+        AuthzService::new(
+            Arc::new(test_provider),
+            authz_enforcement_flag,
+            Arc::new(TestRegistry {}),
+        )
     }
 
     fn setup_authz_service(authz_enforcement_flag: Arc<dyn AuthzEnforcementFlag>) -> AuthzService {

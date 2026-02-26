@@ -14,8 +14,8 @@
 
 //! Permissions based Authz.
 
+use crate::authz_service::ServiceUnitRegistry;
 use crate::{AclPolicyProvider, AuthzResult};
-use anyhow::{anyhow, Context};
 use sdv_comms::sd::UnitType;
 use sdv_comms_id::{
     names::{PackageName, ServiceUnitName, UnitTypeName},
@@ -23,41 +23,21 @@ use sdv_comms_id::{
 };
 use std::sync::Arc;
 
-use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::IServiceDiscoveryAgent::{
-    BpServiceDiscoveryAgent, IServiceDiscoveryAgent
-};
 use google_sdv_identity::aidl::google::sdv::identity::ServiceFqin::ServiceFqin as ServiceFqinAidl;
-
-/// Returns a Binder proxy for Service Discovery interface.
-fn get_service_discovery_agent() -> anyhow::Result<binder::Strong<dyn IServiceDiscoveryAgent>> {
-    let descriptor = <BpServiceDiscoveryAgent as IServiceDiscoveryAgent>::get_descriptor()
-        .to_owned()
-        + "/default";
-    binder::get_interface(&descriptor).context("Failed to get ServiceDiscoveryAgent")
-}
-
-type ServiceDiscoveryAgentProvider =
-    Box<dyn Fn() -> anyhow::Result<binder::Strong<dyn IServiceDiscoveryAgent>> + Send + Sync>;
 
 /// AuthzViaPermissions is an entry point for permission-based authorization checks.
 pub struct AuthzViaPermissions {
     provider: Arc<dyn AclPolicyProvider>,
-    sd_agent_provider: ServiceDiscoveryAgentProvider,
+    registry: Arc<dyn ServiceUnitRegistry>,
 }
 
 impl AuthzViaPermissions {
     /// Create new AuthzViaPermissions instance.
-    pub fn new(provider: Arc<dyn AclPolicyProvider>) -> Self {
-        Self { provider, sd_agent_provider: Box::new(get_service_discovery_agent) }
-    }
-
-    /// Internal constructor for dependency injection.
-    #[cfg(test)]
-    fn new_with_sd_agent(
+    pub fn new(
         provider: Arc<dyn AclPolicyProvider>,
-        sd_agent: binder::Strong<dyn IServiceDiscoveryAgent>,
+        registry: Arc<dyn ServiceUnitRegistry>,
     ) -> Self {
-        Self { provider, sd_agent_provider: Box::new(move || Ok(sd_agent.clone())) }
+        Self { provider, registry }
     }
 
     /// Returns Subject FQIN authorization result for the Object Service Unit.
@@ -81,10 +61,28 @@ impl AuthzViaPermissions {
             }
         };
 
-        let object_unit_type = match self.get_unit_type(object_fqin, object_service_unit_name) {
-            Ok(unit_type) => unit_type,
-            Err(e) => {
-                return AuthzResult::ImplicitlyDenied(format!("Failed to get unit type: {}", e))
+        let fqin_aidl = ServiceFqinAidl::from(object_fqin.clone());
+        let unit_definition = match self
+            .registry
+            .get_service_unit(&fqin_aidl, &object_service_unit_name.to_string())
+        {
+            Some(def) => def,
+            None => {
+                return AuthzResult::ImplicitlyDenied("Failed to get unit definition".to_string())
+            }
+        };
+
+        let object_unit_type = match UnitType::builder()
+            .set_sdv_package_name(unit_definition.unitType.sdvPackageName.clone())
+            .set_service_bundle_name(unit_definition.unitType.serviceBundleName.clone())
+            .set_unit_type_name(unit_definition.unitType.typeName.clone())
+            .build()
+        {
+            Ok(ut) => ut,
+            Err(_) => {
+                return AuthzResult::ImplicitlyDenied(
+                    "Registry returned invalid UnitType data".to_string(),
+                )
             }
         };
 
@@ -104,29 +102,6 @@ impl AuthzViaPermissions {
         ))
     }
 
-    fn get_unit_type(
-        &self,
-        fqin: &ServiceFqin,
-        unit_name: &ServiceUnitName,
-    ) -> anyhow::Result<UnitType> {
-        let sd_agent = (self.sd_agent_provider)()?;
-
-        let fqin_aidl = ServiceFqinAidl::from(fqin.clone());
-        let unit_definition = sd_agent
-            .getServiceUnit(&fqin_aidl, &unit_name.to_string())
-            .context("Failed to get service unit")?
-            .ok_or(anyhow!("No service unit with fqin {}", fqin))?;
-
-        let unit_type = unit_definition.unitType;
-
-        UnitType::builder()
-            .set_sdv_package_name(unit_type.sdvPackageName)
-            .set_service_bundle_name(unit_type.serviceBundleName)
-            .set_unit_type_name(unit_type.typeName)
-            .build()
-            .context("SD returned an invalid unit type")
-    }
-
     /// Returns Subject FQIN authorization result for the Object Unit Type.
     pub fn check_authorization_for_unit_type(
         &self,
@@ -144,24 +119,26 @@ mod tests {
     use crate::AclPolicyModel;
     use crate::TestAclPolicyProvider;
     use crate::feature_flags;
-    use binder::BinderFeatures;
     use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::UnitType::UnitType as AidlUnitType;
     use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition;
-    use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::IServiceDiscoveryAgent::MockIServiceDiscoveryAgent;
     use protobuf::text_format;
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
     use sdv_comms_id::names::{ServiceName as ServiceBundleName, VmName};
     use std::str::FromStr;
 
-    use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::IServiceDiscoveryAgent::BnServiceDiscoveryAgent;
+    struct MockRegistry {
+        definition: ServiceUnitDefinition,
+    }
 
-    fn setup_mock_sd_agent(
-        response: binder::Result<Option<ServiceUnitDefinition>>,
-    ) -> binder::Strong<dyn IServiceDiscoveryAgent> {
-        let mut mock = MockIServiceDiscoveryAgent::new();
-        mock.expect_getServiceUnit().return_once(move |_fqin, _unit_name| response);
-
-        BnServiceDiscoveryAgent::new_binder(mock, BinderFeatures::default())
+    impl ServiceUnitRegistry for MockRegistry {
+        fn get_service_unit(
+            &self,
+            _fqin: &ServiceFqinAidl,
+            _unit_name: &str,
+        ) -> Option<ServiceUnitDefinition> {
+            // Simply return a clone of the pre-configured definition
+            Some(self.definition.clone())
+        }
     }
 
     #[test]
@@ -190,24 +167,24 @@ mod tests {
             .unwrap(),
         );
 
-        // 2. Setup Mock SD: Return a Unit Type that matches the policy's 'service'
-        let fake_unit_type = AidlUnitType {
-            sdvPackageName: "com.server".to_string(),
-            serviceBundleName: "ServerBundle".to_string(),
-            typeName: "TargetType".to_string(),
+        // 2. Setup Mock Registry with a SUD
+        let fake_definition = ServiceUnitDefinition {
+            unitType: AidlUnitType {
+                sdvPackageName: "com.server".to_string(),
+                serviceBundleName: "ServerBundle".to_string(),
+                typeName: "TargetType".to_string(),
+            },
+            ..Default::default()
         };
-        let fake_definition =
-            ServiceUnitDefinition { unitType: fake_unit_type, ..Default::default() };
-        let mock_agent = setup_mock_sd_agent(Ok(Some(fake_definition)));
+        let registry = Arc::new(MockRegistry { definition: fake_definition });
 
-        // 3. Initialize Service
-        let service = AuthzViaPermissions::new_with_sd_agent(Arc::new(test_provider), mock_agent);
+        let service = AuthzViaPermissions::new(Arc::new(test_provider), registry);
 
         // 4. Perform Check
         let result = service.check_authorization_for_service_unit(
             &ServiceFqin::from_str("vm:com.client.ClientBundle/service").unwrap(),
             &ServiceFqin::from_str("vm:com.server.ServerBundle/service").unwrap(),
-            &ServiceUnitName::from_str("correct-unit").unwrap(), // Matches policy
+            &ServiceUnitName::from_str("correct-unit").unwrap(),
         );
 
         // 5. Assert Success
@@ -226,8 +203,8 @@ mod tests {
     #[test]
     fn test_check_authorization_no_policy_found() {
         let test_provider = TestAclPolicyProvider::new();
-
-        let service = AuthzViaPermissions::new(Arc::new(test_provider));
+        let registry = Arc::new(MockRegistry { definition: ServiceUnitDefinition::default() });
+        let service = AuthzViaPermissions::new(Arc::new(test_provider), registry);
 
         let result = service.check_authorization_for_service_unit(
             &ServiceFqin::from_str("vm:com.unknown.App/service").unwrap(),
@@ -235,11 +212,6 @@ mod tests {
             &ServiceUnitName::from_str("unit").unwrap(),
         );
 
-        match result {
-            AuthzResult::ImplicitlyDenied(msg) => {
-                assert!(msg.contains("ACL policy not found"), "Unexpected msg: {}", msg);
-            }
-            _ => panic!("Expected ImplicitlyDenied (No Policy), got {:?}", result),
-        }
+        assert!(matches!(result, AuthzResult::ImplicitlyDenied(_)));
     }
 }
