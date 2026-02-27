@@ -318,7 +318,7 @@ mod tests {
     fn create_native_services_names_for_test() -> NativeServicesNames {
         NativeServicesNames::from_entries(&[(
             sdv_aid::AID_SYSTEM,
-            "com.sdv.google.update_manager.UpdateManagerAgent/default",
+            "com.android.sdv.update_manager.UpdateManagerAgent/default",
         )])
     }
 
@@ -450,7 +450,7 @@ mod tests {
         let update_manager_uid = sdv_aid::AID_SYSTEM.try_into().unwrap();
         let update_manager_agent_fqin = ServiceFqinV2Aidl {
             sdvVmName: "vm".to_string(),
-            sdvPackageName: "com.sdv.google.update_manager".to_string(),
+            sdvPackageName: "com.android.sdv.update_manager".to_string(),
             serviceBundleName: "UpdateManagerAgent".to_string(),
             serviceInstanceName: "default".to_string(),
         };
@@ -476,7 +476,7 @@ mod tests {
         let update_manager_uid = sdv_aid::AID_SYSTEM.try_into().unwrap();
         let not_update_manager_agent_fqin = ServiceFqinV2Aidl {
             sdvVmName: "vm".to_string(),
-            sdvPackageName: "com.sdv.google.update_manager".to_string(),
+            sdvPackageName: "com.android.sdv.update_manager".to_string(),
             serviceBundleName: "NOTUpdateManagerAgent".to_string(),
             serviceInstanceName: "default".to_string(),
         };
@@ -498,7 +498,7 @@ mod tests {
         let update_manager_uid = sdv_aid::AID_SYSTEM;
         let update_manager_agent_fqin = ServiceFqinV2Aidl {
             sdvVmName: "vm".to_string(),
-            sdvPackageName: "com.sdv.google.update_manager".to_string(),
+            sdvPackageName: "com.android.sdv.update_manager".to_string(),
             serviceBundleName: "UpdateManagerAgent".to_string(),
             serviceInstanceName: "default".to_string(),
         };
