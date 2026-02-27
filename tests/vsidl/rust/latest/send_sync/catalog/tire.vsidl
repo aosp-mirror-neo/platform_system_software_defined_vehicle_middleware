@@ -32,10 +32,12 @@ service_bundle {
 
   server {
     service: "OtherTireStatus"
+    channel: "other-tire-status"
   }
 
   client {
     service: "TireStatus"
+    channel: "tire-status"
   }
 }
 
@@ -55,9 +57,11 @@ service_bundle {
 
   server {
     service: "TireStatus"
+    channel: "tire-status"
   }
 
   client {
     service: "OtherTireStatus"
+    channel: "other-tire-status"
   }
 }
