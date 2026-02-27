@@ -45,9 +45,11 @@ rust_library {
         "sdv_comms_internal@rust_defaults",
         "sdv_comms_sd@rust_defaults",
     ],
+    min_sdk_version: "35",
     vendor_available: true,
     visibility: [
         "//device/google/sdv",
+        "//system/software_defined_vehicle/middleware/service_authz:__subpackages__",
     ],
 }
 

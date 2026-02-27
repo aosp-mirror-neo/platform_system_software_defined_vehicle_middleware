@@ -62,7 +62,7 @@ pub enum UnitTypeValidationError {
     InvalidUnitTypeName(#[from] UnitTypeNameValidationError),
 }
 
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct UnitType {
     package_name: PackageName,
     #[deprecated]

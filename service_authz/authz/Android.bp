@@ -35,10 +35,9 @@ rust_defaults {
         "libsdv_authz_policy",
         "libsdv_authz_policy_proto_rust",
         "libsdv_comms_id",
-        "libsdv_comms_rs",
+        "libsdv_comms_sd",
         // keep-sorted end
     ],
-    ld_flags: ["-Wl,--no-as-needed"],
 }
 
 rust_library {
