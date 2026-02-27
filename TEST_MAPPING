@@ -18,6 +18,9 @@
       "name": "sdv_authz_policy_proto_test"
     },
     {
+      "name": "sdv_vm_authz_policy_proto_test"
+    },
+    {
       "name": "sdv_comms_cpp_sdk_tests"
     },
     {
