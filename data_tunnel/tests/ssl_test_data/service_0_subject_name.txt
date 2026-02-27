@@ -1,2 +1,2 @@
-vm0:google.sdv.dt.IDataTunnelAgent/default
+vm0:com.android.sdv.dt.IDataTunnelAgent/default
 

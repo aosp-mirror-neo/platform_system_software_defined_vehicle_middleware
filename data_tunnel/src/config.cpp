@@ -18,7 +18,7 @@
 
 namespace android::sdv::dt::agent::config {
 
-const std::string kPackageName = "google.sdv.dt";
+const std::string kPackageName = "com.android.sdv.dt";
 const std::string kServiceBundleName = "IDataTunnelAgent";
 const std::string kServiceUnitName = "data-tunnel-agent-service-unit-name";
 
