@@ -46,7 +46,7 @@ cc_binary {
     system_ext_specific: true,
 }
 
-// Restrict usage by the `com.google.sdv.comms` APEX
+// Restrict usage by the `com.android.sdv.comms` APEX
 cc_binary {
     name: "rpcagent_vendor",
     srcs: ["cpp/main.cpp"],
@@ -54,7 +54,7 @@ cc_binary {
     vendor: true,
     stem: "rpcagent",
     apex_available: [
-        "com.google.sdv.comms",
+        "com.android.sdv.comms",
     ],
     visibility: ["//system/software_defined_vehicle/sdv_gateway/sdv_comms_for_ivi/apex:__pkg__"],
     min_sdk_version: "35",
