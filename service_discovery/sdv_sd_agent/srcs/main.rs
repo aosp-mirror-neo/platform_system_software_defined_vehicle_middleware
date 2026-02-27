@@ -361,9 +361,13 @@ fn run() -> Result<()> {
     #[cfg(not(sdv_sd_agent_for_a15))]
     let authz_flag = Arc::new(SystemPropertyAuthzEnforcementFlag::new());
 
-    let authz_service = Arc::new(AuthzService::new(mesh_acl_policy_provider.clone(), authz_flag));
-
     let service_registry = Arc::new(ServiceRegistry::default());
+
+    let authz_service = Arc::new(AuthzService::new(
+        mesh_acl_policy_provider.clone(),
+        authz_flag,
+        service_registry.clone(),
+    ));
 
     let env = Arc::new(EnvBuilder::new().build());
     // We use a broadcast channel to ensure that no power state changes are missed.

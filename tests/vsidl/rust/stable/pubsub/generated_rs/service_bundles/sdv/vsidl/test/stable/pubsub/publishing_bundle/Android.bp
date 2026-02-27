@@ -43,6 +43,7 @@ rust_library {
         "libsdv_rs",
         "libfutures",
         "libvsidl_test_stable_pubsub_protos",
+        "libvsidl_v1_stdlib_proto_rs",
         "libsdv_proto_reflection_rs",
     ],
     apex_available: [

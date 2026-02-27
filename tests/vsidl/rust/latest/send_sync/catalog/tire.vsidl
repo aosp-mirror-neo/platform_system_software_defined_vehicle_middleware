@@ -21,13 +21,13 @@ service_bundle {
 
   publisher {
     message: "TirePressure"
-    channel: "front_left"
+    topic: "front-left"
     capacity: 8
   }
 
   subscriber {
     message: "TirePressure"
-    channel: "front_right"
+    topic: "front-right"
   }
 
   server {
@@ -44,13 +44,13 @@ service_bundle {
 
   publisher {
     message: "sdv.vsidl.sendsync.test.TirePressure"
-    channel: "front_right"
+    topic: "front-right"
     capacity: 8
   }
 
   subscriber {
     message: "sdv.vsidl.sendsync.test.TirePressure"
-    channel: "front_left"
+    topic: "front-left"
   }
 
   server {

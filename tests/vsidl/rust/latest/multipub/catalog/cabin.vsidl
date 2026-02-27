@@ -29,7 +29,7 @@ service_bundle {
 
     publisher {
         message: "CabinTemperature"
-        channel: "multipub"
+        topic: "multipub"
         capacity: 8
     }
 }
@@ -39,7 +39,7 @@ service_bundle {
 
     publisher {
         message: "CabinTemperature"
-        channel: "multipub"
+        topic: "multipub"
         capacity: 8
         # service_unit_name required due to unit-test setup (single FQIN)
         service_unit_name: "footwell-sensor"
@@ -51,7 +51,7 @@ service_bundle {
 
     publisher {
         message: "CabinTemperature"
-        channel: "multipub"
+        topic: "multipub"
         capacity: 8
         # service_unit_name required due to unit-test setup (single FQIN)
         service_unit_name: "passenger-sensor"

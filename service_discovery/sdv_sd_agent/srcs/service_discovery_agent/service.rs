@@ -759,6 +759,18 @@ mod test {
         }
     }
 
+    struct TestRegistry {}
+
+    impl sdv_authz::ServiceUnitRegistry for TestRegistry {
+        fn get_service_unit(
+            &self,
+            _fqin: &ServiceFqinV2,
+            _unit_name: &str,
+        ) -> Option<ServiceUnitDefinition> {
+            None
+        }
+    }
+
     struct TestServiceUnitFetchListener {
         suds: Arc<Mutex<Vec<ServiceUnitDefinition>>>,
     }
@@ -928,6 +940,7 @@ mod test {
         let authz_service = Arc::new(AuthzService::new(
             Arc::clone(&acl_policy_provider),
             Arc::clone(&authz_enforcement_flag),
+            Arc::new(TestRegistry {}),
         ));
         Ok(ServiceDiscoveryAgentService::new(
             Arc::clone(&service_registry),

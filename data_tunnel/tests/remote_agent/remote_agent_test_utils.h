@@ -107,7 +107,7 @@ public:
     std::unique_ptr<PayloadType> GetNextSentDataIfPayload(const int timeout_seconds = 5) {
         auto payload = GetNextSentDataIfPayload(
                 [](const proto::Payload& payload) {
-                    return payload.type_ == PayloadType::payload_type;
+                    return payload.type == PayloadType::payload_type;
                 },
                 timeout_seconds);
         if (!payload) {

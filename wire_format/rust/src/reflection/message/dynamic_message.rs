@@ -15,6 +15,8 @@
 use std::collections::HashMap;
 
 use protobuf::rt::WireType;
+use protobuf::well_known_types::any::Any;
+use protobuf::MessageFull;
 
 use crate::reflection::codec::api::protobuf::IProtobufWriter;
 use crate::reflection::codec::api::protobuf::RpcWriter as ProtobufWriter;
@@ -34,6 +36,20 @@ impl DynamicMessage {
     /// Create a new dynamic message with the given `full_name`
     pub(crate) fn new(full_name: String) -> Self {
         Self { full_name, fields: HashMap::new() }
+    }
+
+    /// Build a dynamic message corresponding to the 'Any' message type
+    /// with the given `message_name` and `value`
+    pub fn build_any_dynamic_message(message_name: &str, value: Vec<u8>) -> Self {
+        let type_url_field = DynamicMessageField::Singular(SingularField::Simple(
+            SimpleField::String(format!("type.googleapis.com/{message_name}")),
+        ));
+        let value_field =
+            DynamicMessageField::Singular(SingularField::Simple(SimpleField::Bytes(value)));
+        let mut fields = HashMap::new();
+        fields.insert(1, type_url_field);
+        fields.insert(2, value_field);
+        Self { full_name: Any::descriptor().full_name().to_owned(), fields }
     }
 
     fn merge_field(
@@ -167,7 +183,7 @@ impl SingularField {
         }
     }
 
-    fn merge(&mut self, other: SingularField) -> anyhow::Result<()> {
+    pub(crate) fn merge(&mut self, other: SingularField) -> anyhow::Result<()> {
         match (self, other) {
             (
                 SingularField::Simple(self_simple_field),
@@ -542,5 +558,34 @@ mod tests {
         let bytes = message.write_to_bytes().expect("Failed to serialize message to bytes");
         // Tag: 0x0A, Length: 4, Key: 08 01, Value: 10 02
         assert_eq!(bytes, vec![0x0A, 0x04, 0x08, 0x01, 0x10, 0x02]);
+    }
+
+    #[test]
+    fn test_build_any_dynamic_message() {
+        let message_name = "test.Message";
+        let value = vec![1, 2, 3, 4];
+        let dynamic_message =
+            DynamicMessage::build_any_dynamic_message(message_name, value.clone());
+
+        assert_eq!(dynamic_message.get_full_name(), "google.protobuf.Any");
+        assert_eq!(dynamic_message.num_fields(), 2);
+
+        let type_url_field = dynamic_message.get_message_field(&1).expect("type_url field missing");
+        if let DynamicMessageField::Singular(SingularField::Simple(SimpleField::String(type_url))) =
+            type_url_field
+        {
+            assert_eq!(type_url, "type.googleapis.com/test.Message");
+        } else {
+            panic!("Unexpected type for type_url field");
+        }
+
+        let value_field = dynamic_message.get_message_field(&2).expect("value field missing");
+        if let DynamicMessageField::Singular(SingularField::Simple(SimpleField::Bytes(bytes))) =
+            value_field
+        {
+            assert_eq!(bytes, &value);
+        } else {
+            panic!("Unexpected type for value field");
+        }
     }
 }

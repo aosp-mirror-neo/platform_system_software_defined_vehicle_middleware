@@ -139,7 +139,7 @@ pub struct MessageRepeatedField {
 }
 
 impl MessageRepeatedField {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { messages: Vec::new() }
     }
 
