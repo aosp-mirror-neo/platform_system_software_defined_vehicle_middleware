@@ -669,13 +669,16 @@ mod test {
         .await
         .expect("Create pressure_pub::TOPIC_THIRTEEN failed.");
 
+        // Wait for multiplexer to register this new publisher
+        thread::sleep(TOPIC_PROCESSING_DURATION);
+
         // WHEN publishing a new message.
         let pressure_after_recreation = 43679;
         publisher
             .publish(&TirePressure { pressure: pressure_after_recreation, ..Default::default() })
             .expect("pressure_pub publishing failed.");
 
-        // THEN history does not receive any message from this new publisher
+        // THEN history does receive the message from this new publisher
         thread::sleep(PUBLISHER_DROP_SIGNAL_PROPAGATION);
         let read_history = history.read_from_history(2).unwrap();
         assert_eq!(read_history.len(), 2);

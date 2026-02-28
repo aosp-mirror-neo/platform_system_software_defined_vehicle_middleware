@@ -19,7 +19,7 @@
 
 acls {
     name: "Acl"
-    include: "google.sdv.dt.IDataTunnelAgent"
+    include: "com.android.sdv.dt.IDataTunnelAgent"
 }
 
 unit_types {

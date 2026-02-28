@@ -21,30 +21,30 @@ package {
 //
 // TODO(b/383305439): this will be move to a designated /etc folder in the future.
 apex {
-    name: "google.sdv.dt",
+    name: "com.android.sdv.dt",
     manifest: "apex_manifest.json",
-    key: "google.sdv.dt.key",
+    key: "com.android.sdv.dt.key",
     file_contexts: "file_contexts",
     updatable: false,
     prebuilts: [
         // SDV Manifest - used by SBR
-        "google.sdv.dt.manifest",
+        "com.android.sdv.dt.manifest",
         // ACL Policy
-        "google.sdv.dt.acl_policy",
+        "com.android.sdv.dt.acl_policy",
     ],
     system_ext_specific: true,
 }
 
 apex_key {
-    name: "google.sdv.dt.key",
-    public_key: "google.sdv.dt.avbpubkey",
-    private_key: "google.sdv.dt.pem",
+    name: "com.android.sdv.dt.key",
+    public_key: "com.android.sdv.dt.avbpubkey",
+    private_key: "com.android.sdv.dt.pem",
 }
 
 // SDV manifest file with the Data Tunnel agent acls only, which are required
 // for internal SDV functionality.
 prebuilt_etc {
-    name: "google.sdv.dt.manifest",
+    name: "com.android.sdv.dt.manifest",
     // The source name of the manifest file.
     src: "data_tunnel_manifest.textproto",
     // The name of the installed file shall be `sdv_service_bundles_manifest.textproto`.
@@ -58,7 +58,7 @@ prebuilt_etc {
 
 // File with the ACL policy of SDV Data Tunnel is stored in the apex.
 prebuilt_etc {
-    name: "google.sdv.dt.acl_policy",
+    name: "com.android.sdv.dt.acl_policy",
     // The source name of the ACL file.
     src: "acl.textproto",
     filename: "acl.textproto",
@@ -72,7 +72,7 @@ prebuilt_etc {
 // File with the ACL policy of SDV Data Tunnel is stored in the /etc folder.
 prebuilt_etc {
     name: "sdv_dt_agent_acl_textproto",
-    sub_dir: "sdv_authz_acls/google.sdv.dt",
+    sub_dir: "sdv_authz_acls/com.android.sdv.dt",
     src: "acl.textproto",
     filename: "IDataTunnelAgent.textproto",
     system_ext_specific: true,

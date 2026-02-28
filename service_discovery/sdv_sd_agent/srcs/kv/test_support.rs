@@ -71,7 +71,12 @@ pub(crate) fn register_service_unit_for_test_topic(
         .unwrap();
 
     let acl = AccessControl { ..Default::default() };
-    let mut app_metadata = ApplicationMetadata { ..Default::default() };
+    let mut app_metadata = ApplicationMetadata {
+        typedMetadata: TypedMetadataAidl::PublisherUnit(PublisherUnitMetadata {
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
     if let Some(topic_name) = topic_name {
         app_metadata.typedMetadata = TypedMetadataAidl::PublisherUnit(PublisherUnitMetadata {
             topic_name,
