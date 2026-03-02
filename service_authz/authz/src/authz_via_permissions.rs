@@ -16,11 +16,11 @@
 
 use crate::authz_service::ServiceUnitRegistry;
 use crate::{AclPolicyProvider, AuthzResult};
-use sdv_comms::sd::UnitType;
 use sdv_comms_id::{
     names::{PackageName, ServiceUnitName, UnitTypeName},
     ServiceFqin,
 };
+use sdv_comms_sd::discovery::UnitType;
 use std::sync::Arc;
 
 use google_sdv_identity::aidl::google::sdv::identity::ServiceFqin::ServiceFqin as ServiceFqinAidl;
@@ -73,9 +73,8 @@ impl AuthzViaPermissions {
         };
 
         let object_unit_type = match UnitType::builder()
-            .set_sdv_package_name(unit_definition.unitType.sdvPackageName.clone())
-            .set_service_bundle_name(unit_definition.unitType.serviceBundleName.clone())
-            .set_unit_type_name(unit_definition.unitType.typeName.clone())
+            .package_name(unit_definition.unitType.sdvPackageName.clone())
+            .unit_type_name(unit_definition.unitType.typeName.clone())
             .build()
         {
             Ok(ut) => ut,
@@ -89,7 +88,7 @@ impl AuthzViaPermissions {
         if subject_policy.can_call(&object_unit_type, object_service_unit_name) {
             return AuthzResult::Permitted(format!(
                 "Permitted by 'client' permission on Unit Type '{}'",
-                object_unit_type.get_unit_type_name()
+                object_unit_type
             ));
         }
 
@@ -98,7 +97,7 @@ impl AuthzViaPermissions {
             subject_fqin,
             object_service_unit_name.name(),
             object_fqin,
-            object_unit_type.get_unit_type_name()
+            object_unit_type
         ))
     }
 
