@@ -16,12 +16,10 @@
 
 //! Clientlib methods related to subscribing to publications.
 
-use crate::{subscriber, to_unit_name};
+use crate::subscriber;
 use futures::stream::Stream;
-use sdv_mw_rs_comms::{
-    observe, Communicate, History, InstantReader, SubscribeOptions, Subscriber, UnitQuery,
-};
-use sdv_status_rs::{SdvResult, SdvStatus, SdvStatusCode};
+use sdv_mw_rs_comms::{observe, Communicate, History, InstantReader, SubscribeOptions, Subscriber};
+use sdv_status_rs::SdvResult;
 use std::pin::Pin;
 
 /// Creates a new polling-based subscriber for a specific subscription channel.
@@ -111,16 +109,9 @@ pub async fn create_history<Channel: subscriber::Channel>(
 pub async fn create_instant_reader<Channel: subscriber::Channel>(
     comms: &dyn Communicate,
     channel: &Channel,
-    options: &SubscribeOptions,
+    _options: &SubscribeOptions,
 ) -> SdvResult<InstantReader<Channel::ProtoMessage>> {
-    if Channel::IS_MULTIPUB {
-        Err(SdvStatus::with_message(
-            SdvStatusCode::Unimplemented,
-            "Instant Read is not supported for Multipub channels.",
-        ))
-    } else {
-        let publication =
-            comms.find_publication(&UnitQuery::Name(to_unit_name(channel, options)?)).await?;
-        Ok(InstantReader::<Channel::ProtoMessage>::new(publication.create_instant_read()))
-    }
+    let instant_reader_handle =
+        comms.create_instant_reader_handle(&Channel::type_name()?, channel.get_name()).await?;
+    Ok(InstantReader::<Channel::ProtoMessage>::new(instant_reader_handle))
 }

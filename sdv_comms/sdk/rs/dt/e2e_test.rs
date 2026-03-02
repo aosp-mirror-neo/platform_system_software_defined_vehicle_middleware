@@ -587,10 +587,25 @@ async fn dt_history_topic_success() {
     // Write messages from both publishers
     pub_buff.fill(0xAA);
     publisher_a.write_messages(&pub_buff).expect("Write failed");
+
+    // Create a history reader for the topic
+    let history_reader_after_published_message =
+        HistoryReader::create_for_topic(ctx, &unit_type, topic_name, history_size)
+            .await
+            .expect("HistoryReader topic creation failed");
+
     // Since copy of messages from publisher to history is async operation
     // we add a small delay to make the test not flaky and avoid
     // having different order of messages when reading from history
     tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        history_reader_after_published_message.available_to_read().expect("Available failed"),
+        1u32
+    );
+    let mut read_buf = vec![0u8; (MESSAGE_SIZE) as usize];
+    assert_eq!(history_reader.read_last_messages(&mut read_buf).unwrap(), 1u32);
+    assert_eq!(&read_buf[0..BUFFER_SIZE], &[0xAA_u8; BUFFER_SIZE]);
+
     pub_buff.fill(0xBB);
     publisher_b.write_messages(&pub_buff).expect("Write failed");
     // Since copy of messages from publisher to history is async operation
@@ -1411,4 +1426,101 @@ async fn dt_subscriber_topic_stream_invalid_name() {
     })
     .await
     .unwrap();
+}
+
+#[tokio::test]
+async fn dt_instant_read_on_topic_success() {
+    // Topics depends on a SD listener that needs a running binder thread.
+    binder::ProcessState::start_thread_pool();
+
+    let mut pub_buff = [0x11_u8; BUFFER_SIZE];
+    let fqin = ServiceFqin::from_str(
+        "vm-name:com.google.comms_stack_tests.DTInstantReadTopicTests/instance",
+    )
+    .expect("ServiceFqin should not be malformed");
+
+    let ctx = ContextRef::create(fqin);
+
+    let unit_type = make_unit_type("InstantReadTopicTest").expect("Valid UnitType");
+    let topic_name = "test_instant_topic";
+
+    // Create two publishers
+    let mut pub_a_meta = PublisherUnitMetadata::new();
+    pub_a_meta.set_message_size(MESSAGE_SIZE);
+    pub_a_meta.set_message_count(MESSAGE_COUNT);
+    pub_a_meta.set_topic(topic_name);
+    let mut unit_registration_args_a = UnitRegistrationArgs::new();
+    unit_registration_args_a.set_unit_type(&unit_type);
+    unit_registration_args_a.set_unit_name("pub-a-inst");
+    unit_registration_args_a.set_unit_metadata(&UnitMetadata::Publisher(pub_a_meta));
+    let publisher_a = Publisher::create(ctx, unit_registration_args_a)
+        .await
+        .expect("Publisher A creation failed");
+
+    // Create the InstantReader before publishers
+    let instant_reader = InstantReader::create_for_topic(ctx, &unit_type, topic_name)
+        .await
+        .expect("InstantReader creation failed");
+
+    // Validate that no messages are returned if nothing has been published
+    let read_buff = instant_reader.read_last_message().await.unwrap();
+    assert!(read_buff.is_empty());
+
+    // publish first message
+    pub_buff.fill(0xAA);
+    publisher_a.write_messages(&pub_buff).expect("Write failed");
+
+    // Create the InstantReader after publishers
+    let instant_reader_after_published_message =
+        InstantReader::create_for_topic(ctx, &unit_type, topic_name)
+            .await
+            .expect("InstantReader creation failed");
+
+    // Wait for message propagation
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // successfully read published message
+    let read_buff = instant_reader.read_last_message().await.unwrap();
+    assert_eq!(&read_buff[..BUFFER_SIZE], &[0xAA_u8; BUFFER_SIZE]);
+
+    // successfully read published message
+    let read_buff = instant_reader_after_published_message.read_last_message().await.unwrap();
+    assert_eq!(&read_buff[..BUFFER_SIZE], &[0xAA_u8; BUFFER_SIZE]);
+
+    let mut pub_b_meta = PublisherUnitMetadata::new();
+    pub_b_meta.set_message_size(MESSAGE_SIZE);
+    pub_b_meta.set_message_count(MESSAGE_COUNT);
+    pub_b_meta.set_topic(topic_name);
+    let mut unit_registration_args_b = UnitRegistrationArgs::new();
+    unit_registration_args_b.set_unit_type(&unit_type);
+    unit_registration_args_b.set_unit_name("pub-b-inst");
+    unit_registration_args_b.set_unit_metadata(&UnitMetadata::Publisher(pub_b_meta));
+    let publisher_b = Publisher::create(ctx, unit_registration_args_b)
+        .await
+        .expect("Publisher B creation failed");
+
+    // Make sure publisher is registered in SDV
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // publish second message
+    pub_buff.fill(0xBB);
+    publisher_b.write_messages(&pub_buff).expect("Write failed");
+
+    // Wait for message propagation
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // successfully read last published message
+    let read_buff = instant_reader.read_last_message().await.unwrap();
+    assert_eq!(&read_buff[..BUFFER_SIZE], &[0xBB_u8; BUFFER_SIZE]);
+
+    // publish third message
+    pub_buff.fill(0xCC);
+    publisher_a.write_messages(&pub_buff).expect("Write failed");
+
+    // Wait for message propagation
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // successfully read last published message
+    let read_buff = instant_reader.read_last_message().await.unwrap();
+    assert_eq!(&read_buff[..BUFFER_SIZE], &[0xCC_u8; BUFFER_SIZE]);
 }

@@ -96,6 +96,13 @@ pub trait Communicate: Send + Sync {
         options: &SubscribeOptions,
     ) -> SdvResult<Box<dyn crate::ReadHistory>>;
 
+    /// Create an InstantReader for a message type on a specific topic.
+    async fn create_instant_reader_handle(
+        &self,
+        type_name: &TypeName,
+        topic_name: &str,
+    ) -> SdvResult<Box<dyn crate::InstantRead>>;
+
     /// create an object implementing ServerTransport with the specified attributes
     /// only for UnaryRpcMethod
     #[allow(useless_deprecated)]

@@ -26,7 +26,6 @@ mod test {
     use sdv::comms::id::ServiceFqin;
     use sdv::comms::ContextRef;
     use sdv::mw::{SdvComms, SubscribeOptions};
-    use sdv::status::SdvStatusCode;
     // test catalog
     use sdv_mw_rs_sdv_vsidl_multipub_test_cabin_sensor::CabinSensor;
     use sdv_mw_rs_sdv_vsidl_multipub_test_footwell_sensor::FootwellSensor;
@@ -149,16 +148,13 @@ mod test {
         assert!(history_buf.contains(&footwell_temp));
 
         // WHEN trying to instant read a multipub message.
-        let result = sdv::mw::clientlib::create_instant_reader(
+        let instant_reader = sdv::mw::clientlib::create_instant_reader(
             sdv_comms.as_ref(),
             hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
-        .await;
-
-        // THEN an error code is returned, suggesting this is not supported.
-        assert!(result.is_err());
-        assert_eq!(result.err().unwrap().status_code(), SdvStatusCode::Unimplemented);
+        .await
+        .expect("Create InstantRead should succeed with valid parameter.");
 
         // WHEN dropping both publishers
         drop(cabin_pub);
@@ -239,5 +235,8 @@ mod test {
         assert!(history_buf.contains(&cabin_temp));
         assert!(history_buf.contains(&footwell_temp));
         assert!(history_buf.contains(&passenger_temp));
+
+        let latest_message = instant_reader.read_latest_message().await.unwrap().unwrap();
+        assert_eq!(latest_message.temperature, passenger_temp);
     }
 }
