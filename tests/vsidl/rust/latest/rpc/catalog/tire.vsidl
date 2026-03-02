@@ -20,6 +20,7 @@ service_bundle {
   name: "TireStatusProducer"
   server {
     service: "TireStatus"
+    channel: "tire-status"
   }
 }
 
@@ -27,5 +28,6 @@ service_bundle {
   name: "TireStatusConsumer"
   client {
     service: "TireStatus"
+    channel: "tire-status"
   }
 }
