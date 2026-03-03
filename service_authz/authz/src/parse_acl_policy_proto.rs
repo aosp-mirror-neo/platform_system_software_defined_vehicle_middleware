@@ -33,9 +33,9 @@ use sdv_authz_policy_proto_rust::authz_policy::{
     Client as CallPermissionProto, Publisher as PublishPermissionProto,
     Server as ServePermissionProto, Subscriber as SubscribePermissionProto,
 };
-use sdv_comms::sd::UnitType;
 use sdv_comms_id::names::TopicName;
 use sdv_comms_id::names::{ServiceUnitName, UnitTypeName};
+use sdv_comms_sd::discovery::UnitType;
 use tracing::instrument;
 
 /// Parses AclPolicyProto into an AclPolicyModel struct.

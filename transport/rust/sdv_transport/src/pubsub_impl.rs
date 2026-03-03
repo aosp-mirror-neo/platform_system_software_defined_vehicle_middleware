@@ -257,6 +257,36 @@ impl InstantRead for SdvInstantReader {
     }
 }
 
+static_assertions::assert_impl_all!(SdvTopicInstantReader: Send);
+static_assertions::assert_impl_all!(SdvTopicInstantReader: Sync);
+
+/// SdvComms-specific implementation of a handle to a topic, which enables reading directly from the topic.
+///
+/// Intended to be used within the MW library code. Is not exposed to the user.
+pub struct SdvTopicInstantReader {
+    dt_handle: DtInstantReader,
+}
+
+impl SdvTopicInstantReader {
+    pub fn new(dt_handle: DtInstantReader) -> Self {
+        Self { dt_handle }
+    }
+}
+
+#[async_trait]
+impl InstantRead for SdvTopicInstantReader {
+    #[tracing::instrument(name = "MW::TopicInstantRead::read_latest_message", skip(self))]
+    async fn read_latest_message(&self) -> SdvResult<Option<Box<[u8]>>> {
+        let bytes = self.dt_handle.read_last_message().await?;
+
+        if bytes.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(bytes.into()))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -47,6 +47,7 @@ rust_library {
         "sdv_comms_internal@rust_defaults",
         "sdv_comms_ctx@rust_defaults",
     ],
+    min_sdk_version: "35",
     // Made public for OEM and Telemetry to call `wait_for_agents` (to prevent
     // crashes on context creation).
     visibility: ["//visibility:public"],
