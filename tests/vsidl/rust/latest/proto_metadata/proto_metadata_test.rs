@@ -52,7 +52,7 @@ mod test {
     #[tokio::test]
     async fn test_metadata_not_registered() {
         let bundle_name: &str = "SampleBundleWithout";
-        let service_unit_name: &str = "bar";
+        let service_unit_name: &str = "sdv-vsidl-tests-metadata-sample-message-bar";
         let unit_name = sdv::mw::UnitName::builder()
             .package_name(PACKAGE)
             .bundle_name(bundle_name)
@@ -85,7 +85,7 @@ mod test {
     #[tokio::test]
     async fn test_proto_metadata() {
         let bundle_name: &str = "SampleBundle";
-        let service_unit_name: &str = "foo";
+        let service_unit_name: &str = "sdv-vsidl-tests-metadata-sample-message-foo";
         let unit_name = sdv::mw::UnitName::builder()
             .package_name(PACKAGE)
             .bundle_name(bundle_name)
