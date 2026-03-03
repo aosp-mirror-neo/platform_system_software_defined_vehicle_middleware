@@ -59,8 +59,6 @@ pub mod publisher {
         #[doc(hidden)]
         const MESSAGE_SIZE: u32 = 0;
         #[doc(hidden)]
-        const IS_MULTIPUB: bool = false;
-        #[doc(hidden)]
         const IS_MESSAGE_METADATA_REQUIRED: bool = false;
 
         #[doc(hidden)]
@@ -84,8 +82,8 @@ pub mod subscriber {
     /// The Channel trait represents a specific subscription endpoint.
     ///
     /// Service bundle authors should treat types implementing this trait as opaque handles to be passed to the middleware clientlib.
-    pub trait Channel: Identity + Metadata + ToTypeName + Debug {}
-    impl<T: Identity + Metadata + ToTypeName + Debug> Channel for T {}
+    pub trait Channel: Identity + ToTypeName + Debug {}
+    impl<T: Identity + ToTypeName + Debug> Channel for T {}
 
     /// A trait for vsidlc-generated subscriber channel types to provide identity information.
     ///
@@ -97,15 +95,5 @@ pub mod subscriber {
         type ProtoMessage: ::protobuf::Message;
         #[doc(hidden)]
         fn get_name(&self) -> &str;
-    }
-
-    /// A trait for vsidlc-generated subscriber channel types to provide metadata about the physical channel configuration.
-    ///
-    /// # Stability
-    /// The implementation details of this trait (methods and associated constants) are not part of the public API and are unstable.
-    /// They are subject to breaking changes or removal in any future version. Service bundle authors must not rely on these internal details.
-    pub trait Metadata {
-        #[doc(hidden)]
-        const IS_MULTIPUB: bool = false;
     }
 }
