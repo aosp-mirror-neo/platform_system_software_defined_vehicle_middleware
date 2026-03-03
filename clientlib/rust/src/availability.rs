@@ -16,8 +16,9 @@
 
 //! SDV Middleware Clientlib methods related to availability.
 
+use crate::rpc_descriptor::client;
 use crate::subscriber;
-use sdv_mw_rs_comms::{Availability, Communicate, UnitName, UnitQuery};
+use sdv_mw_rs_comms::{Availability, Communicate, UnitQuery};
 use sdv_status_rs::SdvResult;
 use std::pin::Pin;
 
@@ -45,14 +46,21 @@ pub async fn create_registration_event_stream<Channel: subscriber::Channel>(
 ///
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
-/// * `server` - The `UnitName` of the server to monitor for availability.
+/// * `descriptor` - The descriptor to monitor for availability.
 ///
 /// # Returns
 /// A `SdvResult` containing a pinned, boxed, dynamic `Stream` of `Availability` events on
 /// success.
-pub async fn create_server_registration_event_stream(
+pub async fn create_server_registration_event_stream<Descriptor: client::Descriptor>(
     comms: &dyn Communicate,
-    server: UnitName,
+    descriptor: &Descriptor,
 ) -> sdv_status_rs::SdvResult<std::pin::Pin<Box<dyn futures::Stream<Item = Availability> + Send>>> {
-    comms.create_registration_event_stream(&UnitQuery::Name(server)).await
+    let channel_name = descriptor.get_channel();
+    let type_name = Descriptor::type_name()?;
+    comms
+        .create_registration_event_stream(&UnitQuery::Channel((
+            type_name,
+            channel_name.to_string(),
+        )))
+        .await
 }
