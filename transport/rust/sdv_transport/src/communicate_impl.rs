@@ -285,6 +285,41 @@ impl Communicate for SdvComms {
         Ok(Box::new(SdvClientTransport::new(sdv_client)))
     }
 
+    async fn create_client_transport_for_channel(
+        &self,
+        type_name: &TypeName,
+        channel: &str,
+        options: &sdv_mw_rs_comms::ClientOptions,
+    ) -> SdvResult<Box<dyn ClientTransport>> {
+        let sd = ServiceDiscoveryManager::new(self.context);
+        let unit_type = UnitType::builder()
+            .set_sdv_package_name(type_name.get_package_name())
+            .set_unit_type_name(type_name.get_type_name())
+            .build()?;
+        let service_unit_id = self
+            .find_first_service_unit_by_channel(&sd, &unit_type, channel)
+            .await
+            .ok_or(SdvStatus::with_message(
+                SdvStatusCode::Unavailable,
+                "Cannot find unit for client transport.",
+            ))?
+            .get_unit_identifier();
+
+        let mut client_options = ClientOptions::default();
+        let timeout_in_sec = options.get_timeout_in_sec();
+        if timeout_in_sec > 0 {
+            client_options.set_timeout(Duration::from_secs(timeout_in_sec.into()));
+        }
+
+        if let Some(max_response_size) = options.get_max_response_size() {
+            client_options.set_max_incoming_message_size_bytes(max_response_size);
+        }
+
+        let sdv_client = Client::create(self.context, service_unit_id, &client_options).await?;
+
+        Ok(Box::new(SdvClientTransport::new(sdv_client)))
+    }
+
     #[allow(useless_deprecated)]
     #[allow(unused_attributes)]
     #[deprecated(
@@ -411,6 +446,24 @@ impl Communicate for SdvComms {
                     sd.subscribe_service_unit_change_by_topic(&unit_type, topic.as_str()).await?;
                 Box::pin(Self::filter_availability_stream(stream))
             }
+            UnitQuery::Channel((type_name, channel)) => {
+                let unit_type = UnitType::builder()
+                    .set_sdv_package_name(type_name.get_package_name())
+                    .set_unit_type_name(type_name.get_type_name())
+                    .build()?;
+
+                let stream = sd.subscribe_service_unit_change_by_type(&unit_type).await?;
+                let channel = channel.clone();
+                let filtered_stream = stream.filter(move |event| {
+                    let unit = match event {
+                        ServiceUnitChangeEvent::Registered(u) => u,
+                        ServiceUnitChangeEvent::Unregistered(u) => u,
+                        ServiceUnitChangeEvent::Changed(u) => u,
+                    };
+                    futures::future::ready(unit.get_unit_identifier().get_unit_name() == channel)
+                });
+                Box::pin(Self::filter_availability_stream(filtered_stream))
+            }
             _ => {
                 return Err(SdvStatus::with_message(
                     SdvStatusCode::Unimplemented,
@@ -475,6 +528,21 @@ impl SdvComms {
             }
             .boxed()
         })
+    }
+    async fn find_first_service_unit_by_channel(
+        &self,
+        sd: &ServiceDiscoveryManager,
+        unit_type: &UnitType,
+        channel_name: &str,
+    ) -> Option<ServiceUnitDefinition> {
+        sd.list_units_by_type(unit_type)
+            .filter(|service_unit| {
+                futures::future::ready(
+                    service_unit.get_unit_identifier().get_unit_name() == channel_name,
+                )
+            })
+            .next()
+            .await
     }
 }
 
@@ -2477,5 +2545,116 @@ mod test {
         assert_eq!(history_read_batch.len(), HISTORY_BUFFER_SIZE as usize);
         assert_eq!(history_read_batch[0].pressure, 5678);
         assert_eq!(history_read_batch[1].pressure, 5678);
+    }
+
+    #[tokio::test]
+    async fn test_create_client_transport_for_channel() {
+        binder::ProcessState::start_thread_pool();
+
+        let channel_name: &str = "channel-server";
+        let bundle_name: &str = "RpcChannelBundle";
+        let method_name = String::from("GetTirePressure");
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{VM}:{PACKAGE}.{bundle_name}/channel-server"))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = SdvComms { context };
+
+        // GIVEN a server with server_name matching the channel we want to connect to.
+        let type_name =
+            TypeName::builder().package_name(PACKAGE).type_name(TYPE_NAME).build().unwrap();
+
+        let attr = ServerAttributes::builder()
+            .server_name(channel_name)
+            .type_name(type_name.clone())
+            .server_options(ServerOptions::default())
+            .build()
+            .unwrap();
+
+        let methods = MethodMapBuilder::new()
+            .add_method::<Empty, Pressure>(&method_name, {
+                std::sync::Arc::new(move |_fqin, _req| {
+                    let mut response = Pressure::new();
+                    response.pressure = 1234;
+                    Box::pin(async move { Ok(response) })
+                })
+            })
+            .build();
+
+        let _server = comms.create_server_transport(&attr, methods).await.unwrap();
+
+        // WHEN creating a client transport for that channel.
+        let client_res = comms
+            .create_client_transport_for_channel(
+                &type_name,
+                channel_name,
+                &ClientOptions::default(),
+            )
+            .await;
+
+        // THEN it should succeed.
+        assert!(client_res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_rpc_server_availability_by_channel() {
+        binder::ProcessState::start_thread_pool();
+
+        let channel_name: &str = "channel-availability";
+        let bundle_name: &str = "RpcChannelAvailabilityBundle";
+        let method_name = String::from("GetTirePressure");
+
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{VM}:{PACKAGE}.{bundle_name}/client"))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = Arc::new(SdvComms { context });
+
+        let type_name =
+            TypeName::builder().package_name(PACKAGE).type_name(TYPE_NAME).build().unwrap();
+
+        // WHEN creating registration event stream by Channel.
+        let mut registration_event_stream = comms
+            .create_registration_event_stream(&UnitQuery::Channel((
+                type_name.clone(),
+                channel_name.to_string(),
+            )))
+            .await
+            .unwrap();
+
+        // GIVEN a server with server_name matching the channel.
+        let attr = ServerAttributes::builder()
+            .server_name(channel_name)
+            .type_name(type_name.clone())
+            .server_options(ServerOptions::default())
+            .build()
+            .unwrap();
+
+        let methods = MethodMapBuilder::new()
+            .add_method::<Empty, Pressure>(&method_name, {
+                std::sync::Arc::new(move |_fqin, _req| {
+                    let mut response = Pressure::new();
+                    response.pressure = 1234;
+                    Box::pin(async move { Ok(response) })
+                })
+            })
+            .build();
+
+        let server_transport = comms.create_server_transport(&attr, methods).await.unwrap();
+
+        // THEN the stream has an available item.
+        assert_eq!(
+            tokio::time::timeout(EVENT_STREAM_TIMEOUT, registration_event_stream.next()).await,
+            Ok(Some(Availability::Available))
+        );
+
+        // WHEN dropping the server
+        drop(server_transport);
+
+        // THEN the stream has an unavailable item.
+        assert_eq!(
+            tokio::time::timeout(EVENT_STREAM_TIMEOUT, registration_event_stream.next()).await,
+            Ok(Some(Availability::Unavailable))
+        );
     }
 }

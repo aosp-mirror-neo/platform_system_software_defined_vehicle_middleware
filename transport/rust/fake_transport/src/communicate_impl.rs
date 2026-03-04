@@ -28,9 +28,9 @@ use async_trait::async_trait;
 use futures::{channel::mpsc, Stream};
 use sdv_comms::rpc::{RpcMethod, UnaryRpcMethod};
 use sdv_mw_rs_comms::{
-    Availability, ByteBuffersStream, ClientAttributes, ClientTransport, Communicate, Publication,
-    Publish, PublisherAttributes, ServerAttributes, ServerTransport, Subscribe, SubscribeOptions,
-    TypeName, UnitQuery,
+    Availability, ByteBuffersStream, ClientAttributes, ClientOptions, ClientTransport, Communicate,
+    Publication, Publish, PublisherAttributes, ServerAttributes, ServerTransport, Subscribe,
+    SubscribeOptions, TypeName, UnitQuery,
 };
 use sdv_status_rs::{SdvResult, SdvStatus, SdvStatusCode};
 use std::{
@@ -304,6 +304,15 @@ impl Communicate for LocalComms {
         _attributes: &ServerAttributes,
         _method_map: HashMap<String, RpcMethod>,
     ) -> SdvResult<Box<dyn ServerTransport>> {
+        unimplemented!("Implement client transport for Local Comms")
+    }
+
+    async fn create_client_transport_for_channel(
+        &self,
+        _type_name: &TypeName,
+        _channel: &str,
+        _options: &ClientOptions,
+    ) -> SdvResult<Box<dyn ClientTransport>> {
         unimplemented!("Implement client transport for Local Comms")
     }
 
