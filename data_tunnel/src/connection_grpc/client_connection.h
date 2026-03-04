@@ -41,29 +41,27 @@ using ClientGenericBidiReactor = grpc::ClientBidiReactor<grpc::ByteBuffer, grpc:
 // Client-side specialization of GrpcConnectionBase.
 class GrpcClientConnection : public GrpcConnectionBase<ClientGenericBidiReactor> {
 public:
+    static void Start(ConnectionManager::EventHandler& event_handler, const SocketAddressV4& addr,
+                      const std::string& target,
+                      std::shared_ptr<grpc::ChannelCredentials> credentials);
+
+    // Returns a string representation of the connection.
+    virtual std::string ToString() const;
+
+    // Lifecycle operation required by IConnection.
+    virtual void RequestDisconnect() override;
+
+private:
     GrpcClientConnection(ConnectionManager::EventHandler& event_handler,
                          const SocketAddressV4& addr, const std::string& target,
                          std::shared_ptr<grpc::Channel> channel);
 
-    // Destructor for GrpcClientConnection.
-    //
-    // Need to call Disconnect() from here because it needs to call the GrpcClientConnection
-    // implementations of DoGrpc*; if we called it from ~GrpcConnectionBase it'd run after this
-    // destructor, when those methods are no longer available.
-    virtual ~GrpcClientConnection();
-    // Returns a string representation of the connection.
-    virtual std::string ToString() const;
-
-private:
-    // Client-specific implementations of Grpc lifecycle operations required by GrpcConnectionBase.
-    void DoGrpcTryCancel();
-    void DoGrpcFinish();
     std::shared_ptr<const grpc::AuthContext> GetAuthContext() const;
 
-    // Called when the initial metadata has been read.
-    // Forward Client-specific Grpc lifecycle events to GrpcConnectionBase.
+    // Called by GRPC when the initial metadata has been read and connection may be ready for use.
     void OnReadInitialMetadataDone(bool success) override;
-    // Called when the gRPC connection is done.
+
+    // Called when GRPC is done with the connection.
     virtual void OnDone(const grpc::Status& /*status*/) override;
 
     // We don't really use the method name for anything.  Grpc requires it when creating generic
@@ -73,9 +71,9 @@ private:
     // How long to wait after a connection failure before trying again.
     static constexpr auto kConnectRetryDelay = std::chrono::seconds(1);
 
+    ConnectionManager::EventHandler& event_handler_;
     SocketAddressV4 peer_;
     std::string target_;
-    std::shared_ptr<grpc::Channel> channel_;
     std::unique_ptr<grpc::GenericStub> stub_;
     std::unique_ptr<grpc::ClientContext> context_;
 };

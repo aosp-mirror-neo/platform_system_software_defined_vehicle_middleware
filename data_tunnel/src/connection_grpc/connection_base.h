@@ -45,55 +45,23 @@ namespace android::sdv::dt::agent {
 // Grpc has different reactor interfaces for "client" vs "server" connections.
 // (grpc::ClientBidiReactor vs grpc::ServerBidiReactor).
 //
-// These two reactor interfaces have identical methods for initiating reads and
-// writes and receiving notice of completion of a read or write, and our logic for
-// reading and writing a connection works the same for either the "Server" or
-// "Client" end of a connection.
+// These two reactor interfaces have identical methods for initiating reads and writes and receiving
+// notice of completion of a read or write, and our logic for reading and writing a connection works
+// the same for either the "Server" or "Client" end of a connection.
 //
-// So this class implements IConnection and either the client or server reactor
-// interface, depending on the template argument, and uses the reactor's
-// methods to implement SendData/ReceiveData.
+// So this class inherits from IConnection and either the client or server reactor interface,
+// depending on the template argument, and partially implements each, using the reactor's methods
+// and On*Done handlers to implement IConnection's SendData / ReceiveData.
 //
-// Subclasses of this class provide client- and server-specific code related to
-// connection setup and teardown.
+// It also implements IConnection's AuthenticatedVmName and AuthenticatedIdentity methods, since
+// those are mostly the same between client and server connections.
+//
+// Subclasses of this class are responsible for connection lifecycle operations, since those differ
+// much more between client and server.
 template <typename ReactorType>
 class GrpcConnectionBase : public ReactorType, public IConnection {
 public:
-    GrpcConnectionBase(ConnectionManager::EventHandler& event_handler) :
-          event_handler_(event_handler), write_state_("Write"), read_state_("Read") {}
-
-    virtual ~GrpcConnectionBase() {}
-
-    // Shut down and clean up the connection.
-    // This will not return until it is safe to delete the object.
-    virtual void Disconnect() {
-        // Run this only if connect succeeded and only run it once.
-        if (!connected_ || disconnect_called_.exchange(true)) {
-            return;
-        }
-
-        ALOGI("%s Disconnecting.", ToString().c_str());
-
-        // Tell GRPC to cancel the connection.
-        RequestDisconnect();
-
-        // Terminate the read and write state machines.
-        write_state_.WaitToTerminate();
-        read_state_.WaitToTerminate();
-
-        // Tell GRPC we're finished.
-        DoGrpcFinish();
-
-        // Wait for OnDone.
-        done_promise_.get_future().get();
-        ALOGI("%s Disconnect complete.", ToString().c_str());
-    }
-
-    virtual void RequestDisconnect() {
-        if (!grpc_cancel_called_.exchange(true)) {
-            DoGrpcTryCancel();
-        }
-    }
+    GrpcConnectionBase() : write_state_("Write"), read_state_("Read") {}
 
     std::optional<std::string> AuthenticatedVmName() const {
         auto auth_context = GetAuthContext();
@@ -142,6 +110,9 @@ public:
 
         if (*grpc_result) {
             bytes_written_ += bytes_to_send;
+        } else {
+            ALOGE("%s.OnWriteDone() got failure.  Terminating.", ToString().c_str());
+            write_state_.Terminate(guard);
         }
 
         return *grpc_result;
@@ -184,14 +155,15 @@ public:
 
             if (!*grpc_result) {
                 ALOGE("%s.OnReadDone() got failure.  Terminating.", ToString().c_str());
+                read_state_.Terminate(guard);
                 return 0;
             }
 
             // Try to extract data from the buffer in a usable form.
             read_data_ = ReadData::Extract(grpc_buffer);
             if (!read_data_) {
-                // Move immediately to terminated state since we got unusable data.
-                read_state_.ForceTerminate(guard);
+                // We got unusable data and are in a bad state; can't safely process further reads.
+                read_state_.Terminate(guard);
                 return 0;
             }
         }
@@ -211,66 +183,12 @@ public:
     virtual size_t BytesReceived() const { return bytes_read_.load(); }
 
 protected:
-    // ReportGrpcConnectResult() and ReportGrpcDone() define common logic for reactor lifecycle
-    // events, and must be called from client- or server reactor methods implemented in subclasses.
-
-    // Must be called by subclasses' On(Send|Read)InitialMetadataDone reactor methods,
-    // which are fired when Grpc has set up the connection (or failed to do so).
-    void ReportGrpcConnectResult(bool success) {
-        if (!success) {
-            ALOGW("%s: Failure establishing connection", ToString().c_str());
-            DoGrpcFinish();  // GRPC cleanup still needed in event of failure.
-            // Delete and notification to event handler will happen in ReportGrpcDone().
-            return;
-        }
-
-        connected_ = true;
-
-        ALOGI("%s: Connection established", ToString().c_str());
-
-        // Since connect succeeded, send the connection to the client application.
-        event_handler_.OnConnectionManagerEvent(IConnectionHolder(this));
+    // Let subclasses check that all read/write operations are terminated before finalizing.
+    bool TryTerminateAllOperations() {
+        return read_state_.TryTerminate() && write_state_.TryTerminate();
     }
-
-    // Must be called by subclasses' OnDone() reactor method implementations.
-    virtual void ReportGrpcDone() {
-        if (!connected_) {
-            auto& event_handler = event_handler_;
-
-            // If connect didn't succeed then Disconnect() is a no-op and ownership of the object
-            //  was never handed over to ConnectionManager's client, so delete ourself.
-            delete this;
-
-            // We delay notifying the client of the failure until the deletion is done mainly to
-            // prevent flaky test failures: If we didn't wait, then the test teardown (which won't
-            // start before OnConnectionManagerEvent() fires) could destroy the ConnectionManager
-            // before we delete this connection, which can lead to a situation where we try to
-            // shutdown GRPC's internal thread pool from within one of its own threads, resulting in
-            // deadlock.
-            //
-            // TODO: Consider more robust shutdown process for GrpcConnectionManager that actively
-            // kills connections and waits for them all to complete before deletion.
-            event_handler.OnConnectionManagerEvent(
-                    base::unexpected(::sdv::SdvStatus(::sdv::SdvStatusCode::kUnavailable)));
-        } else {
-            done_promise_.set_value();
-        }
-    }
-
-    ConnectionManager::EventHandler& event_handler_;
 
 private:
-    // DoGrpcTryCancel() and DoGrpcFinish() must be implemented by subclasses to provide Server- and
-    // Client- specific lifecycle operations called from Disconnect().
-
-    // Trigger cancel.  This won't instantly terminate the Grpc connection, but will notify the
-    // peer (if connected) that we're going away try to stop any in-progress read or write ops.
-    virtual void DoGrpcTryCancel() = 0;
-
-    // Tell Grpc that we're done with this connection and it can complete cleanup and notify us
-    // when it's completely done with this reactor via OnDone().
-    virtual void DoGrpcFinish() = 0;
-
     // Needed to get certs for AuthenticatedVmName and AuthenticatedIdentity.
     virtual std::shared_ptr<const grpc::AuthContext> GetAuthContext() const = 0;
 
@@ -286,11 +204,6 @@ private:
     GrpcOperationStateMachine read_state_;
     std::optional<ReadData> read_data_;
     std::atomic<size_t> bytes_read_;
-
-    bool connected_ = false;                        // Different cleanup needed when connect fails.
-    std::atomic<bool> disconnect_called_ = false;   // Used to ensure Disconnect() runs only once.
-    std::atomic<bool> grpc_cancel_called_ = false;  // Used to ensure we DoGrpcCancel() only once.
-    std::promise<void> done_promise_;               // Allow Disconnect() to wait for OnDone().
 };
 
 }  // namespace android::sdv::dt::agent

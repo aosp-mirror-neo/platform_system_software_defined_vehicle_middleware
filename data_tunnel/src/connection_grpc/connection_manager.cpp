@@ -101,27 +101,14 @@ void GrpcConnectionManager::Connect(const SocketAddressV4& addr, const std::stri
     ALOGI("GrpcConnectionManager starting connection to %s at %s", target.c_str(),
           addr.ToString().c_str());
 
-    auto client_creds = MakeClientCredentials(ssl_config_);
-
-    grpc::ChannelArguments channel_args;
-    channel_args.SetSslTargetNameOverride(EncodeNameForCert(target));
-    // Allow for unlimited message size.
-    channel_args.SetMaxSendMessageSize(-1);
-    channel_args.SetMaxReceiveMessageSize(-1);
-    auto channel =
-            grpc::CreateCustomChannel(addr.ToString(), std::move(client_creds), channel_args);
-
-    // GrpcClientConnection constructor sets up the call and manages its own
-    // lifetime until it's sends itself to the event handler on successful setup.
-    new GrpcClientConnection(event_handler, addr, target, std::move(channel));
+    // Connection result will be passed to event_handler.
+    GrpcClientConnection::Start(event_handler, addr, target, MakeClientCredentials(ssl_config_));
 }
 
 grpc::ServerGenericBidiReactor* GrpcConnectionManager::CreateReactor(
         grpc::GenericCallbackServerContext* context) {
     CHECK(listen_event_handler_) << "Got request for reactor with no event handler present!";
-    // GrpcServerConnection constructor sets up the call and manages its own
-    // lifetime until it's sent to the event handler on successful setup.
-    return new GrpcServerConnection(*listen_event_handler_, context);
+    return GrpcServerConnection::Start(*listen_event_handler_, context);
 }
 
 std::shared_ptr<grpc::ServerCredentials> GrpcConnectionManager::MakeServerCredentials(
