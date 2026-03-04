@@ -97,12 +97,6 @@ pub mod subscriber {
         type ProtoMessage: ::protobuf::Message;
         #[doc(hidden)]
         fn get_name(&self) -> &str;
-        #[doc(hidden)]
-        fn get_service_unit_name(&self) -> &str;
-        #[doc(hidden)]
-        fn get_service_bundle_package(&self) -> &str;
-        #[doc(hidden)]
-        fn get_service_bundle_name(&self) -> &str;
     }
 
     /// A trait for vsidlc-generated subscriber channel types to provide metadata about the physical channel configuration.

@@ -18,7 +18,8 @@ use binder::{ExceptionCode, Interface, Status};
 use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::{
     AccessControl::AccessControl, RegistrationToken::RegistrationToken as RegistrationTokenV2, UnitType::UnitType as UnitTypeAidl,
 };
-use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::metadata::ApplicationMetadata::ApplicationMetadata;
+use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::metadata::ApplicationMetadata::{
+    ApplicationMetadata, TypedMetadata::TypedMetadata};
 use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::IServiceRegistrationAgent::IServiceRegistrationAgentAsyncServer;
 use google_sdv_identity::aidl::google::sdv::identity::ProcessIdentifier::ProcessIdentifier;
 use google_sdv_privileged_service_discovery::aidl::google::sdv::privileged::service_discovery::IPrivilegedServiceRegistrationAgent::IPrivilegedServiceRegistrationAgentAsyncServer as IPrivilegedServiceRegistrationAgentAsyncServer;
@@ -31,11 +32,32 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
-use log::error;
+use log::{debug, error};
 use tracing::instrument;
 
 use sdv_authz::AuthzService;
 use sdv_comms_id::{names::PackageName, names::ServiceUnitName, names::UnitTypeName, ServiceFqin};
+
+/// Populates the topic name if it is currently empty.
+///
+/// Legacy publishers may not have a defined topic field. This function ensures
+/// these publishers remain discoverable by SOA-based subscribers by defaulting
+/// the topic to the publisher's `service_unit_name`.
+fn ensure_publisher_has_topic(
+    app_metadata: &ApplicationMetadata,
+    service_unit_name: &str,
+) -> ApplicationMetadata {
+    let mut modified_app_metadata = app_metadata.clone();
+    if let TypedMetadata::PublisherUnit(ref mut publisher_metadata) =
+        modified_app_metadata.typedMetadata
+    {
+        if publisher_metadata.topic_name.is_empty() {
+            debug!("Publisher topic empty; defaulting to service_unit_name: {}", service_unit_name);
+            publisher_metadata.topic_name = service_unit_name.to_string();
+        }
+    }
+    modified_app_metadata
+}
 
 /// Service responsible for (de) registration of service units.
 pub(crate) struct ServiceRegistrationAgent {
@@ -60,6 +82,8 @@ impl ServiceRegistrationAgent {
         process_identifier: &ProcessIdentifier,
     ) -> binder::Result<RegistrationTokenV2> {
         self.validate_service_unit_name(service_unit_name)?;
+
+        let updated_metadata = ensure_publisher_has_topic(app_metadata, service_unit_name);
 
         match self.is_process_authorized_for_unit_type(process_identifier, unit_type) {
             Ok(true) => {
@@ -87,7 +111,7 @@ impl ServiceRegistrationAgent {
             service_unit_name,
             unit_type,
             acls,
-            app_metadata,
+            &updated_metadata,
             process_identifier,
         );
         token.ok_or(Status::new_exception(ExceptionCode::ILLEGAL_ARGUMENT, None))
@@ -240,7 +264,9 @@ mod test {
     use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::{
         metadata::{
             ApplicationMetadata::ApplicationMetadata,
+            ApplicationMetadata::TypedMetadata::TypedMetadata::PublisherUnit,
             ApplicationMetadata::TypedMetadata::TypedMetadata::ServerUnit,
+            PublisherUnitMetadata::PublisherUnitMetadata,
             ServerUnitMetadata::ServerUnitMetadata,
         },
         AccessControl::AccessControl,
@@ -793,6 +819,59 @@ mod test {
         // THEN registration failed
         assert!(result.is_err());
         assert_eq!(result.err().unwrap().exception_code(), ExceptionCode::ILLEGAL_ARGUMENT);
+    }
+
+    #[test]
+    fn test_ensure_publisher_has_topic_empty_topic() {
+        let service_unit_name = "test-service-unit";
+
+        // Publisher metadata with empty topic name
+        let app_metadata_empty_topic = ApplicationMetadata {
+            typedMetadata: PublisherUnit(PublisherUnitMetadata {
+                topic_name: "".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let updated_metadata =
+            ensure_publisher_has_topic(&app_metadata_empty_topic, service_unit_name);
+        if let PublisherUnit(publisher_metadata) = updated_metadata.typedMetadata {
+            assert_eq!(publisher_metadata.topic_name, service_unit_name);
+        } else {
+            panic!("Expected PublisherUnit metadata");
+        }
+    }
+
+    #[test]
+    fn test_ensure_publisher_has_topic_existing_topic() {
+        let service_unit_name = "test-service-unit";
+        // Publisher metadata with non-empty topic name
+        let app_metadata_with_topic = ApplicationMetadata {
+            typedMetadata: PublisherUnit(PublisherUnitMetadata {
+                topic_name: "existing-topic".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let updated_metadata =
+            ensure_publisher_has_topic(&app_metadata_with_topic, service_unit_name);
+        if let PublisherUnit(publisher_metadata) = updated_metadata.typedMetadata {
+            assert_eq!(publisher_metadata.topic_name, "existing-topic");
+        } else {
+            panic!("Expected PublisherUnit metadata");
+        }
+    }
+
+    #[test]
+    fn test_ensure_publisher_has_topic_non_publisher() {
+        let service_unit_name = "test-service-unit";
+        // Non-publisher metadata
+        let app_metadata_server = ApplicationMetadata {
+            typedMetadata: ServerUnit(ServerUnitMetadata { version: 1 }),
+            ..Default::default()
+        };
+        let updated_metadata = ensure_publisher_has_topic(&app_metadata_server, service_unit_name);
+        assert_eq!(updated_metadata, app_metadata_server);
     }
 
     // TODO(b/384016427): Write test for the case that register_service_unit_for_process fails to create a token and returns ExceptionCode::ILLEGAL_ARGUMENT.
