@@ -21,6 +21,7 @@ service_bundle {
 
     subscriber {
         message: "CabinTemperature"
+        topic: "multipub"
     }
 }
 
