@@ -25,9 +25,6 @@ use std::pin::Pin;
 /// Creates a new polling-based subscriber for a specific subscription channel.
 ///
 /// A [`Subscriber`] allows for manually polling for new messages.
-/// For single-publication channels, it subscribes to a specific publisher instance.
-/// For multi-publication (`IS_MULTIPUB = true`) channels, it subscribes to all publishers of a
-/// given message type.
 ///
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
@@ -49,9 +46,6 @@ pub async fn create_subscriber<Channel: subscriber::Channel>(
 /// Creates a new event-driven observer for a specific subscription channel.
 ///
 /// An observer returns a `Stream` that asynchronously yields new messages as they arrive.
-/// For single-publication channels, it observes a specific publisher instance.
-/// For multi-publication (`IS_MULTIPUB = true`) channels, it observes all publishers of a given
-/// message type.
 ///
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
@@ -73,8 +67,6 @@ pub async fn create_observer<Channel: subscriber::Channel>(
 /// Creates a new history reader for a specific subscription channel.
 ///
 /// A [`History`] reader allows for retrieving historical messages from a publication's buffer.
-/// This is only supported for single-publication channels and will return an `Unimplemented` error
-/// for multi-publication channels.
 ///
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
@@ -96,8 +88,6 @@ pub async fn create_history<Channel: subscriber::Channel>(
 /// Creates a new instant reader for a specific subscription channel.
 ///
 /// An [`InstantReader`] allows for retrieving the most recently published message on a channel.
-/// This is only supported for single-publication channels and will return an `Unimplemented` error
-/// for multi-publication channels.
 ///
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
