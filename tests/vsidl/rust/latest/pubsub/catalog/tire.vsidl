@@ -45,6 +45,22 @@ service_bundle {
   name: "SubscribingBundle"
 
   subscriber {
-    message: "sdv.vsidl.pubsub.test.TirePressure"
+    message: "TirePressure"
+    topic: "topic-zero"
+    topic: "topic-one"
+    topic: "topic-two"
+    topic: "topic-three"
+    topic: "topic-four"
+    topic: "topic-five"
+    topic: "topic-six"
+    topic: "topic-seven"
+    topic: "topic-eight"
+    topic: "topic-nine"
+    topic: "topic-ten"
+    topic: "topic-eleven"
+    topic: "topic-twelve"
+    topic: "topic-thirteen"
+    topic: "topic-fourteen"
+    topic: "topic-fifteen"
   }
 }

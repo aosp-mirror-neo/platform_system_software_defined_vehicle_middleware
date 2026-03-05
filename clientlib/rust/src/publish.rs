@@ -45,7 +45,6 @@ pub async fn create_publisher<Channel: publisher::Channel>(
             PublisherMetadata::builder()
                 .message_size(Channel::MESSAGE_SIZE)
                 .message_count(channel.get_capacity())
-                .is_multipub(Channel::IS_MULTIPUB)
                 .message_metadata(Channel::get_message_metadata())
                 .message_metadata_required(Channel::IS_MESSAGE_METADATA_REQUIRED)
                 .build()?,
