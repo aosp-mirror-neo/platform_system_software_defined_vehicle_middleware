@@ -576,8 +576,11 @@ pub(crate) mod test_support {
     use anyhow::anyhow;
     use crypto_rpc::cert::{build_ec_private_key, build_root_certificate};
     use openssl::pkey::PKey;
-    use sdv_authz::SingleVmAclPolicyProvider;
+    use sdv_authz::{
+        LocallyStoredAuthzPoliciesProvider, SingleVmAclPolicyProvider, VmLevelPermissionsProvider,
+    };
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
+    use sdv_authz_policy_proto_rust::vm_authz_policy::VmAuthzPolicy as VmAuthzPolicyProto;
     use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName};
     use std::collections::HashMap;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -601,6 +604,8 @@ pub(crate) mod test_support {
         }
     }
 
+    impl LocallyStoredAuthzPoliciesProvider for TestSingleVmAclPolicyProvider {}
+
     impl SingleVmAclPolicyProvider for TestSingleVmAclPolicyProvider {
         fn get_acl_policy_proto(
             &self,
@@ -618,6 +623,15 @@ pub(crate) mod test_support {
         ) -> std::result::Result<Vec<(PackageName, Option<ServiceBundleName>)>, anyhow::Error>
         {
             Ok(self.mapping.keys().cloned().collect())
+        }
+    }
+
+    impl VmLevelPermissionsProvider for TestSingleVmAclPolicyProvider {
+        fn get_vm_authz_policy_proto(
+            &self,
+            _vm_name: &VmName,
+        ) -> Result<VmAuthzPolicyProto, anyhow::Error> {
+            unimplemented!("get_vm_authz_policy_proto is not implemented for test")
         }
     }
 

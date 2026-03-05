@@ -27,7 +27,7 @@ use sdv_comms_id::names::{PackageName, ServiceUnitName, TopicName};
 use sdv_comms_sd::discovery::UnitType;
 
 /// VM Authz Policy represents Access Control Policy for a remote VM.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VmAuthzPolicyModel {
     publish: Permissions<TopicName>,
     subscribe: Permissions<TopicName>,
@@ -35,7 +35,7 @@ pub struct VmAuthzPolicyModel {
     call: Permissions<ServiceUnitName>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 struct Permissions<T: Hash + Eq> {
     unit_type_permissions: HashMap<UnitType, PermissionScope<T>>,
     package_permissions: HashSet<PackageName>,

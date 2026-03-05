@@ -284,7 +284,7 @@ mod test {
     };
     use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition;
     use protobuf::text_format;
-    use sdv_authz::{AclPolicyModel, AclPolicyProvider, AuthzEnforcementFlag};
+    use sdv_authz::{AclPolicyModel, AclPolicyProvider, AuthzEnforcementFlag, VmAuthzPolicyModel};
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
     use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName, VmName};
     use std::collections::HashMap;
@@ -354,6 +354,13 @@ mod test {
             let mut vm_names: Vec<VmName> = self.mapping.keys().map(|k| k.0.clone()).collect();
             vm_names.sort_by_key(|vm_name| vm_name.name().to_string());
             vm_names
+        }
+
+        fn get_vm_authz_policy(
+            &self,
+            _vm_name: &VmName,
+        ) -> Result<Arc<VmAuthzPolicyModel>, anyhow::Error> {
+            unimplemented!("get_vm_authz_policy is not implemented for test")
         }
     }
 
