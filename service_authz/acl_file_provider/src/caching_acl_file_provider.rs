@@ -492,9 +492,9 @@ mod tests {
         let vm_name = VmName::from_str("vm-ivi").unwrap();
         let vm_authz_policy_proto = text_format::parse_from_str::<VmAuthzPolicyProto>(
             r#"
-            server {
+            allow_server {
                 service: "com.pkg.Svc"
-                allow_all_channels: true
+                channel: "*"
             }
         "#,
         )
@@ -530,9 +530,9 @@ mod tests {
         let vm_name = VmName::from_str("vm-ivi").unwrap();
         let vm_authz_policy_proto = text_format::parse_from_str::<VmAuthzPolicyProto>(
             r#"
-            server {
+            allow_server {
                 service: "com.pkg.Svc"
-                allow_all_channels: true
+                channel: "*"
             }
         "#,
         )
@@ -595,8 +595,8 @@ mod tests {
         // Missing both 'package' and 'service' in server permission is invalid.
         let vm_authz_policy_proto = text_format::parse_from_str::<VmAuthzPolicyProto>(
             r#"
-            server {
-                allow_all_channels: true
+            allow_server {
+                channel: "*"
             }
         "#,
         )
