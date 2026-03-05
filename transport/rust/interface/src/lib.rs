@@ -47,5 +47,11 @@ pub use types::{
     ServerAttributes, ServerOptions, SubscribeOptions, TypeName, UnitName, UnitQuery,
 };
 
+/// Middleware Utilities
+mod utils;
+/// Feel free to replace this with e.g. `heck::to_kebab_case` if additional formatting functions are needed.
+/// For now, this is the only one we need, so we keep it in-tree to avoid bloat.
+pub(crate) use utils::format_to_kebab_case;
+
 /// Codec Utils
 pub mod codec;
