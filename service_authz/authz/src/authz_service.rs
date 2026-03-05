@@ -22,11 +22,13 @@ use crate::{AclPolicyProvider, AuthzEnforcementFlag, AuthzResult};
 use sdv_comms_id::names::{PackageName, ServiceUnitName, UnitTypeName};
 use sdv_comms_id::ServiceFqin;
 
+use anyhow::Context;
 use google_sdv_identity::aidl::google::sdv::identity::ServiceFqin::ServiceFqin as ServiceFqinAidl;
 use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition;
 use log::{debug, error, warn};
 use tracing::instrument;
 
+use std::str::FromStr;
 use std::sync::Arc;
 
 /// Trait for retrieving the full definition of a service unit.
@@ -82,6 +84,39 @@ impl AuthzService {
                 object_fqin,
                 object_service_unit_name,
             )
+        } else {
+            AuthzResult::ImplicitlyDenied("Permissions are disabled".to_string())
+        };
+
+        // Use both results to make final decision and log denial if needed.
+        self.handle_authz_result(subject_fqin, object_log_identifier, acl_result, permission_result)
+    }
+
+    /// Returns whether Subject FQIN is authorized for the Object Service Unit.
+    #[instrument(name = "authz_perf::service::is_authorized_for_sud", skip_all)]
+    pub fn is_authorized_for_sud(
+        &self,
+        subject_fqin: &ServiceFqin,
+        object_sud: &ServiceUnitDefinition,
+    ) -> bool {
+        let (object_fqin, object_service_unit_name) = match validate_sud_input(object_sud) {
+            Ok(values) => values,
+            Err(err) => {
+                error!("Failed to validate authz SUD filter input: {:?}", err);
+                return false;
+            }
+        };
+
+        let object_log_identifier = format!("{object_fqin}#{object_service_unit_name}");
+
+        let acl_result = self.authz_via_acls.check_authorization_for_service_unit(
+            subject_fqin,
+            &object_fqin,
+            &object_service_unit_name,
+        );
+
+        let permission_result = if feature_flags::enable_permissions() {
+            self.authz_via_permissions.check_authorization_for_sud(subject_fqin, object_sud)
         } else {
             AuthzResult::ImplicitlyDenied("Permissions are disabled".to_string())
         };
@@ -182,6 +217,27 @@ fn convert_authz_result(authz_result: AuthzResult) -> (bool, String) {
         AuthzResult::ExplicitlyDenied(audit_msg) => (false, audit_msg),
         AuthzResult::ImplicitlyDenied(audit_msg) => (false, audit_msg),
     }
+}
+
+/// Validates the input and returns tuple of
+///   1. Object ServiceFQIN,
+///   2. Object Service Unit Name.
+fn validate_sud_input(
+    sud: &ServiceUnitDefinition,
+) -> Result<(ServiceFqin, ServiceUnitName), anyhow::Error> {
+    let object_fqin = ServiceFqin::try_from(sud.identity.name.clone()).with_context(|| {
+        format!(
+            "Failed to create valid FQIN from a ServiceUnitDefinition ({:?})",
+            sud.identity.name
+        )
+    })?;
+
+    let object_service_unit_name =
+        ServiceUnitName::from_str(&sud.serviceUnitName).with_context(|| {
+            format!("Failed to validate service unit name {:?}", &sud.serviceUnitName)
+        })?;
+
+    Ok((object_fqin, object_service_unit_name))
 }
 
 #[cfg(test)]

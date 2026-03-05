@@ -16,14 +16,17 @@
 
 use crate::authz_service::ServiceUnitRegistry;
 use crate::{AclPolicyProvider, AuthzResult};
+use log::error;
 use sdv_comms_id::{
     names::{PackageName, ServiceUnitName, UnitTypeName},
     ServiceFqin,
 };
 use sdv_comms_sd::discovery::UnitType;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use google_sdv_identity::aidl::google::sdv::identity::ServiceFqin::ServiceFqin as ServiceFqinAidl;
+use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition;
 
 /// AuthzViaPermissions is an entry point for permission-based authorization checks.
 pub struct AuthzViaPermissions {
@@ -47,6 +50,47 @@ impl AuthzViaPermissions {
         object_fqin: &ServiceFqin,
         object_service_unit_name: &ServiceUnitName,
     ) -> AuthzResult {
+        let fqin_aidl = ServiceFqinAidl::from(object_fqin.clone());
+        let unit_definition = match self
+            .registry
+            .get_service_unit(&fqin_aidl, &object_service_unit_name.to_string())
+        {
+            Some(def) => def,
+            None => {
+                return AuthzResult::ImplicitlyDenied("Failed to get unit definition".to_string())
+            }
+        };
+
+        self.check_authorization_for_sud(subject_fqin, &unit_definition)
+    }
+
+    /// Returns Subject FQIN authorization result for the Object Service Unit.
+    pub fn check_authorization_for_sud(
+        &self,
+        subject_fqin: &ServiceFqin,
+        object_sud: &ServiceUnitDefinition,
+    ) -> AuthzResult {
+        let object_unit_type = match UnitType::builder()
+            .package_name(object_sud.unitType.sdvPackageName.clone())
+            .unit_type_name(object_sud.unitType.typeName.clone())
+            .build()
+        {
+            Ok(ut) => ut,
+            Err(_) => {
+                error!("Invalid unit type data in SUD {:?}", object_sud);
+                return AuthzResult::ImplicitlyDenied("Invalid UnitType data".to_string());
+            }
+        };
+
+        let object_service_unit_name = match ServiceUnitName::from_str(&object_sud.serviceUnitName)
+        {
+            Ok(name) => name,
+            Err(err) => {
+                error!("Failed to parse service unit name: {:?}", err);
+                return AuthzResult::ImplicitlyDenied("Invalid service unit name data".to_string());
+            }
+        };
+
         let subject_policy = match self.provider.get_acl_policy(
             subject_fqin.vm_name(),
             subject_fqin.package_name(),
@@ -61,31 +105,7 @@ impl AuthzViaPermissions {
             }
         };
 
-        let fqin_aidl = ServiceFqinAidl::from(object_fqin.clone());
-        let unit_definition = match self
-            .registry
-            .get_service_unit(&fqin_aidl, &object_service_unit_name.to_string())
-        {
-            Some(def) => def,
-            None => {
-                return AuthzResult::ImplicitlyDenied("Failed to get unit definition".to_string())
-            }
-        };
-
-        let object_unit_type = match UnitType::builder()
-            .package_name(unit_definition.unitType.sdvPackageName.clone())
-            .unit_type_name(unit_definition.unitType.typeName.clone())
-            .build()
-        {
-            Ok(ut) => ut,
-            Err(_) => {
-                return AuthzResult::ImplicitlyDenied(
-                    "Registry returned invalid UnitType data".to_string(),
-                )
-            }
-        };
-
-        if subject_policy.can_call(&object_unit_type, object_service_unit_name) {
+        if subject_policy.can_call(&object_unit_type, &object_service_unit_name) {
             return AuthzResult::Permitted(format!(
                 "Permitted by 'client' permission on Unit Type '{}'",
                 object_unit_type
@@ -93,10 +113,9 @@ impl AuthzViaPermissions {
         }
 
         AuthzResult::ExplicitlyDenied(format!(
-            "Subject '{}' lacks 'client' permission for service unit '{}' on object '{}' with unit type '{}'",
+            "Subject '{}' lacks 'client' permission for service unit '{}' with unit type '{}'",
             subject_fqin,
             object_service_unit_name.name(),
-            object_fqin,
             object_unit_type
         ))
     }
@@ -173,6 +192,7 @@ mod tests {
                 serviceBundleName: "ServerBundle".to_string(),
                 typeName: "TargetType".to_string(),
             },
+            serviceUnitName: "correct-unit".to_string(),
             ..Default::default()
         };
         let registry = Arc::new(MockRegistry { definition: fake_definition });
@@ -201,8 +221,20 @@ mod tests {
 
     #[test]
     fn test_check_authorization_no_policy_found() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
         let test_provider = TestAclPolicyProvider::new();
-        let registry = Arc::new(MockRegistry { definition: ServiceUnitDefinition::default() });
+        let fake_definition = ServiceUnitDefinition {
+            unitType: AidlUnitType {
+                sdvPackageName: "com.d".to_string(),
+                serviceBundleName: "E".to_string(),
+                typeName: "TargetType".to_string(),
+            },
+            serviceUnitName: "unit".to_string(),
+            ..Default::default()
+        };
+        let registry = Arc::new(MockRegistry { definition: fake_definition });
         let service = AuthzViaPermissions::new(Arc::new(test_provider), registry);
 
         let result = service.check_authorization_for_service_unit(
@@ -211,6 +243,130 @@ mod tests {
             &ServiceUnitName::from_str("unit").unwrap(),
         );
 
-        assert!(matches!(result, AuthzResult::ImplicitlyDenied(_)));
+        match result {
+            AuthzResult::ImplicitlyDenied(msg) => {
+                assert!(msg.contains("policy not found"), "Unexpected msg: {}", msg);
+            }
+            _ => panic!("Expected ImplicitlyDenied, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_check_authorization_registry_miss() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+        struct EmptyRegistry;
+        impl ServiceUnitRegistry for EmptyRegistry {
+            fn get_service_unit(
+                &self,
+                _: &ServiceFqinAidl,
+                _: &str,
+            ) -> Option<ServiceUnitDefinition> {
+                None
+            }
+        }
+
+        let service = AuthzViaPermissions::new(
+            Arc::new(TestAclPolicyProvider::new()),
+            Arc::new(EmptyRegistry),
+        );
+
+        let result = service.check_authorization_for_service_unit(
+            &ServiceFqin::from_str("vm:com.a.B/c").unwrap(),
+            &ServiceFqin::from_str("vm:com.d.E/f").unwrap(),
+            &ServiceUnitName::from_str("missing-unit").unwrap(),
+        );
+
+        match result {
+            AuthzResult::ImplicitlyDenied(msg) => {
+                assert!(msg.contains("Failed to get unit definition"));
+            }
+            _ => panic!("Expected ImplicitlyDenied, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_check_authorization_invalid_sud_unit_name() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+        let fake_definition = ServiceUnitDefinition {
+            unitType: AidlUnitType {
+                sdvPackageName: "com.server".to_string(),
+                serviceBundleName: "Bundle".to_string(),
+                typeName: "Type".to_string(),
+            },
+            serviceUnitName: "".to_string(), // Invalid name
+            ..Default::default()
+        };
+
+        let registry = Arc::new(MockRegistry { definition: fake_definition });
+        let service = AuthzViaPermissions::new(Arc::new(TestAclPolicyProvider::new()), registry);
+
+        let result = service.check_authorization_for_sud(
+            &ServiceFqin::from_str("vm:com.client.App/s").unwrap(),
+            &service.registry.get_service_unit(&ServiceFqinAidl::default(), "").unwrap(),
+        );
+
+        match result {
+            AuthzResult::ImplicitlyDenied(msg) => {
+                assert!(msg.contains("Invalid service unit name data"));
+            }
+            _ => panic!("Expected ImplicitlyDenied, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_check_authorization_explicit_denial() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+        // 1. Setup Policy that allows "OtherType" but NOT "TargetType"
+        let mut test_provider = TestAclPolicyProvider::new();
+        test_provider.set_authz_policy(
+            VmName::from_str("vm").unwrap(),
+            PackageName::from_str("com.client").unwrap(),
+            Some(ServiceBundleName::from_str("ClientBundle").unwrap()),
+            AclPolicyModel::try_from(
+                text_format::parse_from_str::<AclPolicyProto>(
+                    r#"
+                        client {
+                            service: "com.server.OtherType"
+                            channel: "correct-unit"
+                        }
+                    "#,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let fake_definition = ServiceUnitDefinition {
+            unitType: AidlUnitType {
+                sdvPackageName: "com.server".to_string(),
+                serviceBundleName: "ServerBundle".to_string(),
+                typeName: "TargetType".to_string(),
+            },
+            serviceUnitName: "correct-unit".to_string(),
+            ..Default::default()
+        };
+        let registry = Arc::new(MockRegistry { definition: fake_definition });
+        let service = AuthzViaPermissions::new(Arc::new(test_provider), registry);
+
+        // 2. Perform Check - should fail because TargetType != OtherType
+        let result = service.check_authorization_for_service_unit(
+            &ServiceFqin::from_str("vm:com.client.ClientBundle/service").unwrap(),
+            &ServiceFqin::from_str("vm:com.server.ServerBundle/service").unwrap(),
+            &ServiceUnitName::from_str("correct-unit").unwrap(),
+        );
+
+        match result {
+            AuthzResult::ExplicitlyDenied(msg) => {
+                assert!(msg.contains("lacks 'client' permission"));
+                assert!(msg.contains("TargetType"));
+            }
+            _ => panic!("Expected ExplicitlyDenied, got {:?}", result),
+        }
     }
 }
