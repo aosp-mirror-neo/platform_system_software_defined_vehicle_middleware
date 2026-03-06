@@ -16,27 +16,34 @@
 
 //! Clientlib methods related to RPC client
 
-use sdv_mw_rs_comms::{ClientAttributes, ClientOptions, Communicate, RpcClient, UnitName};
+use crate::rpc_descriptor::client;
+use sdv_mw_rs_comms::{ClientOptions, Communicate, RpcClient};
 
-/// Creates an RPC client for a specified server.
+/// Creates an RPC client for a specified client descriptor.
 ///
-/// This function attempts to connect to an RPC server identified by its `UnitName`.
+/// This function attempts to connect to an RPC server identified by the descriptor.
 /// If the connection is successful, it returns a client stub that can be used to
 /// make remote procedure calls.
 ///
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
-/// * `server` - The `UnitName` of the RPC server to connect to.
+/// * `descriptor` - The client descriptor.
 /// * `options` - `ClientOptions` to configure the client.
 ///
 /// # Returns
 /// An `SdvResult` containing the RPC client stub of type `Client` on success.
-pub async fn create_rpc_client<Client: RpcClient>(
+pub async fn create_rpc_client<Descriptor: client::Descriptor>(
     comms: &dyn Communicate,
-    server: UnitName,
+    descriptor: &Descriptor,
     options: ClientOptions,
-) -> sdv_status_rs::SdvResult<Client> {
-    let attributes =
-        ClientAttributes::builder().server_name(server).client_options(options).build()?;
-    Ok(Client::new(comms.create_client_transport(&attributes).await?))
+) -> sdv_status_rs::SdvResult<Descriptor::ClientType> {
+    Ok(Descriptor::ClientType::new(
+        comms
+            .create_client_transport_for_channel(
+                &Descriptor::type_name()?,
+                descriptor.get_channel(),
+                &options,
+            )
+            .await?,
+    ))
 }

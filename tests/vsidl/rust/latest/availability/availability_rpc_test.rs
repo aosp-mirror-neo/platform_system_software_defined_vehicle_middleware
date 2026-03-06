@@ -24,9 +24,10 @@ mod test {
     use sdv::comms::id::ServiceFqin;
     use sdv::comms::ContextRef;
     use sdv::mw::clientlib;
-    use sdv::mw::{Availability, ClientOptions, SdvComms, UnitName};
+    use sdv::mw::{Availability, ClientOptions, SdvComms};
     use sdv::status::{SdvResult, SdvStatus, SdvStatusCode};
     // test catalog
+    use sdv_mw_rs_sdv_vsidl_rpc_test_tire_status_consumer::client;
     use sdv_mw_rs_sdv_vsidl_rpc_test_tire_status_producer::TireStatusProducer;
     use sdv_vsidl_rpc_test_tire_status_rpc::Interface;
     use vsidl_rpc_test_proto::tire_rpc::{
@@ -69,7 +70,6 @@ mod test {
         // is called beforehand.
         binder::ProcessState::start_thread_pool();
 
-        let service_unit_name = sdv_vsidl_rpc_test_tire_status_rpc::internal::DEFAULT_UNIT_NAME;
         let package_name = "sdv.vsidl.rpc.test";
         let server_bundle_name = "TireStatusProducer";
         let instance_name = "instance";
@@ -81,19 +81,11 @@ mod test {
         );
         let sdv_comms = Arc::new(SdvComms { context });
 
-        let server_unit_name = UnitName::builder()
-            .vm_name(context.get_self_fqin().get_sdv_vm_name())
-            .package_name(package_name)
-            .bundle_name(server_bundle_name)
-            .service_unit_name(service_unit_name)
-            .build()
-            .unwrap();
-
         // WHEN create registration event stream
         let mut registration_event_stream_before =
             clientlib::create_server_registration_event_stream(
                 sdv_comms.as_ref(),
-                server_unit_name.clone(),
+                client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS,
             )
             .await
             .unwrap();
@@ -112,7 +104,7 @@ mod test {
         let mut registration_event_stream_after =
             clientlib::create_server_registration_event_stream(
                 sdv_comms.as_ref(),
-                server_unit_name.clone(),
+                client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS,
             )
             .await
             .unwrap();
@@ -130,14 +122,9 @@ mod test {
         );
 
         // AND THEN the client can make a successful request
-        let client = clientlib::create_rpc_client::<sdv_vsidl_rpc_test_tire_status_rpc::Client>(
+        let client = clientlib::create_rpc_client(
             sdv_comms.as_ref(),
-            UnitName::builder()
-                .package_name(package_name)
-                .bundle_name(server_bundle_name)
-                .instance_name(instance_name)
-                .build()
-                .unwrap(),
+            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS,
             ClientOptions::default(),
         )
         .await
