@@ -86,19 +86,10 @@ class IConnection {
 public:
     virtual ~IConnection() = default;
 
-    // Disconnect terminates the connection.  It may block and will not return until the disconnect
-    // is complete.
-    //
-    // It is not required to call this function before destroying the connection, but doing so will
-    // guarantee that destruction does not block.
-    virtual void Disconnect() = 0;
-
     // Non-blocking request to initiate disconnection.
     //
     // Calling this will cause any in-progress (and subsequent) SendData and ReceiveData operations
     // to fail.
-    //
-    // Calling this does not guarantee that the destructor won't block.
     virtual void RequestDisconnect() = 0;
 
     virtual bool SendData(const void* buffer, size_t bytes_to_send) = 0;

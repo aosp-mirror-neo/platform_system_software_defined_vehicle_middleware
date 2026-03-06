@@ -20,7 +20,6 @@
 
 #include "remote_agent/remote_agent_topic_exporter.h"
 
-#include <android-base/scopeguard.h>
 #include <log/log.h>
 
 #include <algorithm>
@@ -49,6 +48,8 @@ RemoteAgentServerSession::RemoteAgentServerSession(IConnectionHolder connection,
     connection_thread_ =
             std::jthread([this, &handshaker, handshake_cb = std::move(handshake_cb)]() {
                 ConnectionThread(handshaker, std::move(handshake_cb));
+                std::unique_lock guard(connection_lock_);
+                connection_.reset();
             });
 }
 
@@ -58,12 +59,23 @@ RemoteAgentServerSession::~RemoteAgentServerSession() {
 }
 
 void RemoteAgentServerSession::RequestTerminate() {
-    connection_->RequestDisconnect();
+    std::unique_lock guard(connection_lock_);
+    if (connection_) {
+        connection_->RequestDisconnect();
+    }
+}
+
+bool RemoteAgentServerSession::IsTerminated() {
+    std::unique_lock guard(connection_lock_);
+    return !connection_;
 }
 
 void RemoteAgentServerSession::DumpStats(std::ostream& out_stream) const {
-    out_stream << std::format("\t{},{},{},{}\n", peer_vm_name_, connection_->ToString(),
-                              connection_->BytesSent(), connection_->BytesReceived());
+    std::unique_lock guard(connection_lock_);
+    if (connection_) {
+        out_stream << std::format("\t{},{},{},{}\n", peer_vm_name_, connection_->ToString(),
+                                  connection_->BytesSent(), connection_->BytesReceived());
+    }
 }
 
 bool RemoteAgentServerSession::HandleLastMessageRequest(const Payload_LastMessageRequest& request,
@@ -110,16 +122,6 @@ void RemoteAgentServerSession::ConnectionThread(
         const RemoteAgentHandshaker& handshaker,
         RemoteAgentServerSession::HandshakeCallback handshake_cb) {
     ALOGD("RemoteAgentServerSession(%s)::ConnectionThread started", peer_vm_name_.c_str());
-
-    android::base::ScopeGuard exit_guard([this]() {
-        // Do potentially-blocking Disconnect from ConnectionThread so that destruction
-        // doesn't have to wait on it and so that we don't depend on garbage collection to
-        // shut down server connection and allow ConnectionManager destruction to complete.
-        connection_->Disconnect();
-
-        // Ensure marked inactive on exit.
-        connection_thread_active_ = false;
-    });
 
     RawBuffer send_buffer(kDefaultBufferSize);
     // ReceivePayload() may later increase the buffer size if needed

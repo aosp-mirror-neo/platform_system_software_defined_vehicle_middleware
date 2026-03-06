@@ -315,7 +315,7 @@ TEST_F(RemoteAgentClientTest, ConnectionThread_ReconnectsAfterFailure) {
     }
 
     // Simulate connection failure.
-    connection_->Disconnect();
+    connection_->RequestDisconnect();
 
     ASSERT_EQ(reconnect_promise.get_future().wait_for(std::chrono::seconds(4)),
               std::future_status::ready);

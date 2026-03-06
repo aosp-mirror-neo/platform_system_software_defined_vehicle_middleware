@@ -36,16 +36,21 @@
 
 namespace android::sdv::dt::agent {
 
-GrpcClientConnection::GrpcClientConnection(ConnectionManager::EventHandler& event_handler,
-                                           const SocketAddressV4& addr, const std::string& target,
-                                           std::shared_ptr<grpc::Channel> channel) :
-      GrpcConnectionBase(event_handler),
-      peer_(addr),
-      target_(target),
-      channel_(channel),
-      stub_(std::make_unique<grpc::GenericStub>(channel_)),
-      context_(std::make_unique<grpc::ClientContext>()) {
-    stub_->PrepareBidiStreamingCall(context_.get(), kMethodName, grpc::StubOptions(), this);
+void GrpcClientConnection::Start(ConnectionManager::EventHandler& event_handler,
+                                 const SocketAddressV4& addr, const std::string& target,
+                                 std::shared_ptr<grpc::ChannelCredentials> credentials) {
+    grpc::ChannelArguments channel_args;
+    channel_args.SetSslTargetNameOverride(EncodeNameForCert(target));
+    // Allow for unlimited message size.
+    channel_args.SetMaxSendMessageSize(-1);
+    channel_args.SetMaxReceiveMessageSize(-1);
+    auto channel = grpc::CreateCustomChannel(addr.ToString(), std::move(credentials), channel_args);
+
+    auto conn = std::unique_ptr<GrpcClientConnection>(
+            new GrpcClientConnection(event_handler, addr, target, std::move(channel)));
+
+    conn->stub_->PrepareBidiStreamingCall(conn->context_.get(), kMethodName, grpc::StubOptions(),
+                                          conn.get());
 
     // GRPC requires "holds" if calling StartRead / StartWrite from outside of one of the
     // On* event handlers on the client reactor.  See:
@@ -55,38 +60,66 @@ GrpcClientConnection::GrpcClientConnection(ConnectionManager::EventHandler& even
     // We do call StartRead / StartWrite from outside those handlers, so we add a hold here
     // that will then be removed in DoGrpcFinish() during Disconnect or failed connection
     // cleanup.
-    ClientGenericBidiReactor::AddHold();
+    conn->AddHold();
 
-    StartCall();
+    conn->StartCall();
+
+    // Not a leak: After StartCall GRPC has ownership of the GrpcClientConnection object and
+    // guarantees that OnDone will be called on it.
+    conn.release();
 }
 
-// Need to call Disconnect() from here because it needs to call the GrpcClientConnection
-// implementations of DoGrpc*; if we called it from ~GrpcConnectionBase it'd run after this
-// destructor, when those methods are no longer available.
-GrpcClientConnection::~GrpcClientConnection() {
-    Disconnect();
-}
+GrpcClientConnection::GrpcClientConnection(ConnectionManager::EventHandler& event_handler,
+                                           const SocketAddressV4& addr, const std::string& target,
+                                           std::shared_ptr<grpc::Channel> channel) :
+      GrpcConnectionBase(),
+      event_handler_(event_handler),
+      peer_(addr),
+      target_(target),
+      stub_(std::make_unique<grpc::GenericStub>(std::move(channel))),
+      context_(std::make_unique<grpc::ClientContext>()) {}
 
 std::string GrpcClientConnection::ToString() const {
     return std::format("GrpcClientConnection({})", peer_.ToString());
 }
 
-void GrpcClientConnection::DoGrpcTryCancel() {
+void GrpcClientConnection::RequestDisconnect() {
     context_->TryCancel();
 }
-void GrpcClientConnection::DoGrpcFinish() {
-    ClientGenericBidiReactor::RemoveHold();
-}
+
 std::shared_ptr<const grpc::AuthContext> GrpcClientConnection::GetAuthContext() const {
     return context_->auth_context();
 }
 
 void GrpcClientConnection::OnReadInitialMetadataDone(bool success) {
-    ReportGrpcConnectResult(success);
+    if (!success) {
+        ALOGW("%s: Failure establishing connection", ToString().c_str());
+        event_handler_.OnConnectionManagerEvent(
+                base::unexpected(::sdv::SdvStatus(::sdv::SdvStatusCode::kUnavailable)));
+        RemoveHold();  // Release hold to allow finish.
+        return;
+    }
+
+    ALOGI("%s: Connection established", ToString().c_str());
+
+    // Since connect succeeded, send the connection to the client application.
+    event_handler_.OnConnectionManagerEvent(IConnectionHolder(this, [](IConnection* iconn) {
+        // This releaser function must not block, and we need to keep the connection around until
+        // GRPC is finished with it.  So instead of deleting it right away we tell GRPC that we're
+        // done with it, so that GRPC will finalize it and call OnDone, which can then delete.
+
+        // Get typed connection and verify that all read/write operations are terminated.
+        auto* gconn = static_cast<GrpcClientConnection*>(iconn);
+        CHECK(gconn->TryTerminateAllOperations());
+
+        // Release hold to allow GRPC to finish connection; this wll lead to OnDone.
+        gconn->RemoveHold();
+    }));
 }
 
 void GrpcClientConnection::OnDone(const grpc::Status& /*status*/) {
-    ReportGrpcDone();
+    // GRPC is done with the reactor so we can delete it.
+    delete this;
 }
 
 }  // namespace android::sdv::dt::agent

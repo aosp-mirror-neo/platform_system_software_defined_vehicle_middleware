@@ -36,26 +36,29 @@ namespace android::sdv::dt::agent {
 // Server-side specialization of GrpcConnectionBase.
 class GrpcServerConnection : public GrpcConnectionBase<grpc::ServerGenericBidiReactor> {
 public:
-    // Constructor for GrpcServerConnection.
-    GrpcServerConnection(ConnectionManager::EventHandler& event_handler,
-                         grpc::GenericCallbackServerContext* context);
-
-    // Destructor for GrpcServerConnection.
-    virtual ~GrpcServerConnection();
+    static GrpcServerConnection* Start(ConnectionManager::EventHandler& event_handler,
+                                       grpc::GenericCallbackServerContext* context);
 
     // Returns a string representation of the connection.
     std::string ToString() const;
 
+    // Lifecycle operation required by IConnection.
+    virtual void RequestDisconnect() override;
+
 private:
-    // Server-specific implementations of Grpc lifecycle operations required by GrpcConnectionBase.
-    void DoGrpcTryCancel();
-    void DoGrpcFinish();
+    GrpcServerConnection(ConnectionManager::EventHandler& event_handler,
+                         grpc::GenericCallbackServerContext* context);
+
+    // Server-specific implementations of operation required by GrpcConnectionBase.
     std::shared_ptr<const grpc::AuthContext> GetAuthContext() const;
 
-    // Forward Server-specific Grpc lifecycle events to GrpcConnectionBase.
+    // Called when GRPC has sent the initial metadata and connection may be ready for use.
     virtual void OnSendInitialMetadataDone(bool success) override;
+
+    // Called when GRPC is done with the connection.
     virtual void OnDone() override;
 
+    ConnectionManager::EventHandler& event_handler_;
     std::string peer_;
     grpc::GenericCallbackServerContext* context_;
 };

@@ -31,6 +31,8 @@
 #include <grpcpp/support/client_callback.h>
 #include <log/log.h>
 
+#include <future>
+
 namespace android::sdv::dt::agent {
 
 // GrpcOperationStateMachine
@@ -47,9 +49,6 @@ namespace android::sdv::dt::agent {
 // - Ensures we don't issue multiple simultaneous operations of a given type to Grpc
 //   (which it doesn't support), by having threads that want to start an operation wait
 //   for any in-progress operation to complete.
-//
-// - Enables clean connection shutdown by waiting for any outstanding Grpc operation to
-//   complete and for any other threads waiting to start an operation to depart.
 class GrpcOperationStateMachine {
 public:
     // Constructor for GrpcOperationStateMachine.
@@ -68,78 +67,41 @@ public:
     // The caller must forward any OnReadDone() or OnWriteDone() call to ReportGrpcResult().
     template <typename StartFn>
     std::optional<bool> RunOperation(std::unique_lock<std::mutex>& guard, StartFn start_op) {
-        // Wait for any current op to resolve (or terminate to start).
-        wait_count_++;
-        cv_.wait(guard, [this]() { return state_ != State::GRPC_WAIT; });
-        wait_count_--;
-
-        if (state_ != State::INACTIVE) {
-            ALOGE("Grpc %s requested but terminate in progress.  Aborting.", op_type_.c_str());
-            cv_.notify_all();
+        CHECK(guard.owns_lock() && guard.mutex() == &mutex_);
+        if (terminated_) {
+            ALOGE("Grpc %s requested but terminate already happened.  Aborting.", op_type_.c_str());
             return std::nullopt;
         }
-        state_ = State::GRPC_WAIT;
-        grpc_result_.reset();
 
+        grpc_result_ = std::promise<bool>();
         start_op();
-
-        cv_.wait(guard, [this]() { return grpc_result_.has_value(); });
-        bool success = *grpc_result_;
-
-        // Should still be in GRPC_WAIT unless WaitToTerminate() moved us to TERMINAL_GRPC_WAIT.
-        CHECK(state_ == State::GRPC_WAIT || state_ == State::TERMINAL_GRPC_WAIT);
-
-        // Go back to inactive unless op failed or terminate was requested (indicated by
-        // non-GRPC_WAIT state).
-        state_ = (success && state_ == State::GRPC_WAIT) ? State::INACTIVE
-                                                         : State::WAITING_THREADS_EXIT_WAIT;
-
-        // Wake up anyone who was waiting to start or to complete Terminate().
-        cv_.notify_all();
-
-        return success;
+        return grpc_result_.get_future().get();
     }
 
     // Reports the result of a pending operation.
     // Must be called from the reactor's OnWriteDone() or OnReadDone().
     void ReportGrpcResult(bool success);
 
-    // Terminate the state machine, waiting for any outstanding Grpc operation to complete
-    // and for any threads waiting to start an operation to exit.
-    void WaitToTerminate();
+    // Terminate state machine.  Caller must already hold lock.
+    void Terminate(std::unique_lock<std::mutex>& guard);
 
-    // Immediately terminate operation.  For use when there's an error that didn't manifest
-    // as a failed GRPC operation.
-    //
-    // The caller must hold a lock provided by Lock() to call this.
-    void ForceTerminate(std::unique_lock<std::mutex>& /*guard*/);
+    // Try to immediately terminate state machine.
+    // Returns true if state machine was terminated or was already in that state.
+    bool TryTerminate();
+
+    // Check whether state machine is terminated.
+    // Only used for testing, does not lock and tests must ensure no concurrent modification.
+    bool IsTerminated();
 
 private:
-    std::condition_variable cv_;
     mutable std::mutex mutex_;
 
-    // State diagram: http://shortn/_v3QIplkcvg
-    enum class State {
-        // No operation currently active.
-        INACTIVE,
-        // Grpc operation is in-progress, waiting for result.
-        GRPC_WAIT,
-        // Terminate was requested but there's an in-progress Grpc op that needs to complete.
-        TERMINAL_GRPC_WAIT,
-        // Terminate requested or Grpc op failed but there may be threads waiting to start.
-        WAITING_THREADS_EXIT_WAIT,
-        // Writing has terminated.
-        TERMINATED,
-    };
-    State state_ = State::INACTIVE;
+    const std::string op_type_;
 
-    std::string op_type_;
+    bool terminated_ = false;
 
     // Storage for Grpc result populated by ReportGrpcResult.
-    std::optional<bool> grpc_result_;
-
-    // Count of threads in RunOperation() waiting for a turn.
-    size_t wait_count_ = 0;
+    std::promise<bool> grpc_result_;
 };
 
 }  // namespace android::sdv::dt::agent

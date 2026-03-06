@@ -34,31 +34,32 @@
 
 namespace android::sdv::dt::agent {
 
-GrpcServerConnection::GrpcServerConnection(ConnectionManager::EventHandler& event_handler,
-                                           grpc::GenericCallbackServerContext* context) :
-      GrpcConnectionBase(event_handler), peer_(context->peer()), context_(context) {
+GrpcServerConnection* GrpcServerConnection::Start(ConnectionManager::EventHandler& event_handler,
+                                                  grpc::GenericCallbackServerContext* context) {
+    auto conn =
+            std::unique_ptr<GrpcServerConnection>(new GrpcServerConnection(event_handler, context));
+
     // Trigger explicit send of initial metadata so that we'll get an OnSendInitialMetadataDone
     // event to tell us when the connection is ready and we can pass it to the event handler.
-    StartSendInitialMetadata();
+    conn->StartSendInitialMetadata();
+
+    // Not a leak:  GRPC will receive this pointer and guarantee that OnDone is called.
+    return conn.release();
 }
 
-// Need to call Disconnect() from here because it needs to call the GrpcServerConnection
-// implementations of DoGrpc*; if we called it from ~GrpcConnectionBase it'd run after this
-// destructor when those methods were no longer available.
-GrpcServerConnection::~GrpcServerConnection() {
-    Disconnect();
-}
+GrpcServerConnection::GrpcServerConnection(ConnectionManager::EventHandler& event_handler,
+                                           grpc::GenericCallbackServerContext* context) :
+      GrpcConnectionBase(),
+      event_handler_(event_handler),
+      peer_(context->peer()),
+      context_(context) {}
 
 std::string GrpcServerConnection::ToString() const {
     return std::format("GrpcServerConnection({})", peer_);
 }
 
-void GrpcServerConnection::DoGrpcTryCancel() {
+void GrpcServerConnection::RequestDisconnect() {
     context_->TryCancel();
-}
-
-void GrpcServerConnection::DoGrpcFinish() {
-    Finish(grpc::Status::CANCELLED);
 }
 
 std::shared_ptr<const grpc::AuthContext> GrpcServerConnection::GetAuthContext() const {
@@ -66,11 +67,33 @@ std::shared_ptr<const grpc::AuthContext> GrpcServerConnection::GetAuthContext() 
 }
 
 void GrpcServerConnection::OnSendInitialMetadataDone(bool success) {
-    ReportGrpcConnectResult(success);
+    if (!success) {
+        ALOGW("%s: Failure establishing connection", ToString().c_str());
+        // Release hold to allow connection to finish.
+        Finish(grpc::Status::CANCELLED);
+        return;
+    }
+
+    ALOGI("%s: Connection established", ToString().c_str());
+
+    // Since connect succeeded, send the connection to the client application.
+    event_handler_.OnConnectionManagerEvent(IConnectionHolder(this, [](IConnection* iconn) {
+        // This releaser function must not block, and we need to keep the connection around until
+        // GRPC is finished with it.  So instead of deleting it right away we tell GRPC to finish it
+        // done with it, so that GRPC will finalize it and call OnDone, which can then delete.
+
+        // Get typed pointer and verify that all read/write operations are terminated.
+        auto* gconn = static_cast<GrpcServerConnection*>(iconn);
+        CHECK(gconn->TryTerminateAllOperations());
+
+        // This will lead to GRPC calling OnDone.
+        gconn->Finish(grpc::Status::CANCELLED);
+    }));
 }
 
 void GrpcServerConnection::OnDone() {
-    ReportGrpcDone();
+    // GRPC is done with the reactor so we can delete it.
+    delete this;
 }
 
 }  // namespace android::sdv::dt::agent

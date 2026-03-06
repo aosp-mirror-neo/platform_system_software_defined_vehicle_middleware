@@ -48,10 +48,6 @@ public:
         // We want to mock RequestDisconnect so we can check for it being called, but we also want
         // a default behavior that will generate SendData / ReceiveData failures as will happen in
         // the real impl.
-        ON_CALL((*this), Disconnect()).WillByDefault([this]() {
-            EnqueueReceiveFailure();
-            SetSendDataReturnValue(false);
-        });
         ON_CALL((*this), RequestDisconnect()).WillByDefault([this]() {
             EnqueueReceiveFailure();
             SetSendDataReturnValue(false);
@@ -59,7 +55,6 @@ public:
     }
 
     MOCK_METHOD(void, RequestDisconnect, (), (override));
-    MOCK_METHOD(void, Disconnect, (), (override));
     MOCK_METHOD(size_t, BytesSent, (), (const, override));
     MOCK_METHOD(size_t, BytesReceived, (), (const, override));
     MOCK_METHOD(std::optional<std::string>, AuthenticatedVmName, (), (const, override));
