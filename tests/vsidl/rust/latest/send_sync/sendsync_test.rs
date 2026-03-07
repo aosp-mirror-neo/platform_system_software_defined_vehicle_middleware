@@ -24,14 +24,12 @@ mod test {
     // sdv
     use sdv::comms::id::ServiceFqin;
     use sdv::comms::ContextRef;
-    use sdv::mw::{
-        clientlib, Availability, ClientOptions, RpcClient, SdvComms, SubscribeOptions, UnitName,
-    };
+    use sdv::mw::{clientlib, Availability, ClientOptions, SdvComms, SubscribeOptions};
     use sdv::status::SdvResult;
     // test catalog
     use sdv_mw_rs_sdv_vsidl_sendsync_test_bundle_one::{publisher as publisher_one, BundleOne};
     use sdv_mw_rs_sdv_vsidl_sendsync_test_bundle_two::{
-        publisher as publisher_two, subscriber, BundleTwo,
+        client, publisher as publisher_two, subscriber, BundleTwo,
     };
     use vsidl_sendsync_test_proto::tire::TirePressure;
     use vsidl_sendsync_test_proto::tire_rpc::GetTirePressureResponse;
@@ -165,29 +163,27 @@ mod test {
             .publish(&TirePressure { pressure: 0, ..Default::default() })
             .expect("publisher pulishing failed.");
 
-        let mut interval = interval(Duration::from_millis(200));
-
         // Wait for client availability, to ensure create_client API is used.
-        loop {
-            interval.tick().await;
-            if clientlib::create_rpc_client::<sdv_vsidl_sendsync_test_tire_status_rpc::Client>(
-                comms.as_ref(),
-                UnitName::builder()
-                    .package_name("sdv.vsidl.sendsync.test")
-                    .bundle_name("BundleOne")
-                    .service_unit_name(
-                        sdv_vsidl_sendsync_test_other_tire_status_rpc::Client::DEFAULT_UNIT_NAME,
-                    )
-                    .build()
-                    .unwrap(),
-                ClientOptions::default(),
-            )
-            .await
-            .is_ok()
-            {
+        let mut stream = clientlib::create_server_registration_event_stream(
+            comms.as_ref(),
+            client::Descriptor::<sdv_vsidl_sendsync_test_other_tire_status_rpc::Client>::OTHER_TIRE_STATUS,
+        )
+        .await
+        .expect("Server registration event stream creation failed");
+
+        while let Some(event) = stream.next().await {
+            if event == Availability::Available {
                 break;
             }
         }
+
+        clientlib::create_rpc_client(
+            comms.as_ref(),
+            client::Descriptor::<sdv_vsidl_sendsync_test_other_tire_status_rpc::Client>::OTHER_TIRE_STATUS,
+            ClientOptions::default(),
+        )
+        .await
+        .expect("create_rpc_client failed");
 
         // Check publication availability.
         let mut availability_stream = clientlib::create_registration_event_stream(

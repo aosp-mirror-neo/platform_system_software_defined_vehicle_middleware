@@ -24,10 +24,10 @@ mod test {
     // sdv
     use sdv::comms::id::ServiceFqin;
     use sdv::comms::ContextRef;
-    use sdv::mw::clientlib;
-    use sdv::mw::{ClientOptions, SdvComms, UnitName};
+    use sdv::mw::{clientlib, Availability, ClientOptions, SdvComms};
     use sdv::status::{SdvResult, SdvStatus, SdvStatusCode};
     // test catalog
+    use sdv_mw_rs_sdv_vsidl_rpc_test_tire_status_consumer::client;
     use sdv_mw_rs_sdv_vsidl_rpc_test_tire_status_producer::TireStatusProducer;
     use vsidl_rpc_test_proto::tire_rpc::{
         GetTirePressureResponse, GetTireStatusRequest, TireLocation,
@@ -127,14 +127,22 @@ mod test {
             .unwrap();
 
         // AND GIVEN we have a client for TireStatus.
-        let client = clientlib::create_rpc_client::<sdv_vsidl_rpc_test_tire_status_rpc::Client>(
+        let mut stream = clientlib::create_server_registration_event_stream(
             sdv_comms.as_ref(),
-            UnitName::builder()
-                .package_name(package_name)
-                .bundle_name(server_bundle_name)
-                .instance_name(instance_name)
-                .build()
-                .unwrap(),
+            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS,
+        )
+        .await
+        .unwrap();
+
+        while let Some(event) = stream.next().await {
+            if event == Availability::Available {
+                break;
+            }
+        }
+
+        let client = clientlib::create_rpc_client(
+            sdv_comms.as_ref(),
+            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS,
             ClientOptions::default(),
         )
         .await
@@ -177,7 +185,7 @@ mod test {
         // Unfortunately drop() just initiates the destruction of server. There are
         // no guarantees that server stops accepting new connections on drop() return.
         // So we have to wait for a while.
-        tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
         // WHEN calling the remote method of a dropped server.
         let location = TireLocation::FRONT_RIGHT;

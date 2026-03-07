@@ -31,6 +31,8 @@ pub use publish::*;
 /// RPC
 pub mod rpc_client;
 pub use rpc_client::*;
+pub mod rpc_descriptor;
+pub use rpc_descriptor::client;
 pub mod rpc_server;
 pub use rpc_server::*;
 

@@ -227,7 +227,7 @@ impl PublisherAttributes {
         &self.metadata
     }
     /// publisher topic name
-    pub fn get_topic_name(&self) -> &String {
+    pub fn get_topic_name(&self) -> &str {
         &self.topic_name
     }
 }
@@ -270,10 +270,27 @@ impl PublisherAttributesBuilder {
                 "type_name must be set",
             ));
         };
+
+        // LINT.IfChange(set_multipub_topic)
+        let topic_name = if self.metadata.is_multipub() && self.topic_name.is_empty() {
+            // Multipub is a PDK29 Middleware-only feature, where the subscriber-side multiplexes by-type.
+            // Ensure all PDK29 Multipub Publishers of the same Message register the same topic string, to
+            // ensure forward-compatibility with SOA.
+            crate::format_to_kebab_case(
+                type_name.get_package_name(),
+                type_name.get_type_name(),
+                "unique",
+            )
+        } else {
+            // If topic_name is not set, it will be set in SD.
+            self.topic_name
+        };
+        // LINT.ThenChange(software_defined_vehicle/vsidl/language/src/visitors/convert_channel_to_topic.rs:set_multipub_topic)
+
         Ok(PublisherAttributes {
             publication_name: self.publication_name,
             type_name,
-            topic_name: self.topic_name,
+            topic_name,
             metadata: self.metadata,
         })
     }
@@ -810,6 +827,32 @@ mod test {
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().status_code(), SdvStatusCode::InvalidArgument);
+    }
+
+    #[test]
+    fn test_publisher_attributes_builder_multipub_topic() {
+        let publication_name = "some-publication";
+        let package_name = "com.android.test";
+        let type_name_str = "TestMessage";
+        let type_name = TypeName::builder()
+            .package_name(package_name)
+            .type_name(type_name_str)
+            .build()
+            .unwrap();
+        let metadata = PublisherMetadata::builder().is_multipub(true).build().unwrap();
+
+        // Topic name is empty, so it should be generated
+        let result = PublisherAttributes::builder()
+            .publication_name(publication_name)
+            .type_name(type_name)
+            .metadata(metadata)
+            .build();
+
+        assert!(result.is_ok());
+        let publisher_attributes = result.unwrap();
+        // com.android.test -> com-android-test, TestMessage -> test-message, suffix -> unique
+        // combined: com-android-test-test-message-unique
+        assert_eq!(publisher_attributes.get_topic_name(), "com-android-test-test-message-unique");
     }
 
     #[test]
