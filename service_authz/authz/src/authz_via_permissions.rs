@@ -18,7 +18,7 @@ use crate::authz_service::ServiceUnitRegistry;
 use crate::{AclPolicyProvider, AuthzResult};
 use log::error;
 use sdv_comms_id::{
-    names::{PackageName, ServiceUnitName, UnitTypeName},
+    names::{PackageName, ServiceUnitName, TopicName, UnitTypeName},
     ServiceFqin,
 };
 use sdv_comms_sd::discovery::UnitType;
@@ -26,6 +26,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use google_sdv_identity::aidl::google::sdv::identity::ServiceFqin::ServiceFqin as ServiceFqinAidl;
+use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::metadata::ApplicationMetadata::{
+    ApplicationMetadata, TypedMetadata::TypedMetadata};
 use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition;
 
 /// AuthzViaPermissions is an entry point for permission-based authorization checks.
@@ -105,29 +107,116 @@ impl AuthzViaPermissions {
             }
         };
 
-        if subject_policy.can_call(&object_unit_type, &object_service_unit_name) {
-            return AuthzResult::Permitted(format!(
-                "Permitted by 'client' permission on Unit Type '{}'",
-                object_unit_type
-            ));
-        }
+        match &object_sud.appMetadata.typedMetadata {
+            TypedMetadata::ServerUnit(_) => {
+                if subject_policy.can_call(&object_unit_type, &object_service_unit_name) {
+                    AuthzResult::Permitted(format!(
+                        "Permitted by 'client' permission on Unit Type '{}'",
+                        object_unit_type
+                    ))
+                } else {
+                    AuthzResult::ExplicitlyDenied(format!(
+                        "Subject '{}' lacks 'client' permission for service unit '{}' with unit type '{}'",
+                        subject_fqin, object_service_unit_name.name(), object_unit_type
+                    ))
+                }
+            }
 
-        AuthzResult::ExplicitlyDenied(format!(
-            "Subject '{}' lacks 'client' permission for service unit '{}' with unit type '{}'",
-            subject_fqin,
-            object_service_unit_name.name(),
-            object_unit_type
-        ))
+            TypedMetadata::PublisherUnit(publisher_metadata) => {
+                let topic_name = match TopicName::from_str(&publisher_metadata.topic_name) {
+                    Ok(tn) => tn,
+                    Err(e) => {
+                        return AuthzResult::ImplicitlyDenied(format!("Invalid Topic: {:?}", e))
+                    }
+                };
+
+                if subject_policy.can_subscribe(&object_unit_type, &topic_name) {
+                    AuthzResult::Permitted(format!(
+                        "Permitted by 'subscriber' permission on Unit Type '{}' for topic '{}'",
+                        object_unit_type, topic_name
+                    ))
+                } else {
+                    AuthzResult::ExplicitlyDenied(format!(
+                        "Subject '{}' lacks 'subscriber' permission for topic '{}'",
+                        subject_fqin, topic_name
+                    ))
+                }
+            }
+        }
     }
 
     /// Returns Subject FQIN authorization result for the Object Unit Type.
     pub fn check_authorization_for_unit_type(
         &self,
-        _subject_fqin: &ServiceFqin,
-        _object_package_name: &PackageName,
-        _object_unit_type_name: &UnitTypeName,
+        subject_fqin: &ServiceFqin,
+        object_package_name: &PackageName,
+        object_unit_type_name: &UnitTypeName,
+        app_metadata: &ApplicationMetadata,
+        service_unit_name: &ServiceUnitName,
     ) -> AuthzResult {
-        AuthzResult::ImplicitlyDenied("permissions check not implemented".to_string())
+        let subject_policy = match self.provider.get_acl_policy(
+            subject_fqin.vm_name(),
+            subject_fqin.package_name(),
+            Some(subject_fqin.service_name()),
+        ) {
+            Ok(policy) => policy,
+            Err(e) => {
+                return AuthzResult::ImplicitlyDenied(format!(
+                    "ACL policy not found for subject '{}': {}",
+                    subject_fqin, e
+                ));
+            }
+        };
+
+        let object_unit_type = match UnitType::builder()
+            .package_name(object_package_name.to_string())
+            .unit_type_name(object_unit_type_name.to_string())
+            .build()
+        {
+            Ok(ut) => ut,
+            Err(_) => return AuthzResult::ImplicitlyDenied("Invalid UnitType data".to_string()),
+        };
+
+        match &app_metadata.typedMetadata {
+            TypedMetadata::ServerUnit(_) => {
+                if subject_policy.can_serve(&object_unit_type, service_unit_name) {
+                    AuthzResult::Permitted(format!(
+                        "Permitted by 'server' permission on Unit Type '{}' with service_unit_name {}",
+                        object_unit_type,
+                        service_unit_name
+                    ))
+                } else {
+                    AuthzResult::ExplicitlyDenied(format!(
+                        "Subject '{}' lacks 'server' permission for service unit '{}' on unit type '{}'",
+                        subject_fqin, service_unit_name, object_unit_type
+                    ))
+                }
+            }
+
+            TypedMetadata::PublisherUnit(publisher_metadata) => {
+                let topic_name = match TopicName::from_str(&publisher_metadata.topic_name) {
+                    Ok(tn) => tn,
+                    Err(e) => {
+                        return AuthzResult::ImplicitlyDenied(format!(
+                            "Invalid TopicName '{}' in publisher metadata: {:?}",
+                            publisher_metadata.topic_name, e
+                        ));
+                    }
+                };
+
+                if subject_policy.can_publish(&object_unit_type, &topic_name) {
+                    AuthzResult::Permitted(format!(
+                        "Permitted by 'publisher' permission on Unit Type '{}' for topic '{}'",
+                        object_unit_type, topic_name
+                    ))
+                } else {
+                    AuthzResult::ExplicitlyDenied(format!(
+                        "Subject '{}' lacks 'publisher' permission for topic '{}' on unit type '{}'",
+                        subject_fqin, topic_name, object_unit_type
+                    ))
+                }
+            }
+        }
     }
 }
 
@@ -138,6 +227,8 @@ mod tests {
     use crate::TestAclPolicyProvider;
     use crate::feature_flags;
     use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::UnitType::UnitType as AidlUnitType;
+    use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::metadata::
+    {PublisherUnitMetadata::PublisherUnitMetadata, ServerUnitMetadata::ServerUnitMetadata};
     use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition;
     use protobuf::text_format;
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
@@ -365,6 +456,371 @@ mod tests {
             AuthzResult::ExplicitlyDenied(msg) => {
                 assert!(msg.contains("lacks 'client' permission"));
                 assert!(msg.contains("TargetType"));
+            }
+            _ => panic!("Expected ExplicitlyDenied, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_check_authorization_unit_type_server_success() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+
+        let mut test_provider = TestAclPolicyProvider::new();
+        test_provider.set_authz_policy(
+            VmName::from_str("vm").unwrap(),
+            PackageName::from_str("com.subject").unwrap(),
+            Some(ServiceBundleName::from_str("SubjectBundle").unwrap()),
+            AclPolicyModel::try_from(
+                text_format::parse_from_str::<AclPolicyProto>(
+                    r#"server { service: "com.obj.Type" channel: "my-unit" }"#,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let service = AuthzViaPermissions::new(
+            Arc::new(test_provider),
+            Arc::new(MockRegistry { definition: Default::default() }),
+        );
+
+        let app_metadata = ApplicationMetadata {
+            typedMetadata: TypedMetadata::ServerUnit(ServerUnitMetadata::default()),
+            ..Default::default()
+        };
+
+        let result = service.check_authorization_for_unit_type(
+            &ServiceFqin::from_str("vm:com.subject.SubjectBundle/s").unwrap(),
+            &PackageName::from_str("com.obj").unwrap(),
+            &UnitTypeName::from_str("Type").unwrap(),
+            &app_metadata,
+            &ServiceUnitName::from_str("my-unit").unwrap(),
+        );
+
+        assert!(matches!(result, AuthzResult::Permitted(_)));
+    }
+
+    #[test]
+    fn test_check_authorization_unit_type_publisher_success() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+
+        let mut test_provider = TestAclPolicyProvider::new();
+        test_provider.set_authz_policy(
+            VmName::from_str("vm").unwrap(),
+            PackageName::from_str("com.pub").unwrap(),
+            Some(ServiceBundleName::from_str("PubBundle").unwrap()),
+            AclPolicyModel::try_from(
+                text_format::parse_from_str::<AclPolicyProto>(
+                    r#"publisher { message: "com.obj.Type" topic: "telemetry" }"#,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let service = AuthzViaPermissions::new(
+            Arc::new(test_provider),
+            Arc::new(MockRegistry { definition: Default::default() }),
+        );
+
+        let app_metadata = ApplicationMetadata {
+            typedMetadata: TypedMetadata::PublisherUnit(PublisherUnitMetadata {
+                topic_name: "telemetry".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = service.check_authorization_for_unit_type(
+            &ServiceFqin::from_str("vm:com.pub.PubBundle/s").unwrap(),
+            &PackageName::from_str("com.obj").unwrap(),
+            &UnitTypeName::from_str("Type").unwrap(),
+            &app_metadata,
+            &ServiceUnitName::from_str("any-unit").unwrap(),
+        );
+
+        if let AuthzResult::Permitted(msg) = result {
+            assert!(msg.contains("Permitted by 'publisher'"));
+        } else {
+            panic!("Expected Permitted for publisher, got {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_check_authorization_unit_type_server_denied_wrong_unit() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+
+        let mut test_provider = TestAclPolicyProvider::new();
+        // Policy allows 'server' on 'correct-unit'
+        test_provider.set_authz_policy(
+            VmName::from_str("vm").unwrap(),
+            PackageName::from_str("com.subject").unwrap(),
+            Some(ServiceBundleName::from_str("SubjectBundle").unwrap()),
+            AclPolicyModel::try_from(
+                text_format::parse_from_str::<AclPolicyProto>(
+                    r#"server { service: "com.obj.Type" channel: "correct-unit" }"#,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let service = AuthzViaPermissions::new(
+            Arc::new(test_provider),
+            Arc::new(MockRegistry { definition: Default::default() }),
+        );
+
+        let app_metadata = ApplicationMetadata {
+            typedMetadata: TypedMetadata::ServerUnit(ServerUnitMetadata::default()),
+            ..Default::default()
+        };
+
+        // Subject attempts to serve on 'wrong-unit'
+        let result = service.check_authorization_for_unit_type(
+            &ServiceFqin::from_str("vm:com.subject.SubjectBundle/s").unwrap(),
+            &PackageName::from_str("com.obj").unwrap(),
+            &UnitTypeName::from_str("Type").unwrap(),
+            &app_metadata,
+            &ServiceUnitName::from_str("wrong-unit").unwrap(),
+        );
+
+        match result {
+            AuthzResult::ExplicitlyDenied(msg) => {
+                assert!(msg.contains("lacks 'server' permission"));
+                assert!(msg.contains("wrong-unit"));
+            }
+            _ => panic!("Expected ExplicitlyDenied for wrong server unit, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_check_authorization_unit_type_publisher_denied_wrong_topic() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+
+        let mut test_provider = TestAclPolicyProvider::new();
+        // Policy allows publishing to 'telemetry'
+        test_provider.set_authz_policy(
+            VmName::from_str("vm").unwrap(),
+            PackageName::from_str("com.pub").unwrap(),
+            Some(ServiceBundleName::from_str("PubBundle").unwrap()),
+            AclPolicyModel::try_from(
+                text_format::parse_from_str::<AclPolicyProto>(
+                    r#"publisher { message: "com.obj.Type" topic: "telemetry" }"#,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let service = AuthzViaPermissions::new(
+            Arc::new(test_provider),
+            Arc::new(MockRegistry { definition: Default::default() }),
+        );
+
+        // Subject attempts to publish to 'secret-topic'
+        let app_metadata = ApplicationMetadata {
+            typedMetadata: TypedMetadata::PublisherUnit(PublisherUnitMetadata {
+                topic_name: "secret-topic".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = service.check_authorization_for_unit_type(
+            &ServiceFqin::from_str("vm:com.pub.PubBundle/s").unwrap(),
+            &PackageName::from_str("com.obj").unwrap(),
+            &UnitTypeName::from_str("Type").unwrap(),
+            &app_metadata,
+            &ServiceUnitName::from_str("any-unit").unwrap(),
+        );
+
+        match result {
+            AuthzResult::ExplicitlyDenied(msg) => {
+                assert!(msg.contains("lacks 'publisher' permission"));
+                assert!(msg.contains("secret-topic"));
+            }
+            _ => panic!("Expected ExplicitlyDenied for wrong topic, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_check_authorization_unit_type_server_denied_wrong_type() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+
+        let mut test_provider = TestAclPolicyProvider::new();
+        // Policy allows serving 'com.obj.AllowedType'
+        test_provider.set_authz_policy(
+            VmName::from_str("vm").unwrap(),
+            PackageName::from_str("com.subject").unwrap(),
+            Some(ServiceBundleName::from_str("SubjectBundle").unwrap()),
+            AclPolicyModel::try_from(
+                text_format::parse_from_str::<AclPolicyProto>(
+                    r#"server { service: "com.obj.AllowedType" channel: "my-unit" }"#,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let service = AuthzViaPermissions::new(
+            Arc::new(test_provider),
+            Arc::new(MockRegistry { definition: Default::default() }),
+        );
+
+        let app_metadata = ApplicationMetadata {
+            typedMetadata: TypedMetadata::ServerUnit(ServerUnitMetadata::default()),
+            ..Default::default()
+        };
+
+        // Subject attempts to serve 'com.obj.ForbiddenType' on the correct unit name
+        let result = service.check_authorization_for_unit_type(
+            &ServiceFqin::from_str("vm:com.subject.SubjectBundle/s").unwrap(),
+            &PackageName::from_str("com.obj").unwrap(),
+            &UnitTypeName::from_str("ForbiddenType").unwrap(),
+            &app_metadata,
+            &ServiceUnitName::from_str("my-unit").unwrap(),
+        );
+
+        match result {
+            AuthzResult::ExplicitlyDenied(msg) => {
+                assert!(msg.contains("lacks 'server' permission"));
+                assert!(msg.contains("ForbiddenType"));
+            }
+            _ => panic!("Expected ExplicitlyDenied for wrong unit type, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_check_authorization_subscribe_success() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+
+        // 1. Setup Policy: Allow subject to subscribe to 'com.sensor.Temp' on topic 'ambient'
+        let mut test_provider = TestAclPolicyProvider::new();
+        test_provider.set_authz_policy(
+            VmName::from_str("vm").unwrap(),
+            PackageName::from_str("com.subscriber").unwrap(),
+            Some(ServiceBundleName::from_str("SubBundle").unwrap()),
+            AclPolicyModel::try_from(
+                text_format::parse_from_str::<AclPolicyProto>(
+                    r#"
+                        subscriber {
+                            message: "com.sensor.Temp"
+                            topic: "ambient"
+                        }
+                    "#,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+
+        // 2. Setup Mock Registry with a Publisher SUD
+        let publisher_definition = ServiceUnitDefinition {
+            unitType: AidlUnitType {
+                sdvPackageName: "com.sensor".to_string(),
+                serviceBundleName: "SensorBundle".to_string(),
+                typeName: "Temp".to_string(),
+            },
+            serviceUnitName: "temp-sensor-unit".to_string(),
+            appMetadata: ApplicationMetadata {
+                typedMetadata: TypedMetadata::PublisherUnit(PublisherUnitMetadata {
+                    topic_name: "ambient".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let registry = Arc::new(MockRegistry { definition: publisher_definition });
+
+        let service = AuthzViaPermissions::new(Arc::new(test_provider), registry);
+
+        // 3. Perform Check
+        let result = service.check_authorization_for_service_unit(
+            &ServiceFqin::from_str("vm:com.subscriber.SubBundle/sub").unwrap(),
+            &ServiceFqin::from_str("vm:com.sensor.SensorBundle/pub").unwrap(),
+            &ServiceUnitName::from_str("temp-sensor-unit").unwrap(),
+        );
+
+        // 4. Assert Success
+        match result {
+            AuthzResult::Permitted(msg) => {
+                assert!(msg.contains("Permitted by 'subscriber' permission"));
+                assert!(msg.contains("ambient"));
+            }
+            _ => panic!("Expected Permitted, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_check_authorization_subscribe_denied_wrong_topic() {
+        if !feature_flags::enable_permissions() {
+            return;
+        }
+
+        // 1. Setup Policy: Allow subscribing to 'ambient', but object is 'internal'
+        let mut test_provider = TestAclPolicyProvider::new();
+        test_provider.set_authz_policy(
+            VmName::from_str("vm").unwrap(),
+            PackageName::from_str("com.subscriber").unwrap(),
+            Some(ServiceBundleName::from_str("SubBundle").unwrap()),
+            AclPolicyModel::try_from(
+                text_format::parse_from_str::<AclPolicyProto>(
+                    r#"
+                        subscriber {
+                            message: "com.sensor.Temp"
+                            topic: "ambient"
+                        }
+                    "#,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let publisher_definition = ServiceUnitDefinition {
+            unitType: AidlUnitType {
+                sdvPackageName: "com.sensor".to_string(),
+                serviceBundleName: "SensorBundle".to_string(),
+                typeName: "Temp".to_string(),
+            },
+            serviceUnitName: "temp-sensor-unit".to_string(),
+            appMetadata: ApplicationMetadata {
+                typedMetadata: TypedMetadata::PublisherUnit(PublisherUnitMetadata {
+                    topic_name: "internal-secret-topic".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let registry = Arc::new(MockRegistry { definition: publisher_definition });
+        let service = AuthzViaPermissions::new(Arc::new(test_provider), registry);
+
+        // 2. Perform Check
+        let result = service.check_authorization_for_service_unit(
+            &ServiceFqin::from_str("vm:com.subscriber.SubBundle/sub").unwrap(),
+            &ServiceFqin::from_str("vm:com.sensor.SensorBundle/pub").unwrap(),
+            &ServiceUnitName::from_str("temp-sensor-unit").unwrap(),
+        );
+
+        // 3. Assert Denial
+        match result {
+            AuthzResult::ExplicitlyDenied(msg) => {
+                assert!(msg.contains("lacks 'subscriber' permission"));
+                assert!(msg.contains("internal-secret-topic"));
             }
             _ => panic!("Expected ExplicitlyDenied, got {:?}", result),
         }
