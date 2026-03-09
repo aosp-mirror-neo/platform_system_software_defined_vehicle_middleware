@@ -116,6 +116,14 @@ std::optional<std::string> RemoteAgentHandshaker::PerformHandshake(
         return std::nullopt;
     }
 
+    // We don't auto-reject peers with a *higher* version number; it's up to such a peer
+    // to decide if they're compatible with us.
+    if (ping_payload->version_number > proto::kVersionNumber) {
+        ALOGE("PerformHandshake(%s): Peer has higher version # (%u vs %u).  Peer will determine "
+              "compatibility.",
+              connection.ToString().c_str(), ping_payload->version_number, proto::kVersionNumber);
+    }
+
     const auto& ping_peer_vm_name = ping_payload->vm_name;
 
     // Check that ping VM name matches expected vm name, if any (only for outbound connections)

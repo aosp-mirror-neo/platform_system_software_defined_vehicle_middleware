@@ -25,28 +25,31 @@
 
 namespace android::sdv::dt::agent::proto {
 
+// Protocol version number
+static const uint32_t kVersionNumber = 1;
+
 struct Payload {
     enum Type {
         Unknown = -1,
         // The first part of inter-agent hand shake and initial check
         // This message is sent to the counterparty when we have just established a connection.
-        Ping,
+        Ping = 1,
         // The second part of inter-agent hand shake and initial check
         // This message is sent to the counterparty when we are ready to receive messages.
-        Pong,
+        Pong = 2,
         // Requests a remote agent to subscribe to its local topic
-        SubscribeRequest,
+        SubscribeRequest = 3,
         // Response to SubscribeRequest
-        SubscribeResult,
+        SubscribeResult = 4,
         // Export broker sends messages to subscribers' agents
-        TopicRawData,
+        TopicRawData = 5,
         // Export broker informs subscribers' agents if their topic is destroyed
-        TopicDestroyed,
+        TopicDestroyed = 6,
         // Requests a remote agent to send the last message of the specified topic
-        LastMessageRequest,
+        LastMessageRequest = 7,
         // Response to LastMessageRequest. Contains the result of the request and, if successful,
         // a buffer with the last message.
-        LastMessageResult,
+        LastMessageResult = 8,
     };
 
     const Type type;
@@ -81,17 +84,24 @@ struct Payload {
 struct Payload_Ping : public Payload {
     static constexpr Type payload_type = Type::Ping;
 
+    uint32_t version_number = kVersionNumber;
     std::string vm_name;
     Payload_Ping() : Payload(Ping) {}
     Payload_Ping(const std::string& vm_name) : Payload(Ping), vm_name(vm_name) {}
 
     uint32_t Size() const override {
-        return Payload::Size() + static_cast<uint32_t>(sizeof(uint16_t) + vm_name.length());
+        return Payload::Size() +
+                static_cast<uint32_t>(sizeof(version_number) +
+                                      /* vm_name length*/ sizeof(uint16_t) + vm_name.length());
     }
 
-    bool Serialize(BufferWriter& bw) const override { return bw.Write(vm_name); }
+    bool Serialize(BufferWriter& bw) const override {
+        return bw.Write(version_number) && bw.Write(vm_name);
+    }
 
-    bool Deserialize(BufferReader& br) override { return br.Read(vm_name); }
+    bool Deserialize(BufferReader& br) override {
+        return br.Read(version_number) && br.Read(vm_name);
+    }
 };
 
 struct Payload_Pong : public Payload {

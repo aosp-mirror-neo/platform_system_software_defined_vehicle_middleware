@@ -126,6 +126,7 @@ std::unique_ptr<PayloadType> SerializeAndDeserialize(const PayloadType& payload)
 TEST(DataTunnelProto, Serialization_Ping) {
     auto payload = SerializeAndDeserialize(proto::Payload_Ping("vmname2"));
     ASSERT_TRUE(!!payload);
+    EXPECT_EQ(payload->version_number, proto::kVersionNumber);
     EXPECT_EQ(payload->vm_name, "vmname2");
 }
 
