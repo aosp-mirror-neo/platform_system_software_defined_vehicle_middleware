@@ -92,7 +92,7 @@ std::optional<std::string> RemoteAgentHandshaker::PerformHandshake(
     RawBuffer send_buffer(kDefaultBufferSize);
 
     // Send our Ping message
-    if (!SendPayload(connection, proto::Payload_Ping(self_vm_name_), 0, send_buffer)) {
+    if (!SendPayload(connection, proto::Payload_Ping(self_vm_name_), send_buffer)) {
         ALOGE("PerformHandshake(%s): Unable to send Ping.", connection.ToString().c_str());
         return std::nullopt;
     }
@@ -137,7 +137,7 @@ std::optional<std::string> RemoteAgentHandshaker::PerformHandshake(
     }
 
     // All peer validations passed; send pong message let the counterpart know that we're ready.
-    if (!SendPayload(connection, proto::Payload_Pong(), 0, send_buffer)) {
+    if (!SendPayload(connection, proto::Payload_Pong(), send_buffer)) {
         ALOGE("PerformHandshake(%s, %s): Unable to send Pong.", connection.ToString().c_str(),
               ping_peer_vm_name.c_str());
         return std::nullopt;

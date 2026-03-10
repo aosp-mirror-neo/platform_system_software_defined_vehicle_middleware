@@ -65,9 +65,9 @@ void FakeConnection::EnqueueDataForReceive(BufferReader& reader, std::optional<s
 }
 
 // Serializes the given payload and enqueues it to be received.
-void FakeConnection::EnqueueParcelForReceive(int32_t parcel_id, const proto::Payload& payload) {
+void FakeConnection::EnqueueParcelForReceive(const proto::Payload& payload) {
     // Calculate required buffer size for the given payload.
-    proto::Parcel parcel(parcel_id);
+    proto::Parcel parcel;
     auto parcel_size = parcel.ParcelSize(payload);
 
     // Allocate buffer and serialize payload into it.
@@ -133,7 +133,7 @@ std::unique_ptr<proto::Payload> FakeConnection::GetNextSentDataIfPayload(
     // Try to deserialize front entry without removing from queue.
     auto& buffer = sent_queue_.front();
     BufferReader reader({buffer.Ptr(), buffer.Size()});
-    auto [parse_result, payload] = proto::Parcel::Deserialize(reader, nullptr);
+    auto [parse_result, payload] = proto::Parcel::Deserialize(reader);
 
     // Return nothing if parse fails or result doesn't match predicate.
     if (parse_result != proto::Parcel::ParseResult::Success || !predicate(*payload)) {

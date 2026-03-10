@@ -105,7 +105,7 @@ public:
         Payload_TopicRawData payload(bytes);
         payload.subscriber_pub_id = topic_id_;
         memcpy(payload.buffer.Ptr(), data, bytes);
-        connection_->EnqueueParcelForReceive(777, payload);
+        connection_->EnqueueParcelForReceive(payload);
     }
 
     void EnqueueTestTopicMessagesForReceive(std::initializer_list<TestMessageType> messages) {
@@ -192,7 +192,7 @@ public:
         subscribe_result.result = Payload_SubscribeResult::Result_Ok;
         subscribe_result.message_size = topic_->GetMetadata().message_size;
         subscribe_result.message_count = topic_->GetMetadata().message_count;
-        connection_->EnqueueParcelForReceive(242, subscribe_result);
+        connection_->EnqueueParcelForReceive(subscribe_result);
     }
 
     void PrepareClientWithActiveSubscription(size_t message_size = kTestMessageSize) {
@@ -321,6 +321,26 @@ TEST_F(RemoteAgentClientTest, ConnectionThread_ReconnectsAfterFailure) {
               std::future_status::ready);
 }
 
+TEST_F(RemoteAgentClientTest, HandleConnectionMessages_IgnoresUnknownPayload) {
+    PrepareClientWithActiveConnection();
+
+    // We expect no additional Connect calls as connection won't be killed.
+    EXPECT_CALL(connection_manager_, Connect(_, _, _)).Times(0);
+
+    // Construct and fake receipt of a parcel with an unknown payload type.
+    RawBuffer buffer(1024);
+    BufferWriter bw(buffer);
+    bw.Write(proto::Parcel::Header);
+    bw.Write(static_cast<uint16_t>(42 /* Not a legitimate payload type */));
+    bw.Write("Not real payload content.");
+
+    BufferReader br({bw.Ptr(), bw.GetPos()});
+    connection_->EnqueueDataForReceive(br);
+
+    // Client does not terminate.
+    EXPECT_FALSE(WaitForConditionOrTimeout([&]() { return client_->IsTerminated(); }));
+}
+
 TEST_F(RemoteAgentClientTest, FetchLastMessage_SendsRequestAndReturnsUnresolvedFuture) {
     PrepareClientWithActiveConnection();
 
@@ -379,7 +399,7 @@ TEST_F(RemoteAgentClientTest, FetchLastMessage_ResolvesFutureToFailureOnFailureM
     Payload_LastMessageResult payload;
     payload.topic_name = kTestTopicName;
     payload.result = Payload_LastMessageResult::Result_Failure;
-    connection_->EnqueueParcelForReceive(124, payload);
+    connection_->EnqueueParcelForReceive(payload);
 
     // Future resolves to failure.
     ASSERT_EQ(pending_last_message_result_.wait_for(std::chrono::seconds(2)),
@@ -394,7 +414,7 @@ TEST_F(RemoteAgentClientTest, FetchLastMessage_ResolvesFutureToEmptyBufferOnOkBu
     Payload_LastMessageResult payload;
     payload.topic_name = kTestTopicName;
     payload.result = Payload_LastMessageResult::Result_Ok;
-    connection_->EnqueueParcelForReceive(124, payload);
+    connection_->EnqueueParcelForReceive(payload);
 
     // Future resolved to empty buffer.
     ASSERT_EQ(pending_last_message_result_.wait_for(std::chrono::seconds(2)),
@@ -414,7 +434,7 @@ TEST_F(RemoteAgentClientTest, FetchLastMessage_ResolvesFutureToPopulatedBufferOn
     payload.topic_name = kTestTopicName;
     payload.result = Payload_LastMessageResult::Result_Ok;
     payload.buffer = RawBuffer(fake_message);
-    connection_->EnqueueParcelForReceive(124, payload);
+    connection_->EnqueueParcelForReceive(payload);
 
     // Future resolved to vector whose contents match received buffer.
     ASSERT_EQ(pending_last_message_result_.wait_for(std::chrono::seconds(2)),
@@ -431,7 +451,7 @@ TEST_F(RemoteAgentClientTest, FetchLastMessage_LeavesFutureUnresolvedOnUnrelated
     Payload_LastMessageResult payload;
     payload.topic_name = "different-test-topic";
     payload.result = Payload_LastMessageResult::Result_Failure;
-    connection_->EnqueueParcelForReceive(124, payload);
+    connection_->EnqueueParcelForReceive(payload);
 
     // Future remains unresolved.
     EXPECT_EQ(pending_last_message_result_.wait_for(std::chrono::seconds(1)),
@@ -451,7 +471,7 @@ TEST_F(RemoteAgentClientTest, FetchLastMessage_SharesResultForDuplicateRequests)
     Payload_LastMessageResult payload;
     payload.topic_name = kTestTopicName;
     payload.result = Payload_LastMessageResult::Result_Ok;
-    connection_->EnqueueParcelForReceive(124, payload);
+    connection_->EnqueueParcelForReceive(payload);
 
     // Both futures resolved.
     ASSERT_EQ(pending_last_message_result_.wait_for(std::chrono::seconds(1)),
@@ -559,7 +579,7 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_IgnoredWhenTopicUnrecognized) {
     Payload_SubscribeResult subscribe_result;
     subscribe_result.subscriber_pub_id = 31337;
     subscribe_result.result = Payload_SubscribeResult::Result_Failure;
-    connection_->EnqueueParcelForReceive(484, subscribe_result);
+    connection_->EnqueueParcelForReceive(subscribe_result);
 
     // Give ConnectionThread a chance to work.
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -575,7 +595,7 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_UnregistersTopicOnFailure) {
     Payload_SubscribeResult subscribe_result;
     subscribe_result.subscriber_pub_id = topic_id_;
     subscribe_result.result = Payload_SubscribeResult::Result_Failure;
-    connection_->EnqueueParcelForReceive(242, subscribe_result);
+    connection_->EnqueueParcelForReceive(subscribe_result);
 
     // Give ConnectionThread a chance to work.
     WaitForConditionOrTimeout(
@@ -594,7 +614,7 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_UnregistersTopicOnMessageSizeMisma
     subscribe_result.result = Payload_SubscribeResult::Result_Ok;
     subscribe_result.message_size = kTestMessageSize + 2;
     subscribe_result.message_count = kTestMessageCount;
-    connection_->EnqueueParcelForReceive(242, subscribe_result);
+    connection_->EnqueueParcelForReceive(subscribe_result);
 
     // Give ConnectionThread a chance to work.
     WaitForConditionOrTimeout(
@@ -613,7 +633,7 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_UnregistersTopicOnMessageCountMism
     subscribe_result.result = Payload_SubscribeResult::Result_Ok;
     subscribe_result.message_size = kTestMessageSize;
     subscribe_result.message_count = kTestMessageCount * 2;
-    connection_->EnqueueParcelForReceive(242, subscribe_result);
+    connection_->EnqueueParcelForReceive(subscribe_result);
 
     // Give ConnectionThread a chance to work.
     WaitForConditionOrTimeout(
@@ -642,7 +662,7 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_OkMakesSubscriptionActiveAndAccept
     subscribe_result.message_size = kTestMessageSize;
     subscribe_result.message_count = kTestMessageCount;
     subscribe_result.has_last_message = 0;
-    connection_->EnqueueParcelForReceive(242, subscribe_result);
+    connection_->EnqueueParcelForReceive(subscribe_result);
 
     // Give ConnectionThread a chance to work.
     WaitForConditionOrTimeout([&]() { return client_->Subscriptions().at(topic_id_).is_active; });
@@ -684,7 +704,7 @@ TEST_F(RemoteAgentClientTest, SubscribeResult_OkWithLastMessageWritesMessageToTo
     subscribe_result.has_last_message = 1;
     subscribe_result.last_message_content.Resize(kTestMessageSize, false);
     memcpy(subscribe_result.last_message_content.Ptr(), &sent_last_message, kTestMessageSize);
-    connection_->EnqueueParcelForReceive(242, subscribe_result);
+    connection_->EnqueueParcelForReceive(subscribe_result);
 
     // Give ConnectionThread a chance to work.
     WaitForConditionOrTimeout([&]() { return client_->Subscriptions().at(topic_id_).is_active; });
@@ -782,7 +802,7 @@ TEST_F(RemoteAgentClientTest, TopicDestroyed_IgnoredForUnsubscribedTopic) {
 
     Payload_TopicDestroyed payload;
     payload.subscriber_pub_id = topic_id_;
-    connection_->EnqueueParcelForReceive(894, payload);
+    connection_->EnqueueParcelForReceive(payload);
 
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
@@ -798,7 +818,7 @@ TEST_F(RemoteAgentClientTest, TopicDestroyed_ProcessedForInactiveSubscription) {
 
     Payload_TopicDestroyed payload;
     payload.subscriber_pub_id = topic_id_;
-    connection_->EnqueueParcelForReceive(894, payload);
+    connection_->EnqueueParcelForReceive(payload);
 
     WaitForConditionOrTimeout([&]() { return !client_->Subscriptions().contains(topic_id_); });
 
@@ -817,7 +837,7 @@ TEST_F(RemoteAgentClientTest, TopicDestroyed_ProcessedForActiveSubscription) {
 
     Payload_TopicDestroyed payload;
     payload.subscriber_pub_id = topic_id_;
-    connection_->EnqueueParcelForReceive(894, payload);
+    connection_->EnqueueParcelForReceive(payload);
 
     WaitForConditionOrTimeout([&]() { return !client_->Subscriptions().contains(topic_id_); });
 

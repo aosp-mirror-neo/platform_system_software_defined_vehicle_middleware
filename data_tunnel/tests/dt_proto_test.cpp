@@ -97,12 +97,12 @@ template <typename PayloadType>
 std::unique_ptr<PayloadType> SerializeAndDeserialize(const PayloadType& payload) {
     RawBuffer buffer(kLargeBufferSize);
     BufferWriter writer(buffer);
-    proto::Parcel parcel(64);
+    proto::Parcel parcel;
     if (!parcel.Serialize(writer, payload)) {
         return nullptr;
     }
     BufferReader reader({buffer.Ptr(), writer.GetPos()});
-    auto result = proto::Parcel::Deserialize(reader, NULL);
+    auto result = proto::Parcel::Deserialize(reader);
     if (result.first != proto::Parcel::ParseResult::Success || !result.second) {
         return nullptr;
     }
@@ -117,9 +117,8 @@ TEST(DataTunnelProto, Serialization_Ping) {
 }
 
 TEST(DataTunnelProto, Serialization_Pong) {
-    auto payload = SerializeAndDeserialize(proto::Payload_Pong(32));
+    auto payload = SerializeAndDeserialize(proto::Payload_Pong());
     ASSERT_TRUE(!!payload);
-    EXPECT_EQ(payload->ping_id, 32U);
 }
 
 TEST(DataTunnelProto, Serialization_SubscribeRequest) {

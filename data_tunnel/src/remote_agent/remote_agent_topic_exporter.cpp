@@ -28,12 +28,8 @@ using proto::Payload_TopicRawData;
 
 RemoteAgentTopicExporter::RemoteAgentTopicExporter(const std::string& vm_name,
                                                    TopicManager& topic_manager,
-                                                   IConnection& connection,
-                                                   std::atomic<uint32_t>& parcel_id_counter) :
-      vm_name_(vm_name),
-      topic_manager_(topic_manager),
-      connection_(connection),
-      parcel_id_counter_(parcel_id_counter) {
+                                                   IConnection& connection) :
+      vm_name_(vm_name), topic_manager_(topic_manager), connection_(connection) {
     for (size_t i = 0; i < kProcessingThreadCount; i++) {
         processing_threads_[i] = std::jthread([this]() { ProcessingThread(); });
     }
@@ -106,14 +102,14 @@ bool RemoteAgentTopicExporter::HandleSubscribeRequest(const Payload_SubscribeReq
 
     auto topic = topic_manager_.FindTopic(topic_name, /*local_only*/ true);
     if (!topic) {
-        return SendPayload(connection_, result_payload, parcel_id_counter_++, send_buffer);
+        return SendPayload(connection_, result_payload, send_buffer);
     }
 
     auto reader = topic->CreateReader();
     if (!reader) {
         ALOGE("RemoteAgentTopicExporter(%s): Unable to create Topic::Reader to export %s",
               vm_name_.c_str(), topic_name.c_str());
-        return SendPayload(connection_, result_payload, parcel_id_counter_++, send_buffer);
+        return SendPayload(connection_, result_payload, send_buffer);
     }
 
     auto topic_id = topic->GetId();
@@ -139,7 +135,7 @@ bool RemoteAgentTopicExporter::HandleSubscribeRequest(const Payload_SubscribeReq
         guard.unlock();
         ALOGE("RemoteAgentTopicExporter(%s): Unable to register callback for %s", vm_name_.c_str(),
               topic_name.c_str());
-        return SendPayload(connection_, result_payload, parcel_id_counter_++, send_buffer);
+        return SendPayload(connection_, result_payload, send_buffer);
     }
 
     auto [entry, inserted] =
@@ -233,7 +229,7 @@ void RemoteAgentTopicExporter::MaybeSendSubscribeResult(ExportedTopic& exported_
     if (parcel_size > send_buffer.Size()) {
         send_buffer.Resize(parcel_size, /*copy_data=*/false);
     }
-    if (!SendPayload(connection_, payload, parcel_id_counter_++, send_buffer)) {
+    if (!SendPayload(connection_, payload, send_buffer)) {
         ALOGE("RemoteAgentTopicExporter(%s): Unable to send SubscribeResult for %s",
               vm_name_.c_str(), exported_topic.topic.GetMetadata().name.c_str());
     }
@@ -268,7 +264,7 @@ void RemoteAgentTopicExporter::ProcessTopicDataAvailable(ExportedTopic& exported
         }
 
         payload.data_size = read_size;
-        if (!SendPayload(connection_, payload, parcel_id_counter_++, send_buffer)) {
+        if (!SendPayload(connection_, payload, send_buffer)) {
             ALOGE("RemoteAgentTopicExporter(%s): Unable to send topic data for %s",
                   vm_name_.c_str(), topic.GetMetadata().name.c_str());
             break;
@@ -280,7 +276,7 @@ void RemoteAgentTopicExporter::ProcessTopicDataAvailable(ExportedTopic& exported
 void RemoteAgentTopicExporter::ProcessTopicException(ExportedTopic& exported_topic,
                                                      RawBuffer& send_buffer) {
     auto payload = Payload_TopicDestroyed(exported_topic.subscriber_pub_id);
-    if (!SendPayload(connection_, payload, parcel_id_counter_++, send_buffer)) {
+    if (!SendPayload(connection_, payload, send_buffer)) {
         ALOGE("RemoteAgentTopicExporter(%s): Unable to send TopicDestroyed for %s",
               vm_name_.c_str(), exported_topic.topic.GetMetadata().name.c_str());
     }
