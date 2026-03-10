@@ -31,15 +31,11 @@ mod test {
     use sdv::comms::id::ServiceFqin;
     use sdv::comms::sd::{ServiceDiscoveryManager, ServiceUnitDefinition, UnitNameDiscoveryArgs};
     use sdv::comms::ContextRef;
-    use sdv::mw::{Publisher, SdvComms};
+    use sdv::mw::{clientlib, Publisher, SdvComms};
     use sdv_proto_reflection_rs::message_metadata::MessageMetadata;
     // sample
-    use sdv_mw_rs_sdv_vsidl_tests_metadata_sample_bundle::{
-        publisher as publisher_foo, SampleBundle,
-    };
-    use sdv_mw_rs_sdv_vsidl_tests_metadata_sample_bundle_without::{
-        publisher as publisher_bar, SampleBundleWithout,
-    };
+    use sdv_mw_rs_sdv_vsidl_tests_metadata_sample_bundle::publisher as publisher_foo;
+    use sdv_mw_rs_sdv_vsidl_tests_metadata_sample_bundle_without::publisher as publisher_bar;
     use vsidl_tests_proto_metadata::childdir::Child;
     use vsidl_tests_proto_metadata::reference::Neighbor;
     use vsidl_tests_proto_metadata::sample_message::sample_message::Nested;
@@ -66,14 +62,12 @@ mod test {
         let sdv_comms = Arc::new(SdvComms { context });
 
         // GIVEN a publisher from a service bundle that does not register message metadata.
-        let mut sample_sb = SampleBundleWithout::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("Sample service bundle creation failed.");
-        let _publisher = sample_sb
-            .take_publisher(publisher_bar::Channel::<SampleMessage>::BAR)
-            .expect("taking sample_sb.publisher::BAR failed.");
+        let _publisher = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            publisher_bar::Channel::<SampleMessage>::BAR,
+        )
+        .await
+        .expect("creating publisher::BAR failed.");
 
         // WHEN discovering the service-unit.
         let service_unit = find_service_unit(&unit_name, context).await;
@@ -99,14 +93,12 @@ mod test {
         let sdv_comms = Arc::new(SdvComms { context });
 
         // GIVEN a publisher from a service bundle that registers message metadata.
-        let mut sample_sb = SampleBundle::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("Sample service bundle creation failed.");
-        let publisher = sample_sb
-            .take_publisher(publisher_foo::Channel::<SampleMessage>::FOO)
-            .expect("taking sample_sb.publisher::FOO failed.");
+        let publisher = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            publisher_foo::Channel::<SampleMessage>::FOO,
+        )
+        .await
+        .expect("taking xpublisher::FOO failed.");
         publish_message(&publisher);
 
         // WHEN discovering the service-unit.

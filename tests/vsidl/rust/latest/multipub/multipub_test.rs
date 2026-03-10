@@ -25,12 +25,9 @@ mod test {
     // sdv
     use sdv::comms::id::ServiceFqin;
     use sdv::comms::ContextRef;
-    use sdv::mw::{SdvComms, SubscribeOptions};
+    use sdv::mw::{clientlib, SdvComms, SubscribeOptions};
     // test catalog
-    use sdv_mw_rs_sdv_vsidl_multipub_test_cabin_sensor::CabinSensor;
-    use sdv_mw_rs_sdv_vsidl_multipub_test_footwell_sensor::FootwellSensor;
     use sdv_mw_rs_sdv_vsidl_multipub_test_hvac_control::subscriber as hvac_subscriber;
-    use sdv_mw_rs_sdv_vsidl_multipub_test_passenger_sensor::PassengerSensor;
     use vsidl_multipub_test::cabin::CabinTemperature;
 
     #[tokio::test]
@@ -46,30 +43,24 @@ mod test {
         let sdv_comms = Arc::new(SdvComms { context });
 
         // GIVEN a 'multipub' publisher (see VSIDL declaration).
-        let mut cabin_sensor = CabinSensor::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("CabinSensor creation failed.");
-        let cabin_pub = cabin_sensor
-            .take_publisher(
+        let cabin_pub =
+            clientlib::create_publisher(
+                sdv_comms.as_ref(),
                 sdv_mw_rs_sdv_vsidl_multipub_test_cabin_sensor::publisher::Channel::<
                     CabinTemperature,
                 >::MULTIPUB,
             )
+            .await
             .expect("taking cabin pub failed.");
         // AND GIVEN a second 'mutlipub' publisher.
-        let mut footwell_sensor = FootwellSensor::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("FootwellSensor creation failed.");
-        let footwell_pub = footwell_sensor
-            .take_publisher(
+        let footwell_pub =
+            clientlib::create_publisher(
+                sdv_comms.as_ref(),
                 sdv_mw_rs_sdv_vsidl_multipub_test_footwell_sensor::publisher::Channel::<
                     CabinTemperature,
                 >::MULTIPUB,
             )
+            .await
             .expect("taking footwell pub failed.");
 
         // AND GIVEN a 'multipub' subscriber, observer
@@ -177,18 +168,14 @@ mod test {
         assert_eq!(read.len(), 0);
 
         // GIVEN a NEW 'multipub' publisher (see VSIDL declaration).
-        let mut passenger_sensor = PassengerSensor::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("PassengerSensor creation failed.");
-        let passenger_pub = passenger_sensor
-            .take_publisher(
-                sdv_mw_rs_sdv_vsidl_multipub_test_passenger_sensor::publisher::Channel::<
-                    CabinTemperature,
-                >::MULTIPUB,
-            )
-            .expect("taking passenger pub failed.");
+        let passenger_pub = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            sdv_mw_rs_sdv_vsidl_multipub_test_passenger_sensor::publisher::Channel::<
+                CabinTemperature,
+            >::MULTIPUB,
+        )
+        .await
+        .expect("taking passenger pub failed.");
 
         // SLEEP to ensure the multiplexer is created on a separate process.
         thread::sleep(MULTIPUB_PROCESSING_DURATION);
