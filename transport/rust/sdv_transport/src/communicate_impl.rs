@@ -823,7 +823,7 @@ mod test {
 
         let bundle_name: &str = "PublicationAvailabilityTopic";
         let publication_name: &str = "pressure-publication";
-        let topic_name: &str = "pressure_topic";
+        let topic_name: &str = "pressure-topic";
 
         // GIVEN a TypeName and topic.
         let type_name =

@@ -368,11 +368,11 @@ mod tests {
             serviceBundleName: "TestBundle".to_string(),
             typeName: "TestType".to_string(),
         };
-        let topic_name = TopicName::from_str("test_topic").unwrap();
+        let topic_name = TopicName::from_str("test-topic").unwrap();
 
         listeners.register_listener_by_topic(&unit_type, &topic_name, listener.clone());
 
-        let sud = create_publisher_sud("unit1", &unit_type, "test_topic");
+        let sud = create_publisher_sud("unit1", &unit_type, "test-topic");
         listeners.on_service_unit_added(&sud);
         println!("registered");
         assert_eq!(mock.get_registered(), vec![sud.clone()]);
