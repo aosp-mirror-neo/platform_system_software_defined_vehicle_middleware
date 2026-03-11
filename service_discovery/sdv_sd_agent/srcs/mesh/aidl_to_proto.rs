@@ -123,6 +123,7 @@ impl ToProto<PublisherUnitMetadataProto> for PublisherUnitMetadataAidl {
             version: self.version as u32,
             message_size: self.message_size,
             message_count: self.message_count,
+            topic_name: self.topic_name.clone(),
             ..Default::default()
         }
     }
