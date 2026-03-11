@@ -24,6 +24,7 @@ use sdv_comms_id::ServiceFqin;
 
 use anyhow::Context;
 use google_sdv_identity::aidl::google::sdv::identity::ServiceFqin::ServiceFqin as ServiceFqinAidl;
+use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::metadata::ApplicationMetadata::ApplicationMetadata;
 use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition;
 use log::{debug, error, warn};
 use tracing::instrument;
@@ -132,6 +133,8 @@ impl AuthzService {
         subject_fqin: &ServiceFqin,
         object_package_name: &PackageName,
         object_unit_type_name: &UnitTypeName,
+        app_metadata: &ApplicationMetadata,
+        service_unit_name: &ServiceUnitName,
     ) -> bool {
         let object_log_identifier = format!("{object_package_name}.{object_unit_type_name}");
 
@@ -146,6 +149,8 @@ impl AuthzService {
                 subject_fqin,
                 object_package_name,
                 object_unit_type_name,
+                app_metadata,
+                service_unit_name,
             )
         } else {
             AuthzResult::ImplicitlyDenied("Permissions are disabled".to_string())
@@ -256,6 +261,9 @@ mod tests {
         PackageName, ServiceName as ServiceBundleName, ServiceUnitName, VmName,
     };
 
+    use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::metadata::
+    {ApplicationMetadata::TypedMetadata::TypedMetadata, PublisherUnitMetadata::PublisherUnitMetadata};
+
     struct TestAuthzEnforcementFlag {
         enabled: bool,
     }
@@ -363,7 +371,7 @@ mod tests {
 
     fn setup_test(
         is_enforcement_flag_enabled: bool,
-    ) -> (AuthzService, ServiceFqin, ServiceUnitName, UnitTypeName) {
+    ) -> (AuthzService, ServiceFqin, ServiceUnitName, UnitTypeName, ApplicationMetadata) {
         let object_fqin = ServiceFqin::from_str("vm:com.google.sdv.WindowManager/main").unwrap();
 
         let authz_service = create_test_authz_service(
@@ -391,12 +399,20 @@ mod tests {
 
         let object_unit_type_name = UnitTypeName::from_str("TirePressureTopic").unwrap();
 
-        (authz_service, object_fqin, object_service_unit_name, object_unit_type_name)
+        let app_metadata = ApplicationMetadata {
+            typedMetadata: TypedMetadata::PublisherUnit(PublisherUnitMetadata {
+                topic_name: "tire-pressure-publisher".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        (authz_service, object_fqin, object_service_unit_name, object_unit_type_name, app_metadata)
     }
 
     #[test]
     fn test_is_authorized_for_service_unit_permitted() {
-        let (authz_service, object_fqin, object_service_unit_name, _) =
+        let (authz_service, object_fqin, object_service_unit_name, _, _) =
             setup_test(/*is_enforcement_flag_enabled=*/ true);
 
         let subject_fqin = ServiceFqin::from_str("vm-allow:com.oem.TunnelService/main").unwrap();
@@ -410,7 +426,7 @@ mod tests {
 
     #[test]
     fn test_is_authorized_for_service_unit_denied() {
-        let (authz_service, object_fqin, object_service_unit_name, _) =
+        let (authz_service, object_fqin, object_service_unit_name, _, _) =
             setup_test(/*is_enforcement_flag_enabled=*/ true);
 
         for subject_fqin in [
@@ -427,7 +443,7 @@ mod tests {
 
     #[test]
     fn test_is_authorized_for_service_unit_permitted_by_flag() {
-        let (authz_service, object_fqin, object_service_unit_name, _) =
+        let (authz_service, object_fqin, object_service_unit_name, _, _) =
             setup_test(/*is_enforcement_flag_enabled=*/ false);
 
         for subject_fqin in [
@@ -444,7 +460,7 @@ mod tests {
 
     #[test]
     fn test_is_authorized_for_unit_type_permitted() {
-        let (authz_service, object_fqin, _, object_unit_type_name) =
+        let (authz_service, object_fqin, object_service_unit_name, object_unit_type_name, metadata) =
             setup_test(/*is_enforcement_flag_enabled=*/ true);
 
         let subject_fqin = ServiceFqin::from_str("vm-allow:com.oem.TunnelService/main").unwrap();
@@ -453,12 +469,14 @@ mod tests {
             &subject_fqin,
             object_fqin.package_name(),
             &object_unit_type_name,
+            &metadata,
+            &object_service_unit_name,
         ));
     }
 
     #[test]
     fn test_is_authorized_for_unit_type_denied() {
-        let (authz_service, object_fqin, _, object_unit_type_name) =
+        let (authz_service, object_fqin, object_service_unit_name, object_unit_type_name, metadata) =
             setup_test(/*is_enforcement_flag_enabled=*/ true);
 
         for subject_fqin in [
@@ -469,13 +487,15 @@ mod tests {
                 &subject_fqin,
                 object_fqin.package_name(),
                 &object_unit_type_name,
+                &metadata,
+                &object_service_unit_name,
             ));
         }
     }
 
     #[test]
     fn test_is_authorized_for_unit_type_permitted_by_flag() {
-        let (authz_service, object_fqin, _, object_unit_type_name) =
+        let (authz_service, object_fqin, object_service_unit_name, object_unit_type_name, metadata) =
             setup_test(/*is_enforcement_flag_enabled=*/ false);
 
         for subject_fqin in [
@@ -486,6 +506,8 @@ mod tests {
                 &subject_fqin,
                 object_fqin.package_name(),
                 &object_unit_type_name,
+                &metadata,
+                &object_service_unit_name,
             ));
         }
     }
