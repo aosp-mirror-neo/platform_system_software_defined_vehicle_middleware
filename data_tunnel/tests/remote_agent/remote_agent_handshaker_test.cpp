@@ -83,8 +83,6 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Outbound_Secure_Success) {
     auto result_future = StartSecureHandshake(kPeerVmName_1);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
@@ -114,8 +112,6 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Inbound_Secure_Success) {
     auto result_future = StartSecureHandshake(/*expected_peer_vm_name=*/std::nullopt);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
@@ -145,8 +141,6 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Outbound_Insecure_Success) {
     auto result_future = StartInsecureHandshake(kPeerVmName_1);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
@@ -169,8 +163,6 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Inbound_Insecure_Success) {
     auto result_future = StartInsecureHandshake(/*expected_peer_vm_name=*/std::nullopt);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
@@ -193,8 +185,6 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_FailsOnMissingPong) {
     auto result_future = StartInsecureHandshake(std::nullopt);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
@@ -217,8 +207,6 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_FailsOnNonPong) {
     auto result_future = StartInsecureHandshake(std::nullopt);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
@@ -241,8 +229,6 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnMissingAuthIden
     auto result_future = StartSecureHandshake(kPeerVmName_1);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
@@ -266,8 +252,6 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnIncorrectAuthId
     auto result_future = StartSecureHandshake(kPeerVmName_1);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
@@ -291,8 +275,6 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnMissingAuthVmNa
     auto result_future = StartSecureHandshake(kPeerVmName_1);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
@@ -315,8 +297,6 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnIncorrectAuthVm
     auto result_future = StartSecureHandshake(kPeerVmName_1);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
@@ -335,12 +315,58 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnIncorrectAuthVm
     EXPECT_FALSE(connection_.GetNextSentData(/*timeout_seconds=*/0));
 }
 
+TEST_F(RemoteAgentHandshakerTest, PerformHandshake_AcceptsLowerVersionNumber) {
+    auto result_future = StartInsecureHandshake(kPeerVmName_1);
+
+    // Should send ping.
+    const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
+    ASSERT_TRUE(ping_payload);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
+
+    // Simulate receipt of peer ping with lower version #.
+    Payload_Ping ping(kPeerVmName_1);
+    ping.version_number = proto::kVersionNumber - 1;
+    connection_.EnqueueParcelForReceive(123, ping);
+
+    // Should send pong.
+    const auto pong_payload = connection_.GetNextSentDataIfPayload<Payload_Pong>();
+    ASSERT_TRUE(pong_payload);
+
+    // Simulate receipt of expected peer pong.
+    connection_.EnqueueParcelForReceive(123, Payload_Pong());
+
+    ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    EXPECT_EQ(result_future.get(), kPeerVmName_1);
+}
+
+TEST_F(RemoteAgentHandshakerTest, PerformHandshake_AcceptsHigherVersionNumber) {
+    auto result_future = StartInsecureHandshake(kPeerVmName_1);
+
+    // Should send ping.
+    const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
+    ASSERT_TRUE(ping_payload);
+    EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
+
+    // Simulate receipt of peer ping with higher version #.
+    Payload_Ping ping(kPeerVmName_1);
+    ping.version_number = proto::kVersionNumber + 1;
+    connection_.EnqueueParcelForReceive(123, ping);
+
+    // Should send pong.
+    const auto pong_payload = connection_.GetNextSentDataIfPayload<Payload_Pong>();
+    ASSERT_TRUE(pong_payload);
+
+    // Simulate receipt of expected peer pong.
+    connection_.EnqueueParcelForReceive(123, Payload_Pong());
+
+    ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    EXPECT_EQ(result_future.get(), kPeerVmName_1);
+}
+
 TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Outbound_FailsOnUnexpectedPingVmName) {
     auto result_future = StartSecureHandshake(kPeerVmName_1);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
@@ -360,8 +386,6 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_FailsOnMissingPing) {
     auto result_future = StartSecureHandshake(kPeerVmName_1);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
@@ -381,8 +405,6 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_FailsOnNonPing) {
     auto result_future = StartSecureHandshake(kPeerVmName_1);
 
     // Should send ping.
-    Payload_Ping expected_ping(kSelfVmName);
-
     const auto ping_payload = connection_.GetNextSentDataIfPayload<Payload_Ping>();
     ASSERT_TRUE(ping_payload);
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
