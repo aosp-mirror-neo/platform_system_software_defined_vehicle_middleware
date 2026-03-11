@@ -40,7 +40,8 @@ pub fn create_acl_provider_from_service_bundle_registry(
 
     // TODO(474314698): remove fallback to empty vector once the APEX is added to the image.
     let (vm_mappings, default_vm_file) =
-        read_vm_file_mappings_from_directory(vm_permissions_location).unwrap_or_default();
+        read_vm_file_mappings_from_directory(vm_permissions_location)
+            .with_context(|| "Failure while reading VM file mappings from directory")?;
 
     AclFileProvider::new(mappings.into_iter(), vm_mappings.into_iter(), default_vm_file)
         .with_context(|| "Error adding ACL mappings read from Service Bundle Registry.")
