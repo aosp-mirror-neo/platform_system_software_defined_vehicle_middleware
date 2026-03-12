@@ -90,9 +90,6 @@ RemoteAgentHandshaker::~RemoteAgentHandshaker() {}
 std::optional<std::string> RemoteAgentHandshaker::PerformHandshake(
         IConnection& connection, std::optional<std::string> expected_peer_vm_name) const {
     RawBuffer send_buffer(kDefaultBufferSize);
-    RawBuffer receive_buffer(kDefaultBufferSize);
-    BufferWriter receive_writer(receive_buffer);
-    uint32_t received_parcel_id = 0;
 
     // Send our Ping message
     if (!SendPayload(connection, proto::Payload_Ping(self_vm_name_), 0, send_buffer)) {
@@ -101,8 +98,7 @@ std::optional<std::string> RemoteAgentHandshaker::PerformHandshake(
     }
 
     // Receive what should be the counterpart's Ping message and validate it.
-    auto [ping_recv_result, maybe_ping_payload] =
-            ReceivePayload(connection, &received_parcel_id, receive_writer);
+    auto [ping_recv_result, maybe_ping_payload] = ReceivePayload(connection);
     if (!maybe_ping_payload) {
         ALOGE("PerformHandshake(%s): Receive failure %d while awaiting Ping.",
               connection.ToString().c_str(), ping_recv_result);
@@ -148,8 +144,7 @@ std::optional<std::string> RemoteAgentHandshaker::PerformHandshake(
     }
 
     // Look for peer's pong signalling that they're ready.
-    auto [pong_recv_result, maybe_pong_payload] =
-            ReceivePayload(connection, nullptr, receive_writer);
+    auto [pong_recv_result, maybe_pong_payload] = ReceivePayload(connection);
     if (!maybe_pong_payload) {
         ALOGE("PerformHandshake(%s, %s): Receive failure %d for Pong.",
               connection.ToString().c_str(), ping_peer_vm_name.c_str(), pong_recv_result);

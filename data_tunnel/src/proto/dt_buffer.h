@@ -17,14 +17,13 @@
 #pragma once
 
 #include <algorithm>
+#include <span>
 #include <string>
 #include <vector>
 
 class RawBuffer {
 public:
-    RawBuffer(size_t size = 0) : size_(size) {
-        if (size) ptr_ = new uint8_t[size];
-    }
+    RawBuffer(size_t size = 0) : size_(size), ptr_(size ? new uint8_t[size] : nullptr) {}
 
     RawBuffer(const std::vector<uint8_t>& v) : RawBuffer(v.size()) {
         if (size_) {
@@ -44,7 +43,9 @@ public:
     }
 
     ~RawBuffer() {
-        if (ptr_) delete[] ptr_;
+        if (ptr_) {
+            delete[] ptr_;
+        }
         ptr_ = nullptr;
         size_ = 0;
     }
@@ -57,7 +58,9 @@ public:
     size_t Size() const { return size_; }
 
     bool ToVector(std::vector<uint8_t>& v) const {
-        if (!size_ || !ptr_) return false;
+        if (!size_ || !ptr_) {
+            return false;
+        }
         v.resize(size_);
         memcpy(v.data(), ptr_, size_);
         return true;
@@ -68,10 +71,11 @@ public:
             size_t to_copy = std::min(new_size, size_);
             size_ = new_size;
             uint8_t* old_ptr = ptr_;
-            if (new_size)
+            if (new_size) {
                 ptr_ = new uint8_t[size_];
-            else
+            } else {
                 ptr_ = nullptr;
+            }
 
             if (old_ptr) {
                 if (ptr_ && copy_data && to_copy) {
@@ -87,43 +91,28 @@ private:
     uint8_t* ptr_ = nullptr;
 };
 
-class BufferPosTracker {
-public:
-    BufferPosTracker(RawBuffer& buffer, size_t pos = 0) : buffer_(buffer), pos_(pos) {}
-    BufferPosTracker(const BufferPosTracker& other) : buffer_(other.buffer_), pos_(other.pos_) {}
-    size_t GetPos() const { return pos_; }
-    size_t SetPos(size_t pos) {
-        pos_ = std::min(pos, buffer_.Size());
-        return pos_;
-    }
-    void Reset() { pos_ = 0; }
-    size_t MovePos(size_t offset) { return SetPos(pos_ + offset); }
-    size_t Available() const { return (buffer_.Size() < pos_) ? 0 : (buffer_.Size() - pos_); }
-    const uint8_t* Ptr() const { return buffer_.Ptr(); }
-    uint8_t* Ptr() { return buffer_.Ptr(); }
-    const uint8_t* CurPtr() const { return buffer_.Ptr() + pos_; }
-    uint8_t* CurPtr() { return buffer_.Ptr() + pos_; }
-    RawBuffer& Buffer() { return buffer_; }
-    const RawBuffer& Buffer() const { return buffer_; }
-
-    void Inflate(size_t inflate_by) { buffer_.Resize(buffer_.Size() + inflate_by, true); }
-
-private:
-    RawBuffer& buffer_;
-    size_t pos_ = 0;
-};
-
 /**
  * Simplified version of data serialization for transport over vsock,
  * i.e. assuming we do both serialization/deserialization on the same
  * CPU, i.e. with the same byte order.
  */
-class BufferWriter : public BufferPosTracker {
+class BufferWriter {
 public:
-    BufferWriter(RawBuffer& buffer) : BufferPosTracker(buffer) {}
+    BufferWriter(RawBuffer& buffer) : buffer_(buffer) {}
+
+    uint8_t* Ptr() const { return buffer_.Ptr(); }
+    size_t Size() const { return buffer_.Size(); }
+
+    size_t GetPos() const { return pos_; }
+    size_t Available() const { return (Size() < pos_) ? 0 : (Size() - pos_); }
+    uint8_t* CurPtr() { return Ptr() + pos_; }
+
+    size_t MovePos(size_t offset) { return pos_ = std::min(pos_ + offset, Size()); }
 
     bool Write(const void* buf, uint32_t buf_size) {
-        if (Available() < buf_size) return false;
+        if (Available() < buf_size) {
+            return false;
+        }
         memcpy(CurPtr(), buf, buf_size);
         MovePos(buf_size);
         return true;
@@ -132,7 +121,9 @@ public:
     // TODO: Add casting with alignment checking
     template <class T>
     static bool CastToBuffer(BufferWriter& bw, T v) {
-        if (bw.Available() < sizeof(T)) return false;
+        if (bw.Available() < sizeof(T)) {
+            return false;
+        }
         memcpy(bw.CurPtr(), &v, sizeof(T));
         bw.MovePos(sizeof(T));
         return true;
@@ -150,38 +141,23 @@ public:
                 Write(static_cast<uint16_t>(v.length())) && Write(v.c_str(), v.length());
     }
 
-    size_t CutAndMove(size_t to_cut) {
-        to_cut = std::min(to_cut, GetPos());
-        if (to_cut < GetPos()) {
-            size_t left = GetPos() - to_cut;
-            memmove(Ptr(), Ptr() + to_cut, left);
-            SetPos(left);
-        } else
-            Reset();
-        return GetPos();
-    }
+private:
+    RawBuffer& buffer_;
+    size_t pos_ = 0;
 };
 
-class BufferReader : public BufferPosTracker {
+class BufferReader {
 public:
-    BufferReader(RawBuffer& buffer, uint32_t available_to_read) :
-          BufferPosTracker(buffer), available_to_read_(available_to_read) {}
+    BufferReader(std::span<const uint8_t> span) : span_(span) {}
 
-    BufferReader(const BufferReader& other) :
-          BufferPosTracker(other), available_to_read_(other.available_to_read_) {}
+    const uint8_t* Ptr() const { return span_.data(); }
+    size_t Size() const { return span_.size(); }
 
-    BufferReader(const BufferWriter& writer) :
-          BufferPosTracker(const_cast<BufferWriter&>(writer).Buffer()),
-          available_to_read_(writer.GetPos()) {}
+    size_t GetPos() const { return pos_; }
+    size_t AvailableToRead() const { return (Size() < pos_) ? 0 : (Size() - pos_); }
+    const uint8_t* CurPtr() const { return Ptr() + pos_; }
 
-    uint32_t AvailableToRead() const {
-        return (available_to_read_ < GetPos()) ? 0 : (available_to_read_ - GetPos());
-    }
-
-    uint32_t SetAvailableToRead(uint32_t available_to_read) {
-        available_to_read_ = available_to_read;
-        return available_to_read_;
-    }
+    size_t MovePos(size_t offset) { return pos_ = std::min(pos_ + offset, Size()); }
 
     bool Read(void* buf, uint32_t buf_size) {
         if (AvailableToRead() < buf_size) return false;
@@ -193,7 +169,9 @@ public:
     // TODO: Add casting with alignment checking
     template <class T>
     static bool CastFromBuffer(BufferReader& br, T& v) {
-        if (br.AvailableToRead() < sizeof(T)) return false;
+        if (br.AvailableToRead() < sizeof(T)) {
+            return false;
+        }
         memcpy(&v, br.CurPtr(), sizeof(T));
         br.MovePos(sizeof(T));
         return true;
@@ -217,5 +195,6 @@ public:
     }
 
 private:
-    uint32_t available_to_read_;
+    std::span<const uint8_t> span_;
+    size_t pos_ = 0;
 };

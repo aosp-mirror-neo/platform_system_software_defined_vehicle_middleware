@@ -31,17 +31,6 @@ TEST(DataTunnelProto, BufferAllocation) {
     ASSERT_EQ(buffer.Size(), kLargeBufferSize);
 }
 
-TEST(DataTunnelProto, BufferPositionTracker) {
-    RawBuffer buffer(kSmallBufferSize);
-    BufferPosTracker pos_tracker(buffer);
-    size_t mid_pos = buffer.Size() / 2;
-    ASSERT_EQ(pos_tracker.Available(), buffer.Size());
-    pos_tracker.SetPos(mid_pos);
-    ASSERT_EQ(pos_tracker.GetPos(), mid_pos);
-    ASSERT_EQ(pos_tracker.Available(), buffer.Size() - mid_pos);
-    ASSERT_EQ(pos_tracker.CurPtr() - pos_tracker.Ptr(), static_cast<std::ptrdiff_t>(mid_pos));
-}
-
 TEST(DataTunnelProto, BufferReaderWriterSerialization) {
     constexpr int8_t i8c = -64;
     constexpr uint8_t u8c = 192;
@@ -66,7 +55,7 @@ TEST(DataTunnelProto, BufferReaderWriterSerialization) {
     int32_t i32v;
     uint32_t u32v;
     std::string strv;
-    BufferReader reader(writer);
+    BufferReader reader({buffer.Ptr(), writer.GetPos()});
     ASSERT_TRUE(reader.Read(i8v));
     ASSERT_EQ(i8v, i8c);
     ASSERT_TRUE(reader.Read(u8v));
@@ -91,16 +80,13 @@ TEST(DataTunnelProto, BufferReaderWriterOperations) {
     uint8_t read_message_buffer[kRefMessageSize];
     ASSERT_EQ(buffer.Size(), kSmallBufferSize);
 
-    // Test Resize
+    // Test consumption
     BufferWriter writer(buffer);
-    ASSERT_EQ(writer.Buffer().Size(), kSmallBufferSize);
-    ASSERT_EQ(writer.Buffer().Size(), writer.Available());
+    ASSERT_EQ(buffer.Size(), kSmallBufferSize);
+    ASSERT_EQ(buffer.Size(), writer.Available());
     writer.Write(kRefMessage, kRefMessageSize);
-    ASSERT_EQ(writer.Buffer().Size() - kRefMessageSize, writer.Available());
-    writer.Inflate(kInflateBy);
-    ASSERT_EQ(writer.Buffer().Size(), kSmallBufferSize + kInflateBy);
-    ASSERT_EQ(writer.Buffer().Size() - kRefMessageSize, writer.Available());
-    BufferReader reader(writer);
+    ASSERT_EQ(buffer.Size() - kRefMessageSize, writer.Available());
+    BufferReader reader({buffer.Ptr(), writer.GetPos()});
     reader.Read(read_message_buffer, kRefMessageSize);
     ASSERT_TRUE(memcmp(kRefMessage, read_message_buffer, kRefMessageSize) == 0);
 
@@ -115,7 +101,7 @@ std::unique_ptr<PayloadType> SerializeAndDeserialize(const PayloadType& payload)
     if (!parcel.Serialize(writer, payload)) {
         return nullptr;
     }
-    BufferReader reader(writer);
+    BufferReader reader({buffer.Ptr(), writer.GetPos()});
     auto result = proto::Parcel::Deserialize(reader, NULL);
     if (result.first != proto::Parcel::ParseResult::Success || !result.second) {
         return nullptr;
@@ -226,87 +212,62 @@ TEST(DataTunnelProto, Serialization_LastMessageResult) {
     EXPECT_EQ(*(reinterpret_cast<uint32_t*>(payload_with_data->buffer.Ptr())), 0xDEADBEEF);
 }
 
-TEST(DataTunnelProto, LastMessageResult_DeserializationFailsWithoutResizeUntilAllDataAvailable) {
+TEST(DataTunnelProto, LastMessageResult_DeserializationFailsWithoutResizeWhenDataMissing) {
     RawBuffer buffer(kLargeBufferSize);
     BufferWriter writer(buffer);
 
     // Write a serialized Payload_LastMessageResult; duplicating code from Serialize()
     // rather than calling that function because it wants to write the buffer.
-    ASSERT_TRUE(writer.Write("Topic A"));                                    // topic_name_
-    ASSERT_TRUE(writer.Write(proto::Payload_LastMessageResult::Result_Ok));  // result_
-    ASSERT_TRUE(writer.Write(static_cast<uint32_t>(4096)));                  // buffer.Size()
+    ASSERT_TRUE(writer.Write("Topic A"));                                    // topic_name
+    ASSERT_TRUE(writer.Write(proto::Payload_LastMessageResult::Result_Ok));  // result
+    ASSERT_TRUE(writer.Write(static_cast<uint32_t>(4096)));                  // data_size
+    ASSERT_TRUE(writer.Write("fake message data that's not long enough"));   // buffer
 
     // Attempt to deserialize payload; will fail due to insufficient data and will not
     // resize the buffer in the payload object.
     proto::Payload_LastMessageResult payload;
-    BufferReader reader(writer);
+    BufferReader reader({buffer.Ptr(), writer.GetPos()});
     EXPECT_FALSE(payload.Deserialize(reader));
     EXPECT_EQ(payload.buffer.Size(), static_cast<size_t>(0));
-
-    // "write" the amount of data specified in the payload header and create new reader that
-    // sees added data.
-    writer.MovePos(4096);
-    BufferReader reader_2(writer);
-
-    // Now deserialize succeeds and buffer resized.
-    EXPECT_TRUE(payload.Deserialize(reader_2));
-    EXPECT_EQ(payload.buffer.Size(), static_cast<size_t>(4096));
 }
 
-TEST(DataTunnelProto, TopicRawData_DeserializationFailsWithoutResizeUntilAllDataAvailable) {
+TEST(DataTunnelProto, TopicRawData_DeserializationFailsWithoutResizeWhenDataMissing) {
     RawBuffer buffer(kLargeBufferSize);
     BufferWriter writer(buffer);
 
     // Write a serialized Payload_TopicRawData; duplicating code from Serialize()
     // rather than calling that function because it wants to write the buffer.
-    ASSERT_TRUE(writer.Write(1234));                         // subscriber_pub_id
-    ASSERT_TRUE(writer.Write(static_cast<uint32_t>(4096)));  // data_size_
+    ASSERT_TRUE(writer.Write(1234));                                        // subscriber_pub_id
+    ASSERT_TRUE(writer.Write(static_cast<uint32_t>(4096)));                 // data_size
+    ASSERT_TRUE(writer.Write("fake message data that's not long enough"));  // buffer
 
     // Attempt to deserialize payload; will fail due to insufficient data and will not
     // resize the buffer in the payload object.
     proto::Payload_TopicRawData payload(1024);
-    BufferReader reader(writer);
+    BufferReader reader({buffer.Ptr(), writer.GetPos()});
     EXPECT_FALSE(payload.Deserialize(reader));
     EXPECT_EQ(payload.buffer.Size(), static_cast<size_t>(1024));
-
-    // "write" the amount of data specified in the payload header and create new reader that
-    // sees added data.
-    writer.MovePos(4096);
-    BufferReader reader_2(writer);
-
-    // Now deserialize succeeds and resizes the payload's buffer
-    EXPECT_TRUE(payload.Deserialize(reader_2));
-    EXPECT_EQ(payload.buffer.Size(), static_cast<size_t>(4096));
 }
 
-TEST(DataTunnelProto, SubscribeResult_DeserializationFailsWithoutResizeUntilAllDataAvailable) {
+TEST(DataTunnelProto, SubscribeResult_DeserializationFailsWithoutResizeWhenDataMissing) {
     RawBuffer buffer(kLargeBufferSize);
     BufferWriter writer(buffer);
 
     // Write a serialized Payload_SubscribeResult; duplicating code from Serialize()
     // rather than calling that function because it wants to write the buffer.
-    ASSERT_TRUE(writer.Write(static_cast<uint16_t>(0)));   // result_
-    ASSERT_TRUE(writer.Write(static_cast<uint32_t>(16)));  // message_size_
-    ASSERT_TRUE(writer.Write(static_cast<uint32_t>(16)));  // message_count_
-    ASSERT_TRUE(writer.Write("Topic A"));                  // topic_name_
-    ASSERT_TRUE(writer.Write(static_cast<uint8_t>(1)));    // has_last_message_
+    ASSERT_TRUE(writer.Write(static_cast<uint16_t>(0)));   // result
+    ASSERT_TRUE(writer.Write(static_cast<uint32_t>(16)));  // message_size
+    ASSERT_TRUE(writer.Write(static_cast<uint32_t>(16)));  // message_count
+    ASSERT_TRUE(writer.Write(14));                         // subscriber_pub_id
+    ASSERT_TRUE(writer.Write(static_cast<uint8_t>(1)));    // has_last_message
+    ASSERT_TRUE(writer.Write("too short"));                // last_message_content
 
     // Attempt to deserialize payload; will fail due to insufficient data and will not
     // resize the buffer in the payload object.
     proto::Payload_SubscribeResult payload;
-    BufferReader reader(writer);
+    BufferReader reader({buffer.Ptr(), writer.GetPos()});
     EXPECT_FALSE(payload.Deserialize(reader));
-
     EXPECT_EQ(payload.last_message_content.Size(), static_cast<size_t>(0));
-
-    // "write" the amount of data specified in the payload header and create new reader that
-    // sees added data.
-    writer.MovePos(16);
-    BufferReader reader_2(writer);
-
-    // Now deserialize succeeds and resizes the payload's buffer
-    ASSERT_TRUE(payload.Deserialize(reader_2));
-    EXPECT_EQ(payload.last_message_content.Size(), static_cast<size_t>(16));
 }
 
 }  // namespace android::sdv::dt::agent::test

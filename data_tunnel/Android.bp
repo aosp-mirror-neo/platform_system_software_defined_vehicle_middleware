@@ -30,7 +30,6 @@ cc_defaults {
         "src/connection_grpc/client_connection.cpp",
         "src/connection_grpc/connection_manager.cpp",
         "src/connection_grpc/operation_state_machine.cpp",
-        "src/connection_grpc/read_data.cpp",
         "src/connection_grpc/server_connection.cpp",
         "src/certs.cpp",
         "src/remote_agent/remote_agent_client.cpp",
@@ -179,7 +178,6 @@ cc_test {
         "src/connection_grpc/client_connection.cpp",
         "src/connection_grpc/connection_manager.cpp",
         "src/connection_grpc/operation_state_machine.cpp",
-        "src/connection_grpc/read_data.cpp",
         "src/connection_grpc/server_connection.cpp",
     ],
     data: [
