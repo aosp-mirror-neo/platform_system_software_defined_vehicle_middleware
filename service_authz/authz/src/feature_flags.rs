@@ -18,3 +18,29 @@
 pub fn enable_permissions() -> bool {
     sdv_middleware_flags::enable_authz_permissions()
 }
+
+// Compile-time flag for enforcing permissions and ACLs consistency.
+//
+// Adds sanity checks on top of enforce_permissions_and_acls_consistency():
+// - additionally checks that permissions are enabled
+// - additionally checks that ACLs are not disabled
+pub fn enforce_consistency() -> bool {
+    enable_permissions() && !disable_acls() && enforce_permissions_and_acls_consistency()
+}
+
+// Internal flag to control permissions and ACLs consistency.
+//
+// If enabled, Authz will require that permissions- and ACLs-based checks are
+// consistent.
+//
+// To be used for local migration from ACLs to Permissions.
+fn enforce_permissions_and_acls_consistency() -> bool {
+    false
+}
+
+// Compile-time flag for disabling ACLs.
+//
+// If enabled, Authz will not use ACLs for permission checks.
+pub fn disable_acls() -> bool {
+    false
+}

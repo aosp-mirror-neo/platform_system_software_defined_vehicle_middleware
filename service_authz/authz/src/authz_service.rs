@@ -73,11 +73,15 @@ impl AuthzService {
     ) -> bool {
         let object_log_identifier = format!("{object_fqin}#{object_service_unit_name}");
 
-        let acl_result = self.authz_via_acls.check_authorization_for_service_unit(
-            subject_fqin,
-            object_fqin,
-            object_service_unit_name,
-        );
+        let acl_result = if !feature_flags::disable_acls() {
+            self.authz_via_acls.check_authorization_for_service_unit(
+                subject_fqin,
+                object_fqin,
+                object_service_unit_name,
+            )
+        } else {
+            AuthzResult::ImplicitlyDenied("ACLs are disabled".to_string())
+        };
 
         let permission_result = if feature_flags::enable_permissions() {
             self.authz_via_permissions.check_authorization_for_service_unit(
@@ -110,11 +114,15 @@ impl AuthzService {
 
         let object_log_identifier = format!("{object_fqin}#{object_service_unit_name}");
 
-        let acl_result = self.authz_via_acls.check_authorization_for_service_unit(
-            subject_fqin,
-            &object_fqin,
-            &object_service_unit_name,
-        );
+        let acl_result = if !feature_flags::disable_acls() {
+            self.authz_via_acls.check_authorization_for_service_unit(
+                subject_fqin,
+                &object_fqin,
+                &object_service_unit_name,
+            )
+        } else {
+            AuthzResult::ImplicitlyDenied("ACLs are disabled".to_string())
+        };
 
         let permission_result = if feature_flags::enable_permissions() {
             self.authz_via_permissions.check_authorization_for_sud(subject_fqin, object_sud)
@@ -138,11 +146,15 @@ impl AuthzService {
     ) -> bool {
         let object_log_identifier = format!("{object_package_name}.{object_unit_type_name}");
 
-        let acl_result = self.authz_via_acls.check_authorization_for_unit_type(
-            subject_fqin,
-            object_package_name,
-            object_unit_type_name,
-        );
+        let acl_result = if !feature_flags::disable_acls() {
+            self.authz_via_acls.check_authorization_for_unit_type(
+                subject_fqin,
+                object_package_name,
+                object_unit_type_name,
+            )
+        } else {
+            AuthzResult::ImplicitlyDenied("ACLs are disabled".to_string())
+        };
 
         let permission_result = if feature_flags::enable_permissions() {
             self.authz_via_permissions.check_authorization_for_unit_type(
@@ -185,7 +197,14 @@ impl AuthzService {
         }
 
         if is_authorized_by_acls != is_authorized_by_permissions {
-            debug!("Access [subject: {subject_fqin}] to [object: {object_log_identifier}] mismatch: ACLs[{is_authorized_by_acls}], Permissions[{is_authorized_by_permissions}]");
+            let mismatch_log = format!("Access [subject: {subject_fqin}] to [object: {object_log_identifier}] mismatch: ACLs[{is_authorized_by_acls}], Permissions[{is_authorized_by_permissions}]");
+
+            if feature_flags::enforce_consistency() {
+                error!("{mismatch_log}");
+                return false;
+            } else {
+                debug!("{mismatch_log}");
+            }
         }
 
         if is_authorized_by_acls || is_authorized_by_permissions {
