@@ -19,7 +19,6 @@
 #include "../certs.h"
 #include "../connection.h"
 #include "operation_state_machine.h"
-#include "read_data.h"
 
 #include <android-base/logging.h>
 #include <grpc/grpc.h>
@@ -120,64 +119,64 @@ public:
 
     virtual size_t BytesSent() const { return bytes_written_.load(); }
 
-    // Implementation of IConnection::ReceiveData
-    //
-    // Grpc is message-oriented and doesn't let us limit how many bytes are
-    // returned from a read operation -- each read will give us the block of
-    // data from a single SendData() by our peer.
-    //
-    // So there's a possibility that buffer will not be large enough to return
-    // all of the data from a single Grpc read.  So this method will only
-    // initiate a new Grpc read if there's no leftover data from a previous
-    // ReceiveData() to be returned.
-    virtual size_t ReceiveData(void* buffer, size_t buffer_size) override {
-        if (buffer_size == 0) {
-            ALOGE("%s.ReceiveData: Illegal buffer size 0", ToString().c_str());
-            return 0;
-        }
+    virtual ReceivedData ReceiveData() override {
+        // Prepare buffer and start read.
+        grpc::ByteBuffer grpc_buffer;
 
-        // We need to hold the lock for exclusive access to read_data_.
         auto guard = read_state_.Lock();
+        // Start GRPC read operation and wait for callback indicating completion.
+        auto grpc_result =
+                read_state_.RunOperation(guard, [&]() { ReactorType::StartRead(&grpc_buffer); });
 
-        if (!read_data_) {
-            // Prepare buffer and start read.
-            grpc::ByteBuffer grpc_buffer;
-
-            auto grpc_result = read_state_.RunOperation(guard, [&]() {
-                ReactorType::StartRead(&grpc_buffer);
-            });
-
-            if (!grpc_result.has_value()) {
-                ALOGE("%s.ReceiveData(): In terminating state.  Returning failure.",
-                      ToString().c_str());
-                return 0;
-            }
-
-            if (!*grpc_result) {
-                ALOGE("%s.OnReadDone() got failure.  Terminating.", ToString().c_str());
-                read_state_.Terminate(guard);
-                return 0;
-            }
-
-            // Try to extract data from the buffer in a usable form.
-            read_data_ = ReadData::Extract(grpc_buffer);
-            if (!read_data_) {
-                // We got unusable data and are in a bad state; can't safely process further reads.
-                read_state_.Terminate(guard);
-                return 0;
-            }
+        if (!grpc_result.has_value()) {
+            ALOGE("%s.ReceiveData(): In terminating state.  Returning failure.",
+                  ToString().c_str());
+            return ReceivedData();
         }
 
-        // At this point read_data_ must be populated.
-        size_t read_len = read_data_->Consume(buffer, buffer_size);
-
-        // If we exhausted read_data_ then clear it so that we Grpc read on next ReceiveData().
-        if (read_data_->Exhausted()) {
-            read_data_.reset();
+        if (!*grpc_result) {
+            ALOGE("%s.OnReadDone() got failure.  Terminating.", ToString().c_str());
+            read_state_.Terminate(guard);
+            return ReceivedData();
         }
 
-        bytes_read_ += read_len;
-        return read_len;
+        grpc::Slice read_slice;
+
+        // We need to return data to the application in a single contiguous block.  A grpc::Slice
+        // references a contiguous region, but the grpc::ByteBuffer into which GRPC reads data
+        // may contain multiple non-contiguous slices.
+        //
+        // If grpc_buffer consists of a single slice, TrySingleSlice can populate read_slice with
+        // a new reference to that slice (which can persist after grpc_buffer is destroyed since
+        // slices are refcounted).
+        //
+        // If grpc_buffer has multiple slices, TrySingleSlice can't work, so we fall back to
+        // DumpToSingleSlice, which creates a new slice and copies all the data into it.
+        //
+        // TODO(b/491392921): Try collecting some stats on how often we're having to copy here and
+        // consider changing ReceiveData() to be able to return multiple spans.
+        if (!grpc_buffer.TrySingleSlice(&read_slice).ok() &&
+            !grpc_buffer.DumpToSingleSlice(&read_slice).ok()) {
+            ALOGE("ReceiveData() unable to dump buffer to single slice.  Forcing terminate.");
+            // Move immediately to terminated state since we got unusable data.
+            read_state_.Terminate(guard);
+            return ReceivedData();
+        } else if (read_slice.size() == 0) {
+            ALOGE("ReceiveData() got GRPC success but zero bytes.  Forcing terminate.");
+            // Move immediately to terminated state since we got unusable data.
+            read_state_.Terminate(guard);
+            return ReceivedData();
+        }
+
+        bytes_read_ += read_slice.size();
+
+        // grpc::Slice objects are refcounted, so the captured read_slice will remain valid even
+        // after the grpc_buffer from which it was created is destroyed.
+        return ReceivedData({read_slice.begin(), read_slice.size()}, [read_slice](auto) {
+            // Don't actually need to do anything here; the captured read_slice will be destroyed
+            // (with the rest of the std::function) right after this call, which is enough to
+            // free the storage.
+        });
     }
 
     virtual size_t BytesReceived() const { return bytes_read_.load(); }
@@ -202,7 +201,6 @@ private:
     std::atomic<size_t> bytes_written_;
 
     GrpcOperationStateMachine read_state_;
-    std::optional<ReadData> read_data_;
     std::atomic<size_t> bytes_read_;
 };
 

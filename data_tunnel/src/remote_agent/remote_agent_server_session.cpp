@@ -124,9 +124,6 @@ void RemoteAgentServerSession::ConnectionThread(
     ALOGD("RemoteAgentServerSession(%s)::ConnectionThread started", peer_vm_name_.c_str());
 
     RawBuffer send_buffer(kDefaultBufferSize);
-    // ReceivePayload() may later increase the buffer size if needed
-    RawBuffer receive_buffer(kDefaultBufferSize);
-    BufferWriter receive_writer(receive_buffer);
 
     auto opt_vm_name = handshaker.PerformHandshake(*connection_, std::nullopt);
     if (!opt_vm_name) {
@@ -141,7 +138,7 @@ void RemoteAgentServerSession::ConnectionThread(
 
     bool should_continue = true;
     while (should_continue) {
-        auto [parse_result, payload] = ReceivePayload(*connection_, nullptr, receive_writer);
+        auto [parse_result, payload] = ReceivePayload(*connection_);
 
         if (parse_result != Parcel::ParseResult::Success) {
             ALOGE("RemoteAgentServerSession(%s): ReceivePayload failed", peer_vm_name_.c_str());

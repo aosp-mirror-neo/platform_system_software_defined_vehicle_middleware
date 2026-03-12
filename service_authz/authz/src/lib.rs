@@ -28,6 +28,7 @@ mod parse_acl_policy_proto;
 mod single_vm_acl_policy_provider;
 #[cfg(test)]
 mod test_acl_policy_provider;
+mod vm_authz_policy_model;
 
 pub use acl_policy_model::AclPolicyModel;
 pub use acl_policy_provider::AclPolicyProvider;
@@ -35,6 +36,7 @@ pub use authz_enforcement_flag::AuthzEnforcementFlag;
 pub use authz_service::AuthzService;
 pub use authz_service::ServiceUnitRegistry;
 pub use single_vm_acl_policy_provider::SingleVmAclPolicyProvider;
+pub use vm_authz_policy_model::VmAuthzPolicyModel;
 
 use authz_guard::AuthzGuard;
 use authz_result::AuthzResult;

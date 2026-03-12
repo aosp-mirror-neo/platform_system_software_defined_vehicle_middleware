@@ -115,6 +115,22 @@ pub fn validate_alphanumhyphen(
     Ok(())
 }
 
+/// Validates whether `s` is a valid name, allowing empty strings.
+pub fn validate_alphanumhyphen_allow_empty(
+    s: &str,
+    max_length: usize,
+) -> Result<(), AlphanumHyphenValidationError> {
+    if s.is_empty() {
+        return Ok(());
+    }
+    starts_with_valid_character(s)?;
+    ends_with_valid_character(s)?;
+    is_within_max_length(s, max_length)?;
+    has_valid_char_only(s)?;
+    has_no_consecutive_hyphens(s)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,6 +235,47 @@ mod tests {
         );
         assert_eq!(
             validate_alphanumhyphen("alpha-num-hyphen-xxx---xxx", MAX_LENGTH),
+            Err(AlphanumHyphenValidationError::ContainsConsecutiveHyphens)
+        );
+    }
+    // Tests for validate_alphanumhyphen_allow_empty
+    #[test]
+    fn test_allow_empty_is_valid() {
+        assert_eq!(validate_alphanumhyphen_allow_empty("alpha-num-hyphen", MAX_LENGTH), Ok(()));
+        assert_eq!(validate_alphanumhyphen_allow_empty("", MAX_LENGTH), Ok(()));
+    }
+
+    #[test]
+    fn test_allow_empty_exceeds_max_length() {
+        let result = validate_alphanumhyphen_allow_empty(
+            "alpha-num-hyphen-has-41-symbols-90123456x",
+            MAX_LENGTH,
+        );
+        assert_eq!(result, Err(AlphanumHyphenValidationError::ExceedsMaxLength(40, 41)));
+    }
+
+    #[test]
+    fn test_allow_empty_has_invalid_character() {
+        let result = validate_alphanumhyphen_allow_empty("alpha-num@-hyphen", MAX_LENGTH);
+        assert_eq!(result, Err(AlphanumHyphenValidationError::HasInvalidCharacter('@')));
+    }
+
+    #[test]
+    fn test_allow_empty_starts_with_hyphen() {
+        let result = validate_alphanumhyphen_allow_empty("-alpha-num-hyphen", MAX_LENGTH);
+        assert_eq!(result, Err(AlphanumHyphenValidationError::StartsWithInvalidCharacter('-')));
+    }
+
+    #[test]
+    fn test_allow_empty_ends_with_hyphen() {
+        let result = validate_alphanumhyphen_allow_empty("alpha-num-hyphen-", MAX_LENGTH);
+        assert_eq!(result, Err(AlphanumHyphenValidationError::EndsWithInvalidCharacter('-')));
+    }
+
+    #[test]
+    fn test_allow_empty_has_2_consecutive_hyphens() {
+        assert_eq!(
+            validate_alphanumhyphen_allow_empty("alpha-num-hyphen--123", MAX_LENGTH),
             Err(AlphanumHyphenValidationError::ContainsConsecutiveHyphens)
         );
     }

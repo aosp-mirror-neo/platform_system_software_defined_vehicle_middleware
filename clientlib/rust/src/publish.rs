@@ -19,8 +19,6 @@
 use crate::publisher;
 use sdv_mw_rs_comms::{Communicate, Publisher, PublisherAttributes, PublisherMetadata};
 use sdv_status_rs::SdvResult;
-use std::any::{Any, TypeId};
-use std::collections::HashMap;
 
 /// Creates a publisher for a specific publication channel.
 ///
@@ -53,35 +51,4 @@ pub async fn create_publisher<Channel: publisher::Channel>(
         .build()?;
     let publish_handle = comms.create_publish(&attributes).await?;
     Ok(Publisher::<Channel::ProtoMessage>::new(publish_handle))
-}
-
-/// Creates publishers for a list of channels and populates a map with them.
-///
-/// This is a helper function intended to be used by the `vsidlc`-generated service
-/// bundle `new` method. It iterates over a slice of publication channels, creates a
-/// `Publisher` for each, and stores them in the provided `publishers` `HashMap`.
-/// The publishers are wrapped in a `Mutex` to allow for safe concurrent access.
-///
-/// # Arguments
-/// * `comms` - A reference to the `Communicate` trait object for middleware communication.
-/// * `channels` - A slice of references to the publication channels.
-/// * `publishers` - A mutable reference to a `HashMap` that will be populated with the created
-///   publishers. The key is a tuple of `(TypeId, i32)` representing the message type and channel
-///   ID.
-///
-/// # Returns
-/// An `SdvResult` which is `Ok(())` on success.
-pub async fn fill_publication_channels<Channel: publisher::Channel>(
-    comms: &dyn Communicate,
-    channels: &[&Channel],
-    publishers: &mut HashMap<(TypeId, String), Box<dyn Any + Send + Sync>>,
-) -> SdvResult<()> {
-    for chan in channels {
-        let publisher = create_publisher(comms, *chan).await?;
-        publishers.insert(
-            (std::any::TypeId::of::<Channel::ProtoMessage>(), chan.get_name().to_string()),
-            Box::new(std::sync::Mutex::new(publisher)),
-        );
-    }
-    Ok(())
 }

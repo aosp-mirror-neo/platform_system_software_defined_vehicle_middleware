@@ -45,58 +45,48 @@ bool SendPayload(IConnection& conn, const proto::Payload& payload, uint32_t parc
     proto::Parcel parcel(parcel_id);
     BufferWriter writer(data_buffer);
     if (!parcel.Serialize(writer, payload)) {
-        ALOGE("Unable to Serialize payload %u bytes", payload.Size());
+        ALOGE("Unable to Serialize payload %u bytes", proto::Parcel::ParcelSize(payload));
         return false;
     }
     uint32_t parcel_size = parcel.ParcelSize(payload);
     return conn.SendData(data_buffer.Ptr(), parcel_size);
 }
 
-// TODO(b/429464380): Make IConnection::ReceiveData message-oriented and simplify this
 std::pair<proto::Parcel::ParseResult, std::unique_ptr<proto::Payload>> ReceivePayload(
-        IConnection& conn, uint32_t* parcel_id, BufferWriter& writer) {
-    BufferReader reader(writer);
-    while (true) {
-        reader.SetAvailableToRead(writer.GetPos());
-        if (reader.AvailableToRead()) {
-            auto payload_result = proto::Parcel::Deserialize(reader, parcel_id);
-            if (payload_result.first == proto::Parcel::ParseResult::Success) {
-                if (reader.AvailableToRead()) {
-                    // There is still some data left
-                    writer.CutAndMove(reader.GetPos());
-                } else {
-                    // Nothing left to parse. Reset the writer's pointer
-                    writer.Reset();
-                }
-                return payload_result;
-            } else if (payload_result.first == proto::Parcel::ParseResult::NeedMoreData) {
-                if (!writer.Available()) {
-                    // Writer buffer isn't big enough to fit the message
-                    size_t current_size = writer.Buffer().Size();
-                    writer.Inflate(current_size);
-                    size_t new_size = writer.Buffer().Size();
-                    ALOGD("Payload buffer is too big to fit into the local %zu bytes receive "
-                          "buffer. Resizing to %zu.",
-                          current_size, new_size);
-                }
-            } else if (payload_result.first == proto::Parcel::ParseResult::UnknownPayload) {
-                ALOGW("Received an unknown payload type parcel. Ignoring...");
-                return payload_result;
-            } else {
-                ALOGE("Unable to deserialize the received parcel!");
-                return payload_result;
-            }
-        }
-
-        size_t bytes_read = conn.ReceiveData(writer.CurPtr(), writer.Available());
-        if (bytes_read > 0) {
-            writer.MovePos(static_cast<size_t>(bytes_read));
-        } else {
-            ALOGE("IConnection::ReceiveData() returned 0");
-            if (parcel_id) *parcel_id = 0;
-            return {proto::Parcel::ParseResult::Failure, nullptr};
-        }
+        IConnection& conn) {
+    auto received = conn.ReceiveData();
+    if (!received) {
+        ALOGE("IConnection::ReceiveData() returned empty result");
+        return {proto::Parcel::ParseResult::Failure, nullptr};
     }
+
+    BufferReader reader(received.span());
+
+    auto payload_result = proto::Parcel::Deserialize(reader, nullptr);
+
+    if (payload_result.first == proto::Parcel::ParseResult::Failure) {
+        ALOGE("ReceivePayload(): Got malformed parcel from connection!");
+        return {proto::Parcel::ParseResult::Failure, nullptr};
+    }
+
+    if (payload_result.first == proto::Parcel::ParseResult::UnknownPayload) {
+        ALOGE("ReceivePayload(): Got unknown payload type from connection!");
+        return {proto::Parcel::ParseResult::Failure, nullptr};
+    }
+
+    if (payload_result.first == proto::Parcel::ParseResult::NeedMoreData) {
+        ALOGE("ReceivePayload(): Got incomplete parcel from connection!");
+        return {proto::Parcel::ParseResult::Failure, nullptr};
+    }
+
+    // Result was success
+
+    if (reader.AvailableToRead()) {
+        ALOGE("ReceivePayload(): Got payload with extra data (%zu bytes) from connection!",
+              reader.AvailableToRead());
+    }
+
+    return payload_result;
 }
 
 }  // namespace android::sdv::dt::agent

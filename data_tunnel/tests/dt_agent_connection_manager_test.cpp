@@ -21,7 +21,6 @@
 #include "connection_grpc/connection_base.h"
 #include "connection_grpc/connection_manager.h"
 #include "connection_grpc/operation_state_machine.h"
-#include "connection_grpc/read_data.h"
 #include "connection_grpc/server_connection.h"
 
 #include <android-base/file.h>
@@ -107,84 +106,32 @@ protected:
     }
 };
 
+#define ASSERT_RECEIVE_DATA(CONN, EXPECTED_DATA_BUF)                                             \
+    {                                                                                            \
+        auto recv_data_ = (CONN)->ReceiveData();                                                 \
+        const auto recv_span_ = recv_data_.span();                                               \
+        ASSERT_EQ(recv_span_.size(), sizeof(EXPECTED_DATA_BUF));                                 \
+        ASSERT_EQ(memcmp(recv_span_.data(), (EXPECTED_DATA_BUF), sizeof(EXPECTED_DATA_BUF)), 0); \
+    }
+
 TEST_P(DtConnectionManagerTest, BasicFlow) {
     auto [conn0, conn1] = SetupConnectedPair();
 
     // Send 0 -> 1
-    uint8_t send_buf[8] = {0, 1, 2, 3, 4, 5, 6, 7};
-    ASSERT_TRUE(conn0->SendData(send_buf, sizeof(send_buf)));
+    {
+        uint8_t send_buf[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+        ASSERT_TRUE(conn0->SendData(send_buf, sizeof(send_buf)));
 
-    uint8_t recv_buf[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-    ASSERT_EQ(conn1->ReceiveData(recv_buf, sizeof(recv_buf)), 8);
-
-    ASSERT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
-
-    // Send 1 -> 0
-    uint8_t send_buf_2[8] = {8, 9, 10, 11, 12, 13, 14, 15};
-    ASSERT_TRUE(conn1->SendData(send_buf, sizeof(send_buf_2)));
-
-    uint8_t recv_buf_2[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-    ASSERT_EQ(conn0->ReceiveData(recv_buf_2, sizeof(recv_buf_2)), 8);
-
-    ASSERT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
-}
-
-TEST_P(DtConnectionManagerTest, SplitRead) {
-    auto [conn0, conn1] = SetupConnectedPair();
-
-    // Send 0 -> 1
-    uint8_t send_buf[16] = {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
-    ASSERT_TRUE(conn0->SendData(send_buf, sizeof(send_buf)));
-
-    uint8_t recv_buf_a[6] = {0, 0, 0, 0, 0, 0};
-    ASSERT_EQ(conn1->ReceiveData(recv_buf_a, 6), 6);
-    ASSERT_EQ(memcmp(send_buf, recv_buf_a, 6), 0);
-
-    uint8_t recv_buf_b[6] = {0, 0, 0, 0, 0, 0};
-    ASSERT_EQ(conn1->ReceiveData(recv_buf_b, 6), 6);
-    ASSERT_EQ(memcmp(send_buf + 6, recv_buf_b, 6), 0);
-
-    uint8_t recv_buf_c[6] = {0, 0, 0, 0, 0, 0};
-    ASSERT_EQ(conn1->ReceiveData(recv_buf_c, 6), 4);
-    ASSERT_EQ(memcmp(send_buf + 12, recv_buf_c, 4), 0);
+        ASSERT_RECEIVE_DATA(conn1, send_buf);
+    }
 
     // Send 1 -> 0
-    uint8_t send_buf_2[16] = {0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30};
-    ASSERT_TRUE(conn1->SendData(send_buf_2, sizeof(send_buf_2)));
+    {
+        uint8_t send_buf[10] = {8, 9, 10, 11, 12, 13, 14, 15, 16, 17};
+        ASSERT_TRUE(conn1->SendData(send_buf, sizeof(send_buf)));
 
-    uint8_t recv_buf_2a[7] = {0, 0, 0, 0, 0, 0, 0};
-    ASSERT_EQ(conn0->ReceiveData(recv_buf_2a, 7), 7);
-    ASSERT_EQ(memcmp(send_buf_2, recv_buf_2a, 7), 0);
-
-    uint8_t recv_buf_2b[7] = {0, 0, 0, 0, 0, 0, 0};
-    ASSERT_EQ(conn0->ReceiveData(recv_buf_2b, 7), 7);
-    ASSERT_EQ(memcmp(send_buf_2 + 7, recv_buf_2b, 7), 0);
-
-    uint8_t recv_buf_2c[7] = {0, 0, 0, 0, 0, 0, 0};
-    ASSERT_EQ(conn0->ReceiveData(recv_buf_2c, 7), 2);
-    ASSERT_EQ(memcmp(send_buf_2 + 14, recv_buf_2c, 2), 0);
-}
-
-TEST_P(DtConnectionManagerTest, PartialRead) {
-    auto [conn0, conn1] = SetupConnectedPair();
-
-    // Send 0 -> 1
-    uint8_t send_buf[8] = {0xd, 0xe, 0xa, 0xd, 0xb, 0xe, 0xe, 0xf};
-    ASSERT_TRUE(conn0->SendData(send_buf, sizeof(send_buf)));
-
-    uint8_t recv_buf[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    ASSERT_EQ(conn1->ReceiveData(recv_buf, sizeof(recv_buf)), sizeof(send_buf));
-
-    ASSERT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
-
-    // Send 1 -> 0
-    uint8_t send_buf_2[8] = {0xa, 0xb, 0xc, 0xd, 0xa, 0xb, 0xc, 0xd};
-    ASSERT_TRUE(conn0->SendData(send_buf_2, sizeof(send_buf_2)));
-
-    uint8_t recv_buf_2[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    ASSERT_EQ(conn1->ReceiveData(recv_buf_2, sizeof(recv_buf_2)), sizeof(send_buf_2));
-
-    ASSERT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf_2)), 0);
+        ASSERT_RECEIVE_DATA(conn0, send_buf);
+    }
 }
 
 TEST_P(DtConnectionManagerTest, GetLocalIpAddress) {
@@ -222,12 +169,12 @@ TEST_P(DtConnectionManagerTest, ConcurrentSenders) {
     std::thread recv_threads[2];
     for (int recv_idx = 0; recv_idx < 2; recv_idx++) {
         recv_threads[recv_idx] = std::thread([&, recv_idx]() {
-            uint8_t recv_buf[MESSAGE_SIZE];
             for (int i = 0; i < (MESSAGE_COUNT_TOTAL / 2); i++) {
-                if (conn[recv_idx]->ReceiveData(recv_buf, MESSAGE_SIZE) != MESSAGE_SIZE) {
+                auto recv_data = conn[recv_idx]->ReceiveData();
+                if (recv_data.span().size() != MESSAGE_SIZE) {
                     break;
                 }
-                recv_counts[recv_idx][recv_buf[0]]++;
+                recv_counts[recv_idx][*(recv_data.span().data())]++;
             }
         });
     }
@@ -298,22 +245,18 @@ TEST_P(DtConnectionManagerTest, MultipleClients) {
 
     for (uint8_t i = 0; i < 3; i++) {
         // Send client -> server
-        uint8_t send_buf[8] = {i, 1, 2, 3, 4, 5, 6, 7};
-        ASSERT_TRUE(c_conn[i]->SendData(send_buf, sizeof(send_buf)));
-
-        uint8_t recv_buf[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-        ASSERT_EQ(s_conn[i]->ReceiveData(recv_buf, sizeof(recv_buf)), 8);
-
-        ASSERT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
+        {
+            uint8_t send_buf[8] = {i, 1, 2, 3, 4, 5, 6, 7};
+            ASSERT_TRUE(c_conn[i]->SendData(send_buf, sizeof(send_buf)));
+            ASSERT_RECEIVE_DATA(s_conn[i], send_buf);
+        }
 
         // Send server -> client
-        uint8_t send_buf_2[8] = {8, 9, 10, 11, 12, 13, 14, i};
-        ASSERT_TRUE(s_conn[i]->SendData(send_buf, sizeof(send_buf_2)));
-
-        uint8_t recv_buf_2[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-        ASSERT_EQ(c_conn[i]->ReceiveData(recv_buf_2, sizeof(recv_buf_2)), 8);
-
-        ASSERT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
+        {
+            uint8_t send_buf[8] = {8, 9, 10, 11, 12, 13, 14, i};
+            ASSERT_TRUE(s_conn[i]->SendData(send_buf, sizeof(send_buf)));
+            ASSERT_RECEIVE_DATA(c_conn[i], send_buf);
+        }
     }
 }
 
@@ -339,22 +282,18 @@ TEST_P(DtConnectionManagerTest, MultipleServers) {
 
     for (uint8_t i = 0; i < 3; i++) {
         // Send client -> server
-        uint8_t send_buf[8] = {i, 1, 2, 3, 4, 5, 6, 7};
-        ASSERT_TRUE(c_conn[i]->SendData(send_buf, sizeof(send_buf)));
-
-        uint8_t recv_buf[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-        ASSERT_EQ(s_conn[i]->ReceiveData(recv_buf, sizeof(recv_buf)), 8);
-
-        ASSERT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
+        {
+            uint8_t send_buf[8] = {i, 1, 2, 3, 4, 5, 6, 7};
+            ASSERT_TRUE(c_conn[i]->SendData(send_buf, sizeof(send_buf)));
+            ASSERT_RECEIVE_DATA(s_conn[i], send_buf);
+        }
 
         // Send server -> client
-        uint8_t send_buf_2[8] = {8, 9, 10, 11, 12, 13, 14, i};
-        ASSERT_TRUE(s_conn[i]->SendData(send_buf, sizeof(send_buf_2)));
-
-        uint8_t recv_buf_2[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-        ASSERT_EQ(c_conn[i]->ReceiveData(recv_buf_2, sizeof(recv_buf_2)), 8);
-
-        ASSERT_EQ(memcmp(send_buf, recv_buf, sizeof(send_buf)), 0);
+        {
+            uint8_t send_buf[8] = {8, 9, 10, 11, 12, 13, 14, i};
+            ASSERT_TRUE(s_conn[i]->SendData(send_buf, sizeof(send_buf)));
+            ASSERT_RECEIVE_DATA(c_conn[i], send_buf);
+        }
     }
 }
 

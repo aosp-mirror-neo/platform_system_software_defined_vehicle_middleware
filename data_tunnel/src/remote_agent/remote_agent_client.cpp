@@ -391,12 +391,9 @@ void RemoteAgentClient::HandleTopicDestroyed(const Payload_TopicDestroyed& topic
 void RemoteAgentClient::HandleConnectionMessages() {
     ALOGD("RemoteAgentClient(%s)::HandleConnectionMessages starting", peer_vm_name_.c_str());
     RawBuffer send_buffer(kDefaultBufferSize);
-    // ReceivePayload() may later increase the buffer size if needed
-    RawBuffer receive_buffer(kDefaultBufferSize);
-    BufferWriter receive_writer(receive_buffer);
 
     while (true) {
-        auto [parse_result, payload] = ReceivePayload(*connection_, nullptr, receive_writer);
+        auto [parse_result, payload] = ReceivePayload(*connection_);
         if (parse_result == proto::Parcel::ParseResult::UnknownPayload) {
             ALOGW("RemoteAgentClient(%s): Received unknown payload", peer_vm_name_.c_str());
             continue;

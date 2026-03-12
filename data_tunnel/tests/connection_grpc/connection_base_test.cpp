@@ -97,27 +97,25 @@ TEST_F(GrpcConnectionBaseTest, ConnectAndDisconnect) {
 TEST_F(GrpcConnectionBaseTest, SendAndReceiveData_ClientToServer) {
     EstablishConnection();
 
-    std::vector<char> send_buffer = {'h', 'e', 'l', 'l', 'o'};
-    std::vector<char> recv_buffer(send_buffer.size());
+    uint8_t send_buffer[] = {'h', 'e', 'l', 'l', 'o'};
 
-    ASSERT_TRUE(client_connection_->SendData(send_buffer.data(), send_buffer.size()));
+    ASSERT_TRUE(client_connection_->SendData(send_buffer, sizeof(send_buffer)));
 
-    size_t bytes_received = server_connection_->ReceiveData(recv_buffer.data(), recv_buffer.size());
-    ASSERT_EQ(bytes_received, send_buffer.size());
-    EXPECT_EQ(recv_buffer, send_buffer);
+    auto received = server_connection_->ReceiveData();
+    ASSERT_EQ(received.size(), sizeof(send_buffer));
+    EXPECT_EQ(memcmp(received.data(), send_buffer, sizeof(send_buffer)), 0);
 }
 
 TEST_F(GrpcConnectionBaseTest, SendAndReceiveData_ServerToClient) {
     EstablishConnection();
 
-    std::vector<char> send_buffer = {'w', 'o', 'r', 'l', 'd'};
-    std::vector<char> recv_buffer(send_buffer.size());
+    uint8_t send_buffer[] = {'w', 'o', 'r', 'l', 'd'};
 
-    ASSERT_TRUE(server_connection_->SendData(send_buffer.data(), send_buffer.size()));
+    ASSERT_TRUE(server_connection_->SendData(send_buffer, sizeof(send_buffer)));
 
-    size_t bytes_received = client_connection_->ReceiveData(recv_buffer.data(), recv_buffer.size());
-    ASSERT_EQ(bytes_received, send_buffer.size());
-    EXPECT_EQ(recv_buffer, send_buffer);
+    auto received = client_connection_->ReceiveData();
+    ASSERT_EQ(received.size(), sizeof(send_buffer));
+    EXPECT_EQ(memcmp(received.data(), send_buffer, sizeof(send_buffer)), 0);
 }
 
 TEST_F(GrpcConnectionBaseTest, SendAndReceiveLargeData) {
@@ -128,21 +126,12 @@ TEST_F(GrpcConnectionBaseTest, SendAndReceiveLargeData) {
     for (size_t i = 0; i < kLargeSize; ++i) {
         send_buffer[i] = static_cast<char>(i % 256);
     }
-    std::vector<char> recv_buffer(kLargeSize);
 
     ASSERT_TRUE(client_connection_->SendData(send_buffer.data(), send_buffer.size()));
 
-    size_t total_received = 0;
-    while (total_received < kLargeSize) {
-        size_t bytes_received =
-                server_connection_->ReceiveData(recv_buffer.data() + total_received,
-                                                recv_buffer.size() - total_received);
-        ASSERT_GT(bytes_received, 0) << "ReceiveData returned 0 before all data was received.";
-        total_received += bytes_received;
-    }
-
-    ASSERT_EQ(total_received, kLargeSize);
-    EXPECT_EQ(recv_buffer, send_buffer);
+    auto received = server_connection_->ReceiveData();
+    ASSERT_EQ(received.size(), kLargeSize);
+    EXPECT_EQ(memcmp(received.data(), send_buffer.data(), kLargeSize), 0);
 }
 
 TEST_F(GrpcConnectionBaseTest, AuthenticatedIdentityWithoutSsl) {

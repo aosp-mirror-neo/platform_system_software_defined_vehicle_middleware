@@ -24,14 +24,12 @@ mod test {
     // sdv
     use sdv::comms::id::ServiceFqin;
     use sdv::comms::ContextRef;
-    use sdv::mw::{Availability, SdvComms, SubscribeOptions};
+    use sdv::mw::{clientlib, Availability, SdvComms, SubscribeOptions};
     use sdv::status::SdvStatusCode;
     // test catalog
-    use sdv_mw_rs_sdv_vsidl_multipub_test_cabin_sensor::{
-        publisher as cabin_publisher, CabinSensor,
-    };
+    use sdv_mw_rs_sdv_vsidl_multipub_test_cabin_sensor::publisher as cabin_publisher;
     use sdv_mw_rs_sdv_vsidl_multipub_test_hvac_control::subscriber as hvac_subscriber;
-    use sdv_mw_rs_sdv_vsidl_pubsub_test_publishing_bundle::{publisher, PublishingBundle};
+    use sdv_mw_rs_sdv_vsidl_pubsub_test_publishing_bundle::publisher;
     use sdv_mw_rs_sdv_vsidl_pubsub_test_subscribing_bundle::subscriber;
     use vsidl_multipub_test::cabin::CabinTemperature;
     use vsidl_pubsub_test_proto::tire::TirePressure;
@@ -59,7 +57,7 @@ mod test {
         let sdv_comms = Arc::new(SdvComms { context });
 
         // AND GIVEN an availability stream.
-        let mut availability_stream = sdv::mw::clientlib::create_registration_event_stream(
+        let mut availability_stream = clientlib::create_registration_event_stream(
             sdv_comms.as_ref(),
             subscriber::Channel::<TirePressure>::TOPIC_ZERO,
         )
@@ -67,7 +65,7 @@ mod test {
         .expect("Availability stream creation failed");
 
         // WHEN trying to create an observer.
-        let result = sdv::mw::clientlib::create_observer(
+        let result = clientlib::create_observer(
             sdv_comms.as_ref(),
             subscriber::Channel::<TirePressure>::TOPIC_ZERO,
             &SubscribeOptions::default(),
@@ -80,12 +78,13 @@ mod test {
 
         // --------------------- Publisher Initially Available -----------------------
 
-        // WHEN creating the publishing service bundle.
-        let mut publishing_bundle = PublishingBundle::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("PublishingBundle creation failed.");
+        // WHEN creating the publisher.
+        let pressure_pub = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            publisher::Channel::<TirePressure>::TOPIC_ZERO,
+        )
+        .await
+        .expect("Creating publisher for Channel::TOPIC_ZERO failed.");
 
         // THEN the availability steam yields 'Available'.
         assert_eq!(
@@ -96,17 +95,13 @@ mod test {
         // AND THEN we can create an observer and receive messages
         let pressure = 12823;
 
-        let mut observer = sdv::mw::clientlib::create_observer(
+        let mut observer = clientlib::create_observer(
             sdv_comms.as_ref(),
             subscriber::Channel::<TirePressure>::TOPIC_ZERO,
             &SubscribeOptions::default(),
         )
         .await
         .expect("observer creation for TirePressure::TOPIC_ZERO failed.");
-
-        let pressure_pub = publishing_bundle
-            .take_publisher(publisher::Channel::<TirePressure>::TOPIC_ZERO)
-            .expect("taking publisher Channel::TOPIC_ZERO failed.");
 
         // SLEEP to ensure the topic multiplexer is created on a separate process.
         thread::sleep(TOPIC_PROCESSING_DURATION);
@@ -136,13 +131,12 @@ mod test {
         // --------------------- Publisher Available Again after Drop -----------------------
 
         // AND WHEN the publisher becomes available again
-        drop(publishing_bundle);
-        let mut publishing_bundle = PublishingBundle::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("PublishingBundle creation failed.");
-
+        let pressure_pub = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            publisher::Channel::<TirePressure>::TOPIC_ZERO,
+        )
+        .await
+        .expect("creating publisher for Channel::TOPIC_ZERO failed.");
         // THEN the availability steam yields 'Available'.
         assert_eq!(
             tokio::time::timeout(EVENT_STREAM_TIMEOUT, availability_stream.next()).await,
@@ -151,10 +145,6 @@ mod test {
 
         // AND WHEN publishing a message:
         let pressure_two = 84723;
-
-        let pressure_pub = publishing_bundle
-            .take_publisher(publisher::Channel::<TirePressure>::TOPIC_ZERO)
-            .expect("taking publisher Channel::TOPIC_ZERO failed.");
 
         // SLEEP to ensure the topic multiplexer is created on a separate process.
         thread::sleep(TOPIC_PROCESSING_DURATION);
@@ -182,7 +172,7 @@ mod test {
         let sdv_comms = Arc::new(SdvComms { context });
 
         // AND GIVEN an availability stream.
-        let mut availability_stream = sdv::mw::clientlib::create_registration_event_stream(
+        let mut availability_stream = clientlib::create_registration_event_stream(
             sdv_comms.as_ref(),
             hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
         )
@@ -190,7 +180,7 @@ mod test {
         .expect("Availability stream creation failed");
 
         // WHEN trying to create an observer.
-        let result = sdv::mw::clientlib::create_observer(
+        let result = clientlib::create_observer(
             sdv_comms.as_ref(),
             hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
@@ -201,12 +191,13 @@ mod test {
         assert!(result.is_err());
         assert_eq!(result.err().unwrap().status_code(), SdvStatusCode::NotFound);
 
-        // WHEN creating the publishing service bundle.
-        let mut cabin_sensor = CabinSensor::builder()
-            .set_comms(sdv_comms.clone())
-            .build()
-            .await
-            .expect("CabinSensor creation failed.");
+        // WHEN creating the publisher.
+        let cabin_pub = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            cabin_publisher::Channel::<CabinTemperature>::MULTIPUB,
+        )
+        .await
+        .expect("Creating publisher for CabinTemperature failed.");
         // THEN the availability steam yields 'Available'.
         assert_eq!(
             tokio::time::timeout(EVENT_STREAM_TIMEOUT, availability_stream.next()).await,
@@ -216,7 +207,7 @@ mod test {
         // AND THEN we can create an observer and receive messages
         let cabin_temp = 8562;
 
-        let mut observer = sdv::mw::clientlib::create_observer(
+        let mut observer = clientlib::create_observer(
             sdv_comms.as_ref(),
             hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
@@ -226,10 +217,6 @@ mod test {
 
         // SLEEP to ensure the topic multiplexer is created on a separate process.
         thread::sleep(TOPIC_PROCESSING_DURATION);
-
-        let cabin_pub = cabin_sensor
-            .take_publisher(cabin_publisher::Channel::<CabinTemperature>::MULTIPUB)
-            .expect("taking cabin pub failed.");
         cabin_pub
             .publish(&CabinTemperature { temperature: cabin_temp, ..Default::default() })
             .expect("cabin_pub pulishing failed.");

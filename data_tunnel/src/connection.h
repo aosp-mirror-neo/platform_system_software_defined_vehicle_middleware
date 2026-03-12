@@ -21,6 +21,7 @@
 #include <netinet/in.h>
 
 #include <functional>
+#include <span>
 
 #include <sdv/status.hpp>
 
@@ -82,6 +83,51 @@ private:
     sockaddr_in sock_addr_;
 };
 
+/* ReceivedData
+ *
+ * Provides a view of a memory region containing the raw bytes for a received message, which is
+ * owned by IConnection implementation but loaned to the application following a ReceiveData() call.
+ *
+ * Primarily intended to eliminate a copy required when receiving data from a peer VM:
+ *
+ * The IConnection::ReceiveData() implementation returns a ReceivedData referencing the received
+ * content in a buffer that was allocated by the transport layer, so that it does not need to
+ * be copied into one owned by the buffer.
+ *
+ * The caller can parse the message directly from that span and then release the memory by
+ * destroying or reset()ing this object.
+ */
+class ReceivedData {
+public:
+    using Releaser = std::function<void(std::span<const uint8_t>)>;
+
+    ReceivedData(std::span<const uint8_t> span = std::span<const uint8_t>(),
+                 Releaser releaser = Releaser()) :
+          span_(span), releaser_(std::move(releaser)) {}
+    ReceivedData(const ReceivedData&) = delete;
+    ReceivedData(ReceivedData&& other) :
+          span_(std::exchange(other.span_, std::span<const uint8_t>())),
+          releaser_(std::exchange(other.releaser_, Releaser())) {}
+    ~ReceivedData() { reset(); }
+
+    const std::span<const uint8_t>& span() const { return span_; }
+    const uint8_t* data() const { return span_.data(); }
+    size_t size() const { return span_.size(); }
+    operator bool() const { return !span_.empty(); }
+
+    void reset() {
+        if (releaser_) {
+            releaser_(span_);
+            releaser_ = Releaser();
+        }
+        span_ = std::span<const uint8_t>();
+    }
+
+private:
+    std::span<const uint8_t> span_;
+    Releaser releaser_;
+};
+
 class IConnection {
 public:
     virtual ~IConnection() = default;
@@ -92,8 +138,12 @@ public:
     // to fail.
     virtual void RequestDisconnect() = 0;
 
+    // Sends buffer as a single message that will be read by the counterpart as a single
+    // ReceivedData from ReceiveData().
     virtual bool SendData(const void* buffer, size_t bytes_to_send) = 0;
-    virtual size_t ReceiveData(void* buffer, size_t buffer_size) = 0;
+
+    // Receives the content from exactly one corresponding SendData() call.
+    virtual ReceivedData ReceiveData() = 0;
     virtual std::string ToString() const = 0;
     // For dumpsys stats
     virtual size_t BytesSent() const = 0;

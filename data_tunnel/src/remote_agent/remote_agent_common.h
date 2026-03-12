@@ -44,6 +44,6 @@ bool SendPayload(IConnection& conn, const proto::Payload& payload, uint32_t parc
 
 // Try to Receive a payload from the given parcel, using writer as scratch space.
 std::pair<proto::Parcel::ParseResult, std::unique_ptr<proto::Payload>> ReceivePayload(
-        IConnection& conn, uint32_t* parcel_id, BufferWriter& writer);
+        IConnection& conn);
 
 }  // namespace android::sdv::dt::agent

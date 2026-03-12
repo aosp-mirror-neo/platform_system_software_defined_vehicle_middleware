@@ -549,7 +549,7 @@ async fn dt_history_topic_success() {
     let ctx = ContextRef::create(fqin);
 
     let unit_type = make_unit_type("HistoryTopicTestTopic").expect("Valid UnitType");
-    let topic_name = "test_topic";
+    let topic_name = "test-topic";
 
     // Create two publishers on the same topic
     let mut pub_a_meta = PublisherUnitMetadata::new();
@@ -1442,7 +1442,7 @@ async fn dt_instant_read_on_topic_success() {
     let ctx = ContextRef::create(fqin);
 
     let unit_type = make_unit_type("InstantReadTopicTest").expect("Valid UnitType");
-    let topic_name = "test_instant_topic";
+    let topic_name = "test-instant-topic";
 
     // Create two publishers
     let mut pub_a_meta = PublisherUnitMetadata::new();

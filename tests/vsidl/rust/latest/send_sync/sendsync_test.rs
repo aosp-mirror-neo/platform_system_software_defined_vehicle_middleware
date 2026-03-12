@@ -24,7 +24,9 @@ mod test {
     // sdv
     use sdv::comms::id::ServiceFqin;
     use sdv::comms::ContextRef;
-    use sdv::mw::{clientlib, Availability, ClientOptions, SdvComms, SubscribeOptions};
+    use sdv::mw::{
+        clientlib, Availability, ClientOptions, Communicate, SdvComms, SubscribeOptions,
+    };
     use sdv::status::SdvResult;
     // test catalog
     use sdv_mw_rs_sdv_vsidl_sendsync_test_bundle_one::{publisher as publisher_one, BundleOne};
@@ -100,10 +102,11 @@ mod test {
         // THEN BundleOne is `Send`.
         assert_send(&bundle_one);
         let cloned_token = token.clone();
+        let comms = sdv_comms.clone();
         let handle_one = tokio::spawn(async move {
             // Publish message repeatedly until cancelled.
             tokio::select! {
-                _ = publish_repeat(bundle_one, pressure) => {
+                _ = publish_repeat(comms, pressure) => {
                 }
                 _ = cloned_token.cancelled() => {
                 }
@@ -122,7 +125,7 @@ mod test {
         assert_send(&bundle_two);
         let handle_two = tokio::spawn(async move {
             // Wait until message was observed.
-            let received = init_and_observe_message(bundle_two, sdv_comms).await.unwrap().unwrap();
+            let received = init_and_observe_message(sdv_comms.as_ref()).await.unwrap().unwrap();
             assert_eq!(received.len(), 1);
             assert_eq!(received[0].pressure, pressure);
             // Cancel all tasks once the test succeeds.
@@ -134,11 +137,13 @@ mod test {
     }
 
     /// Repeat-publish the pressure message with the given pressure.
-    async fn publish_repeat(mut bundle: BundleOne, pressure: u32) {
-        let publisher = bundle
-            .take_publisher(publisher_one::Channel::<TirePressure>::FRONT_LEFT)
-            .expect("taking publisher_one::FRONT_LEFT failed.");
-
+    async fn publish_repeat(comms: Arc<dyn Communicate>, pressure: u32) {
+        let publisher = clientlib::create_publisher(
+            comms.as_ref(),
+            publisher_one::Channel::<TirePressure>::FRONT_LEFT,
+        )
+        .await
+        .expect("creating publisher_one::FRONT_LEFT failed.");
         // Publish a pressure message every 200 ms.
         let mut interval = interval(Duration::from_millis(200));
         loop {
@@ -152,20 +157,20 @@ mod test {
     /// Fully initialize the service bundle (calling all public methods),
     /// then return the first observed message.
     async fn init_and_observe_message(
-        mut bundle: BundleTwo,
-        comms: Arc<SdvComms>,
+        comms: &dyn Communicate,
     ) -> Option<SdvResult<Vec<TirePressure>>> {
-        // Take and use publisher, to ensure this API is used.
-        let publisher = bundle
-            .take_publisher(publisher_two::Channel::<TirePressure>::FRONT_RIGHT)
-            .expect("taking publisher_two::FRONT_RIGHT failed.");
+        // Create publisher, to ensure this API is used.
+        let publisher =
+            clientlib::create_publisher(comms, publisher_two::Channel::<TirePressure>::FRONT_RIGHT)
+                .await
+                .expect("taking publisher_two::FRONT_RIGHT failed.");
         publisher
             .publish(&TirePressure { pressure: 0, ..Default::default() })
             .expect("publisher pulishing failed.");
 
         // Wait for client availability, to ensure create_client API is used.
         let mut stream = clientlib::create_server_registration_event_stream(
-            comms.as_ref(),
+            comms,
             client::Descriptor::<sdv_vsidl_sendsync_test_other_tire_status_rpc::Client>::OTHER_TIRE_STATUS,
         )
         .await
@@ -178,7 +183,7 @@ mod test {
         }
 
         clientlib::create_rpc_client(
-            comms.as_ref(),
+            comms,
             client::Descriptor::<sdv_vsidl_sendsync_test_other_tire_status_rpc::Client>::OTHER_TIRE_STATUS,
             ClientOptions::default(),
         )
@@ -187,7 +192,7 @@ mod test {
 
         // Check publication availability.
         let mut availability_stream = clientlib::create_registration_event_stream(
-            comms.as_ref(),
+            comms,
             subscriber::Channel::<TirePressure>::FRONT_LEFT,
         )
         .await
@@ -200,7 +205,7 @@ mod test {
 
         // Create all subscribe options to ensure APIs are called.
         let subscribe_result = clientlib::create_subscriber(
-            comms.as_ref(),
+            comms,
             subscriber::Channel::<TirePressure>::FRONT_LEFT,
             &SubscribeOptions::default(),
         )
@@ -208,7 +213,7 @@ mod test {
         assert!(subscribe_result.is_ok());
 
         let history_result = clientlib::create_history(
-            comms.as_ref(),
+            comms,
             subscriber::Channel::<TirePressure>::FRONT_LEFT,
             &SubscribeOptions::builder().message_count(6).build().unwrap(),
         )
@@ -216,7 +221,7 @@ mod test {
         assert!(history_result.is_ok());
 
         let instant_result = clientlib::create_instant_reader(
-            comms.as_ref(),
+            comms,
             subscriber::Channel::<TirePressure>::FRONT_LEFT,
             &SubscribeOptions::default(),
         )
@@ -224,7 +229,7 @@ mod test {
         assert!(instant_result.is_ok());
 
         let mut observer = clientlib::create_observer(
-            comms.as_ref(),
+            comms,
             subscriber::Channel::<TirePressure>::FRONT_LEFT,
             &SubscribeOptions::default(),
         )
