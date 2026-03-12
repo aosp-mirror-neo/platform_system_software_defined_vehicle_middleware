@@ -20,7 +20,23 @@ service_bundle {
   name: "TireStatusProducer"
   server {
     service: "TireStatus"
-    channel: "tire-status"
+    channel: "tire-status-unary"
+    service_unit_name: "unary"
+  }
+  server {
+    service: "TireStatus"
+    channel: "tire-status-server-stream"
+    service_unit_name: "server-stream"
+  }
+  server {
+    service: "TireStatus"
+    channel: "tire-status-client-stream"
+    service_unit_name: "client-stream"
+  }
+  server {
+    service: "TireStatus"
+    channel: "tire-status-twice"
+    service_unit_name: "twice"
   }
 }
 
@@ -28,6 +44,14 @@ service_bundle {
   name: "TireStatusConsumer"
   client {
     service: "TireStatus"
-    channel: "tire-status"
+    channel: "tire-status-unary"
+  }
+  client {
+    service: "TireStatus"
+    channel: "tire-status-server-stream"
+  }
+  client {
+    service: "TireStatus"
+    channel: "tire-status-client-stream"
   }
 }
