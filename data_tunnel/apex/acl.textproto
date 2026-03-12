@@ -17,17 +17,20 @@
 
 # ACL policies for Data Tunnel agent.
 
-acls {
-    name: "Acl"
-    include: "com.android.sdv.dt.IDataTunnelAgent"
+acls { name: "Acl" include: "com.android.sdv.dt.IDataTunnelAgent" }
+
+unit_types { name: "DataTunnelAgentUnitType" acl_names: "Acl" }
+
+service_units { name: "data-tunnel-agent-service-unit-name" acl_names: "Acl" }
+
+# Permissions
+
+server {
+  service: "com.android.sdv.dt.DataTunnelAgentUnitType"
+  channel: "data-tunnel-agent-service-unit-name"
 }
 
-unit_types {
-    name: "DataTunnelAgentUnitType"
-    acl_names: "Acl"
-}
-
-service_units {
-    name: "data-tunnel-agent-service-unit-name"
-    acl_names: "Acl"
+client {
+  service: "com.android.sdv.dt.DataTunnelAgentUnitType"
+  channel: "data-tunnel-agent-service-unit-name"
 }
