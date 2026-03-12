@@ -197,7 +197,11 @@ impl AuthzService {
         }
 
         if is_authorized_by_acls != is_authorized_by_permissions {
-            let mismatch_log = format!("Access [subject: {subject_fqin}] to [object: {object_log_identifier}] mismatch: ACLs[{is_authorized_by_acls}], Permissions[{is_authorized_by_permissions}]");
+            let mismatch_log = format!(
+                "Access [subject: {subject_fqin}] to [object: {object_log_identifier}] mismatch: \
+                ACLs[{is_authorized_by_acls}: {audit_msg_from_acls}], \
+                Permissions[{is_authorized_by_permissions}: {audit_msg_from_permissions}]"
+            );
 
             if feature_flags::enforce_consistency() {
                 error!("{mismatch_log}");
