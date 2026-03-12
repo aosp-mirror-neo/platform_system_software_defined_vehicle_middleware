@@ -111,13 +111,14 @@ impl AuthzViaPermissions {
             TypedMetadata::ServerUnit(_) => {
                 if subject_policy.can_call(&object_unit_type, &object_service_unit_name) {
                     AuthzResult::Permitted(format!(
-                        "Permitted by 'client' permission on Unit Type '{}'",
-                        object_unit_type
+                        "Permitted by 'client' permission on service '{}' with channel '{}'",
+                        object_unit_type, object_service_unit_name
                     ))
                 } else {
                     AuthzResult::ExplicitlyDenied(format!(
-                        "Subject '{}' lacks 'client' permission for service unit '{}' with unit type '{}'",
-                        subject_fqin, object_service_unit_name.name(), object_unit_type
+                        "Subject '{}' lacks 'client' permission for service '{}' with channel '{}'. \
+                        Add 'client {{ service: \"{}\" channel: \"{}\" }}' to the subject's Authz policy",
+                        subject_fqin, object_unit_type, object_service_unit_name, object_unit_type, object_service_unit_name
                     ))
                 }
             }
@@ -132,13 +133,14 @@ impl AuthzViaPermissions {
 
                 if subject_policy.can_subscribe(&object_unit_type, &topic_name) {
                     AuthzResult::Permitted(format!(
-                        "Permitted by 'subscriber' permission on Unit Type '{}' for topic '{}'",
+                        "Permitted by 'subscriber' permission on message '{}' with topic '{}'",
                         object_unit_type, topic_name
                     ))
                 } else {
                     AuthzResult::ExplicitlyDenied(format!(
-                        "Subject '{}' lacks 'subscriber' permission for topic '{}'",
-                        subject_fqin, topic_name
+                        "Subject '{}' lacks 'subscriber' permission on message '{}' with topic '{}'. \
+                        Add 'subscriber {{ message: \"{}\" topic: \"{}\" }}' to the subject's Authz policy",
+                        subject_fqin, object_unit_type, topic_name, object_unit_type, topic_name
                     ))
                 }
             }
@@ -181,14 +183,14 @@ impl AuthzViaPermissions {
             TypedMetadata::ServerUnit(_) => {
                 if subject_policy.can_serve(&object_unit_type, service_unit_name) {
                     AuthzResult::Permitted(format!(
-                        "Permitted by 'server' permission on Unit Type '{}' with service_unit_name {}",
-                        object_unit_type,
-                        service_unit_name
+                        "Permitted by 'server' permission on service '{}' with channel '{}'",
+                        object_unit_type, service_unit_name
                     ))
                 } else {
                     AuthzResult::ExplicitlyDenied(format!(
-                        "Subject '{}' lacks 'server' permission for service unit '{}' on unit type '{}'",
-                        subject_fqin, service_unit_name, object_unit_type
+                        "Subject '{}' lacks 'server' permission on service '{}' with channel '{}'. \
+                        Add 'server {{ service: \"{}\" channel: \"{}\" }}' to the subject's Authz policy",
+                        subject_fqin, object_unit_type, service_unit_name, object_unit_type, service_unit_name
                     ))
                 }
             }
@@ -206,13 +208,14 @@ impl AuthzViaPermissions {
 
                 if subject_policy.can_publish(&object_unit_type, &topic_name) {
                     AuthzResult::Permitted(format!(
-                        "Permitted by 'publisher' permission on Unit Type '{}' for topic '{}'",
+                        "Permitted by 'publisher' permission on message '{}' for topic '{}'",
                         object_unit_type, topic_name
                     ))
                 } else {
                     AuthzResult::ExplicitlyDenied(format!(
-                        "Subject '{}' lacks 'publisher' permission for topic '{}' on unit type '{}'",
-                        subject_fqin, topic_name, object_unit_type
+                        "Subject '{}' lacks 'publisher' permission on message '{}' for topic '{}'. \
+                        Add 'publisher {{ message: \"{}\" topic: \"{}\" }}' to the subject's Authz policy",
+                        subject_fqin, object_unit_type, topic_name, object_unit_type, topic_name
                     ))
                 }
             }
