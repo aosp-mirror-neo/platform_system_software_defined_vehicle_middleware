@@ -27,6 +27,9 @@ pub const TOPIC_NAME_MAX_LENGTH_BYTES: usize = 128 - 1;
 /// Error that can arise during Topic Name validation.
 #[derive(Error, Debug, PartialEq)]
 pub enum TopicNameValidationError {
+    #[error("failed to validate topic name due to an unspecified internal error")]
+    /// A fallback for errors that do not map to specific validation rules.
+    UnknownError,
     #[error("Exceeds max length {0}: {1}")]
     /// Indicates that name exceeds max length in bytes.
     ExceedsMaxLength(usize, usize),
@@ -62,8 +65,8 @@ impl From<AlphanumHyphenValidationError> for TopicNameValidationError {
                 Self::ExceedsMaxLength(max, actual)
             }
             _ => {
-                // other errors are do not apply to topics
-                unreachable!()
+                // unspecified error mapping
+                Self::UnknownError
             }
         }
     }
