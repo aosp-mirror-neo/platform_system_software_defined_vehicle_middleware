@@ -449,7 +449,7 @@ async fn subscribe_unit_by_topic_success() {
 
         let unit_type: UnitType =
             UnitType::from_str("com.google.sdv.samples.SubscribeByTopic").unwrap();
-        let topic_name = "test_topic";
+        let topic_name = "test-topic";
 
         // Subscribe before we register a specific unit.
         let mut event_stream = ServiceDiscoveryManager::new(ctx)
@@ -459,7 +459,7 @@ async fn subscribe_unit_by_topic_success() {
 
         // Create and register publisher.
         let unit_identifier = create_unit_identifier_with_unit_name(ctx, "wrong-topic-name");
-        let metadata = create_publisher_metadata("wrong_topic_name");
+        let metadata = create_publisher_metadata("wrong-topic-name");
         let _publisher =
             create_publisher(ctx, &unit_type, unit_identifier.get_unit_name(), &metadata)
                 .await
@@ -496,7 +496,7 @@ async fn subscribe_unit_by_topic_notifies_existing_units() {
 
         let unit_type: UnitType =
             UnitType::from_str("com.google.sdv.samples.ExistingByTopic").unwrap();
-        let topic_name = "existing_test_topic";
+        let topic_name = "existing-test-topic";
 
         // Create and register publisher before we subscribe.
         let unit_identifier = create_unit_identifier(ctx);

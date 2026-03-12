@@ -68,25 +68,33 @@ impl fmt::Display for TopicName {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sdv_comms_id_validator::topic_name_validation::TopicNameValidationError;
 
     #[test]
     fn test_topic_name_from_str() {
         assert_eq!(TopicName::from_str("car-speed-1"), Ok(TopicName("car-speed-1".to_string())));
         assert_eq!(TopicName::from_str("cooling"), Ok(TopicName("cooling".to_string())));
-        assert_eq!(
-            TopicName::from_str("Tire_Pressure"),
-            Ok(TopicName("Tire_Pressure".to_string()))
-        );
-        assert_eq!(TopicName::from_str("Topic-Name"), Ok(TopicName("Topic-Name".to_string())));
-        assert_eq!(
-            TopicName::from_str("Topic Name 1!"),
-            Ok(TopicName("Topic Name 1!".to_string()))
-        );
         assert_eq!(TopicName::from_str(""), Ok(TopicName("".to_string())));
     }
 
     #[test]
     fn test_invalid_topic_name_from_str() {
+        assert_eq!(
+            TopicName::from_str("Tire_Pressure"),
+            Err(TopicNameValidationError::StartsWithInvalidCharacter('T'))
+        );
+        assert_eq!(
+            TopicName::from_str("Topic-Name"),
+            Err(TopicNameValidationError::StartsWithInvalidCharacter('T'))
+        );
+        assert_eq!(
+            TopicName::from_str("Topic Name 1!"),
+            Err(TopicNameValidationError::StartsWithInvalidCharacter('T'))
+        );
+        assert_eq!(
+            TopicName::from_str("topic-Name"),
+            Err(TopicNameValidationError::HasInvalidCharacter('N'))
+        );
         assert_eq!(
             TopicName::from_str("topic\x07name"),
             Err(TopicNameValidationError::HasInvalidCharacter('\u{7}'))
@@ -104,7 +112,7 @@ mod tests {
     #[test]
     fn test_too_long_topic_name_from_str() {
         assert_eq!(
-            TopicName::from_str("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            TopicName::from_str("a".repeat(128).as_str()),
             Err(TopicNameValidationError::ExceedsMaxLength(127, 128))
         );
     }
@@ -112,7 +120,7 @@ mod tests {
     #[test]
     fn test_too_long_topic_name_try_from_str() {
         assert_eq!(
-            TopicName::try_from("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+            TopicName::try_from("a".repeat(128).to_string()),
             Err(TopicNameValidationError::ExceedsMaxLength(127, 128))
         );
     }

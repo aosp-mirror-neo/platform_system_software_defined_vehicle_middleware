@@ -441,8 +441,8 @@ mod publisher_metadata_tests {
         args1.set_version(40);
         args2.set_version(40);
 
-        args1.set_topic("test_topic");
-        args2.set_topic("test_topic");
+        args1.set_topic("test-topic");
+        args2.set_topic("test-topic");
 
         assert_that!(args1, eq(&args2));
     }
@@ -451,9 +451,9 @@ mod publisher_metadata_tests {
     fn test_get_set_topic() {
         let mut args = PublisherUnitMetadata::default();
 
-        args.set_topic("test_topic");
+        args.set_topic("test-topic");
 
-        assert_that!(args.get_topic(), eq("test_topic"));
+        assert_that!(args.get_topic(), eq("test-topic"));
     }
 
     #[test]

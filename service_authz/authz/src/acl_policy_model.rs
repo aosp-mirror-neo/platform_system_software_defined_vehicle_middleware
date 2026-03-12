@@ -235,7 +235,7 @@ mod tests {
             r#"
             publisher {
                 message: "test.package.TirePressureTopic"
-                topic: "front_left"
+                topic: "front-left"
             }
             publisher {
                 message: "test.package.BrakeTopic"
@@ -272,9 +272,9 @@ mod tests {
         let any_media_unit = ServiceUnitName::from_str("any-media-unit").unwrap();
         let nav_unit = ServiceUnitName::from_str("nav-system").unwrap();
         let nav_server = UnitType::from_str("test.package.NavServer").unwrap();
-        let front_left = TopicName::from_str("front_left").unwrap();
+        let front_left = TopicName::from_str("front-left").unwrap();
         let cabin = TopicName::from_str("cabin").unwrap();
-        let rear_right = TopicName::from_str("rear_right").unwrap();
+        let rear_right = TopicName::from_str("rear-right").unwrap();
         let any_brake_topic = TopicName::from_str("any-brake-topic").unwrap();
 
         // 1. Test Positive Logic
@@ -304,7 +304,7 @@ mod tests {
             r#"
             publisher {
                 message: "test.package.TirePressureTopic"
-                topic: "front_left"
+                topic: "front-left"
             }
             server {
                 service: "test.package.MediaServer"
@@ -320,7 +320,7 @@ mod tests {
 
         let tire_topic = UnitType::from_str("test.package.TirePressureTopic").unwrap();
         let media_server = UnitType::from_str("test.package.MediaServer").unwrap();
-        let front_left = TopicName::from_str("front_left").unwrap();
+        let front_left = TopicName::from_str("front-left").unwrap();
         let any_service_name = ServiceUnitName::from_str("any-service-name").unwrap();
         let any_topic_name = TopicName::from_str("any-topic-name").unwrap();
 

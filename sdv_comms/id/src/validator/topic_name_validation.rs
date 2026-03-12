@@ -14,6 +14,9 @@
 
 //! This file parses and validates the Topic Name.
 
+use super::alphanumhyphen_validation::{
+    validate_alphanumhyphen_allow_empty, AlphanumHyphenValidationError,
+};
 use thiserror::Error;
 
 /// Maximum length of the Topic Name in bytes.
@@ -24,41 +27,52 @@ pub const TOPIC_NAME_MAX_LENGTH_BYTES: usize = 128 - 1;
 /// Error that can arise during Topic Name validation.
 #[derive(Error, Debug, PartialEq)]
 pub enum TopicNameValidationError {
-    /// Indicates that Topic Name is empty.
-    #[error("should not be empty")]
-    IsEmpty,
-    /// Indicates that Topic Name exceeds max length in bytes.
-    #[error("should not be longer than {0} bytes, found {1} bytes")]
+    #[error("Exceeds max length {0}: {1}")]
+    /// Indicates that name exceeds max length in bytes.
     ExceedsMaxLength(usize, usize),
-    /// Indicates that Topic Name contains invalid character.
-    #[error("should consist of printable ASCII characters, found '{0}'")]
+    /// Indicates that name contains invalid character.
+    #[error("should consist of [a-z, 0-9, -] characters, found '{0}'")]
     HasInvalidCharacter(char),
+    /// Indicates that name starts with invalid character.
+    #[error("should start with [a-z] character, found '{0}'")]
+    StartsWithInvalidCharacter(char),
+    /// Indicates that name ends with invalid character.
+    #[error("should end with [a-z, 0-9] character, found '{0}'")]
+    EndsWithInvalidCharacter(char),
+    /// Indicates that name contains consecutive hyphens.
+    #[error("should not contain consecutive hyphens (--)")]
+    ContainsConsecutiveHyphens,
+}
+
+// Manually map the internal error to your public error
+impl From<AlphanumHyphenValidationError> for TopicNameValidationError {
+    fn from(err: AlphanumHyphenValidationError) -> Self {
+        match err {
+            AlphanumHyphenValidationError::HasInvalidCharacter(c) => Self::HasInvalidCharacter(c),
+            AlphanumHyphenValidationError::StartsWithInvalidCharacter(c) => {
+                Self::StartsWithInvalidCharacter(c)
+            }
+            AlphanumHyphenValidationError::EndsWithInvalidCharacter(c) => {
+                Self::EndsWithInvalidCharacter(c)
+            }
+            AlphanumHyphenValidationError::ContainsConsecutiveHyphens => {
+                Self::ContainsConsecutiveHyphens
+            }
+            AlphanumHyphenValidationError::ExceedsMaxLength(max, actual) => {
+                Self::ExceedsMaxLength(max, actual)
+            }
+            _ => {
+                // other errors are do not apply to topics
+                unreachable!()
+            }
+        }
+    }
 }
 
 /// Validates whether `s` is a valid Topic Name.
 pub fn validate_topic_name(s: &str) -> Result<(), TopicNameValidationError> {
-    // TODO (b/475489800)
-    // Enabling back empty topic name for compatibility reason.
-    // Once all tests will be updated with valid name the following code
-    // can be uncommented.
-    // if s.is_empty() {
-    //     return Err(TopicNameValidationError::IsEmpty);
-    // }
-
-    if s.len() > TOPIC_NAME_MAX_LENGTH_BYTES {
-        return Err(TopicNameValidationError::ExceedsMaxLength(
-            TOPIC_NAME_MAX_LENGTH_BYTES,
-            s.len(),
-        ));
-    }
-
-    for ch in s.chars() {
-        if !ch.is_ascii_graphic() && !ch.is_ascii_whitespace() {
-            return Err(TopicNameValidationError::HasInvalidCharacter(ch));
-        }
-    }
-
-    Ok(())
+    validate_alphanumhyphen_allow_empty(s, TOPIC_NAME_MAX_LENGTH_BYTES)
+        .map_err(TopicNameValidationError::from)
 }
 
 #[cfg(test)]
@@ -67,29 +81,11 @@ mod tests {
 
     #[test]
     fn test_topic_name_is_valid() {
-        assert_eq!(validate_topic_name("Topic-Name_123"), Ok(()));
-        assert_eq!(validate_topic_name("CarSpeedTopic"), Ok(()));
-        assert_eq!(validate_topic_name("Tire_Pressure-FrontLeft"), Ok(()));
+        assert_eq!(validate_topic_name("topic-name-123"), Ok(()));
+        assert_eq!(validate_topic_name("car-speed-topic"), Ok(()));
         assert_eq!(validate_topic_name("cooling"), Ok(()));
-        assert_eq!(validate_topic_name("With Spaces"), Ok(()));
-        assert_eq!(validate_topic_name("!@#$%^&*()_+=-`~"), Ok(()));
-        assert_eq!(validate_topic_name("Topic	Name"), Ok(()));
-        assert_eq!(
-            validate_topic_name(
-                "Topic
-Name"
-            ),
-            Ok(())
-        );
-        assert_eq!(validate_topic_name(""), Ok(()));
+        assert_eq!(validate_topic_name(""), Ok(())); // Empty string is allowed
     }
-
-    // TODO (b/475489800)
-    // uncomment the following test
-    // #[test]
-    // fn test_topic_name_is_empty() {
-    //     assert_eq!(validate_topic_name(""), Err(TopicNameValidationError::IsEmpty));
-    // }
 
     #[test]
     fn test_topic_name_exceeds_max_length() {
@@ -102,25 +98,49 @@ Name"
                 TOPIC_NAME_MAX_LENGTH_BYTES + 1
             ))
         );
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            format!(
-                "should not be longer than {} bytes, found {} bytes",
-                TOPIC_NAME_MAX_LENGTH_BYTES,
-                TOPIC_NAME_MAX_LENGTH_BYTES + 1
-            )
-        );
     }
 
     #[test]
     fn test_topic_name_has_invalid_character() {
         assert_eq!(
-            validate_topic_name("topic\x07name"),
-            Err(TopicNameValidationError::HasInvalidCharacter('\u{7}'))
+            validate_topic_name("topic_name"),
+            Err(TopicNameValidationError::HasInvalidCharacter('_'))
         );
         assert_eq!(
-            validate_topic_name("\u{0000}"),
-            Err(TopicNameValidationError::HasInvalidCharacter('\0'))
+            validate_topic_name("topic-Name"),
+            Err(TopicNameValidationError::HasInvalidCharacter('N'))
+        );
+        assert_eq!(
+            validate_topic_name("topic name"),
+            Err(TopicNameValidationError::HasInvalidCharacter(' '))
+        );
+    }
+
+    #[test]
+    fn test_topic_name_starts_with_invalid_character() {
+        assert_eq!(
+            validate_topic_name("-topic-name"),
+            Err(TopicNameValidationError::StartsWithInvalidCharacter('-'))
+        );
+        assert_eq!(
+            validate_topic_name("Topic-name"),
+            Err(TopicNameValidationError::StartsWithInvalidCharacter('T'))
+        );
+    }
+
+    #[test]
+    fn test_topic_name_ends_with_invalid_character() {
+        assert_eq!(
+            validate_topic_name("topic-name-"),
+            Err(TopicNameValidationError::EndsWithInvalidCharacter('-'))
+        );
+    }
+
+    #[test]
+    fn test_topic_name_has_consecutive_hyphens() {
+        assert_eq!(
+            validate_topic_name("topic--name"),
+            Err(TopicNameValidationError::ContainsConsecutiveHyphens)
         );
     }
 }
