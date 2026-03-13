@@ -20,14 +20,15 @@ use std::sync::Arc;
 
 use tracing::instrument;
 
-use sdv_authz::SingleVmAclPolicyProvider;
+use sdv_authz::LocallyStoredAuthzPoliciesProvider;
 use sdv_authz_acl_file_provider::build_acl_provider_from_directories;
 use sdv_authz_acl_file_provider::AclFileProvider;
 
 /// Build SDV version of ACL provider that gets mappings from SBR.
 #[cfg(sdv_acl_provider)]
 #[instrument(name = "authz_perf::provider_factory::create_for_core", skip_all)]
-pub fn create_local_vm_acl_policy_provider() -> anyhow::Result<Arc<dyn SingleVmAclPolicyProvider>> {
+pub fn create_local_vm_acl_policy_provider(
+) -> anyhow::Result<Arc<dyn LocallyStoredAuthzPoliciesProvider>> {
     use anyhow::Context;
     use sdv_authz_acl_file_provider::CachingAclFileProvider;
     use sdv_authz_sdv_local_vm_acl_policy_provider::create_acl_provider_from_service_bundle_registry;
@@ -43,10 +44,16 @@ pub fn create_local_vm_acl_policy_provider() -> anyhow::Result<Arc<dyn SingleVmA
 /// Build IVI version of ACL provider that gets mappings from a specific set of directories.
 #[cfg(ivi_acl_provider)]
 #[instrument(name = "authz_perf::provider_factory::create_for_ivi", skip_all)]
-pub fn create_local_vm_acl_policy_provider() -> anyhow::Result<Arc<dyn SingleVmAclPolicyProvider>> {
+pub fn create_local_vm_acl_policy_provider(
+) -> anyhow::Result<Arc<dyn LocallyStoredAuthzPoliciesProvider>> {
     use sdv_authz_acl_file_provider::CachingAclFileProvider;
 
-    const IVI_ACL_POLICY_DIRECTORIES: [&str; 4] = [
+    const IVI_AUTHZ_POLICY_DIRECTORIES: [&str; 8] = [
+        "/product/etc/sdv_authz_policies",
+        "/system/etc/sdv_authz_policies",
+        "/system_ext/etc/sdv_authz_policies",
+        "/vendor/etc/sdv_authz_policies",
+        // Deprecated, prefer using */sdv_authz_policies
         "/product/etc/sdv_authz_acls",
         "/system/etc/sdv_authz_acls",
         "/system_ext/etc/sdv_authz_acls",
@@ -54,7 +61,7 @@ pub fn create_local_vm_acl_policy_provider() -> anyhow::Result<Arc<dyn SingleVmA
     ];
 
     let provider: AclFileProvider =
-        create_provider_from_directories_lenient(IVI_ACL_POLICY_DIRECTORIES.into_iter())?;
+        create_provider_from_directories_lenient(IVI_AUTHZ_POLICY_DIRECTORIES.into_iter())?;
 
     let caching_provider = CachingAclFileProvider::new(Arc::new(provider));
 
@@ -101,7 +108,8 @@ fn create_provider_from_directories_lenient<'a>(
 #[cfg(not(sdv_acl_provider))]
 #[cfg(not(ivi_acl_provider))]
 #[instrument(name = "authz_perf::provider_factory::create_for_non_sdv", skip_all)]
-pub fn create_local_vm_acl_policy_provider() -> anyhow::Result<Arc<dyn SingleVmAclPolicyProvider>> {
+pub fn create_local_vm_acl_policy_provider(
+) -> anyhow::Result<Arc<dyn LocallyStoredAuthzPoliciesProvider>> {
     // Check service_authz/local_vm_acl_policy_provider_factory/README.md
     // for more details.
     panic!("ACL policy provider is not specified for this target")
