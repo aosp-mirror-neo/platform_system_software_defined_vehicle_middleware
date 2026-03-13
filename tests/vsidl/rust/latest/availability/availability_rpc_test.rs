@@ -95,7 +95,7 @@ mod test {
         // GIVEN we have a server implementing TireStatus
         let _tire_status_producer = TireStatusProducer::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_unary(Arc::new(TireStatusImpl {}))
+            .set_server_tire_status_unary(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .unwrap();
@@ -157,7 +157,7 @@ mod test {
         // AND WHEN the publisher becomes available again
         let _tire_status_producer = TireStatusProducer::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_unary(Arc::new(TireStatusImpl {}))
+            .set_server_tire_status_unary(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .unwrap();

@@ -126,7 +126,7 @@ mod test {
         // GIVEN a server
         let tire_status_producer = TireStatusProducer::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_unary(Arc::new(TireStatusImpl {}))
+            .set_server_tire_status_unary(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .unwrap();
@@ -202,7 +202,7 @@ mod test {
         // GIVEN a server
         let _tire_status_producer = TireStatusProducer::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_server_stream(Arc::new(TireStatusImpl {}))
+            .set_server_tire_status_server_stream(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .unwrap();
@@ -261,7 +261,7 @@ mod test {
         // GIVEN a server
         let _tire_status_producer = TireStatusProducer::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_client_stream(Arc::new(TireStatusImpl {}))
+            .set_server_tire_status_client_stream(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .unwrap();
@@ -319,7 +319,7 @@ mod test {
         // GIVEN we have a server implementing TireStatus.
         let _tire_status_producer = TireStatusProducer::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_twice(Arc::new(TireStatusImpl {}))
+            .set_server_tire_status_twice(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .unwrap();
@@ -327,7 +327,7 @@ mod test {
         // WHEN define another producer it's success
         let _tire_status_producer_2 = TireStatusProducer::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_twice(Arc::new(TireStatusImpl {}))
+            .set_server_tire_status_twice(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .unwrap();

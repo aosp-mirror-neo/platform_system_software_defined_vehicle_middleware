@@ -94,7 +94,7 @@ mod test {
         // GIVEN an instance of BundleOne.
         let bundle_one = BundleOne::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_sdv_vsidl_sendsync_test_other_tire_status(Arc::new(OtherTireStatusImpl {}))
+            .set_server_other_tire_status(Arc::new(OtherTireStatusImpl {}))
             .build()
             .await
             .expect("BundleOne creation failed.");
@@ -116,7 +116,7 @@ mod test {
         // AND GIVEN instance of bundle Two.
         let bundle_two = BundleTwo::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_sdv_vsidl_sendsync_test_tire_status(Arc::new(TireStatusImpl {}))
+            .set_server_tire_status(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .expect("BundleTwo creation failed.");
