@@ -23,10 +23,10 @@ use anyhow::Context;
 
 use std::sync::Arc;
 
-/// Trait to retrieve the ACL Policy for a given Service Bundle within
+/// Trait to retrieve the Authz Policy for a given Service Bundle or VM within
 /// a single VM.
 pub trait SingleVmAclPolicyProvider: Send + Sync {
-    /// Gets the Service Bundle / package ACL policy proto.
+    /// Gets the Service Bundle / package Authz policy proto.
     fn get_acl_policy_proto(
         &self,
         package_name: &PackageName,

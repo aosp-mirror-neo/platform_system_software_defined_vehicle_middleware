@@ -19,9 +19,12 @@ mod tests {
     use std::collections::HashMap;
     use std::str::FromStr;
 
-    use sdv_authz::SingleVmAclPolicyProvider;
+    use sdv_authz::{
+        LocallyStoredAuthzPoliciesProvider, SingleVmAclPolicyProvider, VmLevelPermissionsProvider,
+    };
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
-    use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName};
+    use sdv_authz_policy_proto_rust::vm_authz_policy::VmAuthzPolicy as VmAuthzPolicyProto;
+    use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName, VmName};
 
     use anyhow::anyhow;
     use protobuf::text_format;
@@ -45,6 +48,8 @@ mod tests {
         }
     }
 
+    impl LocallyStoredAuthzPoliciesProvider for TestSingleVmAclPolicyProvider {}
+
     impl SingleVmAclPolicyProvider for TestSingleVmAclPolicyProvider {
         fn get_acl_policy_proto(
             &self,
@@ -61,6 +66,15 @@ mod tests {
             &self,
         ) -> Result<Vec<(PackageName, Option<ServiceBundleName>)>, anyhow::Error> {
             Ok(self.mapping.keys().cloned().collect())
+        }
+    }
+
+    impl VmLevelPermissionsProvider for TestSingleVmAclPolicyProvider {
+        fn get_vm_authz_policy_proto(
+            &self,
+            _vm_name: &VmName,
+        ) -> Result<VmAuthzPolicyProto, anyhow::Error> {
+            unimplemented!("get_vm_authz_policy_proto is not implemented for test")
         }
     }
 

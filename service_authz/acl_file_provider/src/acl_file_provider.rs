@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! SingleVmAclPolicyProvider implementation that reads ACLs from textproto files.
+//! LocallyStoredAuthzPoliciesProvider implementation that reads ACLs from textproto files.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -20,9 +20,12 @@ use std::path::PathBuf;
 use anyhow::anyhow;
 use tracing::{instrument, trace_span};
 
-use sdv_authz::SingleVmAclPolicyProvider;
+use sdv_authz::{
+    LocallyStoredAuthzPoliciesProvider, SingleVmAclPolicyProvider, VmLevelPermissionsProvider,
+};
 use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
-use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName};
+use sdv_authz_policy_proto_rust::vm_authz_policy::VmAuthzPolicy as VmAuthzPolicyProto;
+use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName, VmName};
 
 use crate::acl_merger::merge_package_acl_policies;
 use crate::caching_acl_reader::CachingAclReader;
@@ -30,7 +33,7 @@ use crate::caching_acl_reader::CachingAclReader;
 /// Tuple struct mapping a single (package, service bundle) to an ACL policy file path.
 pub type AclFileMapping = ((PackageName, Option<ServiceBundleName>), PathBuf);
 
-/// SingleVmAclPolicyProvider that reads each ACL from a textproto file.
+/// LocallyStoredAuthzPoliciesProvider that reads each ACL from a textproto file.
 #[derive(Debug, Default)]
 pub struct AclFileProvider {
     service_bundle_acls: HashMap<(PackageName, ServiceBundleName), PathBuf>,
@@ -78,6 +81,8 @@ impl AclFileProvider {
     }
 }
 
+impl LocallyStoredAuthzPoliciesProvider for AclFileProvider {}
+
 impl SingleVmAclPolicyProvider for AclFileProvider {
     /// Gets the Service Bundle / package ACL policy proto.
     #[instrument(name = "authz_perf::provider::get_acl_policy_proto", skip_all)]
@@ -110,6 +115,15 @@ impl SingleVmAclPolicyProvider for AclFileProvider {
             self.service_bundle_acls.keys().map(|k| (k.0.clone(), Some(k.1.clone()))).collect();
         result.extend(self.package_acls.keys().map(|k| (k.clone(), None)));
         Ok(result)
+    }
+}
+
+impl VmLevelPermissionsProvider for AclFileProvider {
+    fn get_vm_authz_policy_proto(
+        &self,
+        _vm_name: &VmName,
+    ) -> Result<VmAuthzPolicyProto, anyhow::Error> {
+        unimplemented!("VM Authz policy not supported by AclFileProvider yet");
     }
 }
 
