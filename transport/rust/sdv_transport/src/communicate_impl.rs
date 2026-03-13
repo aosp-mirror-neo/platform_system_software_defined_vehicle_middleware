@@ -2657,4 +2657,46 @@ mod test {
             Ok(Some(Availability::Unavailable))
         );
     }
+
+    #[ignore] // Test takes >10 minutes, excessive for a unit test.
+    #[tokio::test]
+    async fn test_sdv_pub_sub_no_out_of_memory_on_huge_overflow() {
+        let bundle_name: &str = "PubsubNoOutOfMemory";
+        let service_unit_name: &str = "pressure-publication";
+        let publication_unit_name = UnitName::builder()
+            .package_name(PACKAGE)
+            .bundle_name(bundle_name)
+            .service_unit_name(service_unit_name)
+            .build()
+            .unwrap();
+
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{}:{}.{}/sample", VM, PACKAGE, bundle_name))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = Arc::new(SdvComms { context });
+
+        let publisher = create_pressure_publisher(comms.clone(), service_unit_name, None).await;
+
+        let publication =
+            comms.find_publication(&UnitQuery::Name(publication_unit_name.clone())).await.unwrap();
+
+        let subscriber = Subscriber::<Pressure>::new(
+            publication.subscribe(&SubscribeOptions::default()).await.unwrap(),
+        );
+
+        // WHEN ~2gb of messages are written by publisher and not yet read by a subscriber.
+        let iterations: u32 = (u32::MAX / 2) / 5 /* message size */;
+        for _ in 0..=iterations {
+            let pressure_msg = Pressure { pressure: 1234, ..Default::default() };
+            publisher.publish_batch(std::slice::from_ref(&pressure_msg)).unwrap();
+        }
+
+        // WHEN reading from a subscriber.
+        let read_result = subscriber.read_next_messages(1);
+
+        // THEN result is data loss error.
+        assert!(read_result.is_err());
+        assert_eq!(read_result.err().unwrap().status_code(), SdvStatusCode::DataLoss);
+    }
 }
