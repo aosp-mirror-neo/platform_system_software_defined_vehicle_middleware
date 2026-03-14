@@ -103,9 +103,7 @@ mod test {
         }
     }
 
-    async fn setup_rpc_test(
-        instance_name: &str,
-    ) -> (ServiceFqin, sdv_vsidl_rpc_test_tire_status_rpc::Client, TireStatusProducer) {
+    async fn setup_rpc_test(instance_name: &str) -> (ServiceFqin, Arc<SdvComms>) {
         let package_name = "sdv.vsidl.rpc.test";
         let server_bundle_name = "TireStatusProducer";
         let context = ContextRef::create(
@@ -118,10 +116,17 @@ mod test {
         let fqin = context.get_self_fqin();
         let sdv_comms = Arc::new(SdvComms { context });
 
-        // GIVEN we have a server implementing TireStatus.
+        (fqin, sdv_comms)
+    }
+
+    #[tokio::test]
+    async fn test_rpc_unary() {
+        let (fqin, sdv_comms) = setup_rpc_test("unary-test-instance").await;
+
+        // GIVEN a server
         let tire_status_producer = TireStatusProducer::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_sdv_vsidl_rpc_test_tire_status(Arc::new(TireStatusImpl {}))
+            .set_server_unary(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .unwrap();
@@ -129,7 +134,7 @@ mod test {
         // AND GIVEN we have a client for TireStatus.
         let mut stream = clientlib::create_server_registration_event_stream(
             sdv_comms.as_ref(),
-            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS,
+            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
         )
         .await
         .unwrap();
@@ -139,21 +144,13 @@ mod test {
                 break;
             }
         }
-
         let client = clientlib::create_rpc_client(
             sdv_comms.as_ref(),
-            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS,
+            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
             ClientOptions::default(),
         )
         .await
         .unwrap();
-
-        (fqin, client, tire_status_producer)
-    }
-
-    #[tokio::test]
-    async fn test_rpc_unary() {
-        let (fqin, client, _tire_status_producer) = setup_rpc_test("unary-instance").await;
 
         // WHEN calling the remote method
         let location = TireLocation::FRONT_RIGHT;
@@ -180,7 +177,7 @@ mod test {
         assert!(response_err.to_string().contains("ResourceExhausted"));
 
         // dropping the server
-        drop(_tire_status_producer);
+        drop(tire_status_producer);
 
         // Unfortunately drop() just initiates the destruction of server. There are
         // no guarantees that server stops accepting new connections on drop() return.
@@ -200,8 +197,36 @@ mod test {
 
     #[tokio::test]
     async fn test_rpc_server_streaming() {
-        let (fqin, client, _tire_status_producer) =
-            setup_rpc_test("server-streaming-instance").await;
+        let (fqin, sdv_comms) = setup_rpc_test("server-streaming-instance").await;
+
+        // GIVEN a server
+        let _tire_status_producer = TireStatusProducer::builder()
+            .set_comms(sdv_comms.clone())
+            .set_server_server_stream(Arc::new(TireStatusImpl {}))
+            .build()
+            .await
+            .unwrap();
+
+        // AND GIVEN we have a client for TireStatus.
+        let mut stream = clientlib::create_server_registration_event_stream(
+            sdv_comms.as_ref(),
+            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_SERVER_STREAM,
+        )
+        .await
+        .unwrap();
+
+        while let Some(event) = stream.next().await {
+            if event == Availability::Available {
+                break;
+            }
+        }
+        let client = clientlib::create_rpc_client(
+            sdv_comms.as_ref(),
+            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_SERVER_STREAM,
+            ClientOptions::default(),
+        )
+        .await
+        .unwrap();
 
         // WHEN calling the server streaming method
         let location = TireLocation::REAR_LEFT;
@@ -231,8 +256,36 @@ mod test {
 
     #[tokio::test]
     async fn test_rpc_client_streaming() {
-        let (fqin, client, _tire_status_producer) =
-            setup_rpc_test("client-streaming-instance").await;
+        let (fqin, sdv_comms) = setup_rpc_test("client-streaming-instance").await;
+
+        // GIVEN a server
+        let _tire_status_producer = TireStatusProducer::builder()
+            .set_comms(sdv_comms.clone())
+            .set_server_client_stream(Arc::new(TireStatusImpl {}))
+            .build()
+            .await
+            .unwrap();
+
+        // AND GIVEN we have a client for TireStatus.
+        let mut stream = clientlib::create_server_registration_event_stream(
+            sdv_comms.as_ref(),
+            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_CLIENT_STREAM,
+        )
+        .await
+        .unwrap();
+
+        while let Some(event) = stream.next().await {
+            if event == Availability::Available {
+                break;
+            }
+        }
+        let client = clientlib::create_rpc_client(
+            sdv_comms.as_ref(),
+            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_CLIENT_STREAM,
+            ClientOptions::default(),
+        )
+        .await
+        .unwrap();
 
         // WHEN calling the client streaming method
         let requests = vec![
@@ -266,7 +319,7 @@ mod test {
         // GIVEN we have a server implementing TireStatus.
         let _tire_status_producer = TireStatusProducer::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_sdv_vsidl_rpc_test_tire_status(Arc::new(TireStatusImpl {}))
+            .set_server_twice(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .unwrap();
@@ -274,7 +327,7 @@ mod test {
         // WHEN define another producer it's success
         let _tire_status_producer_2 = TireStatusProducer::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_sdv_vsidl_rpc_test_tire_status(Arc::new(TireStatusImpl {}))
+            .set_server_twice(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .unwrap();

@@ -34,7 +34,8 @@ use sdv_status_rs::SdvResult;
 /// # Arguments
 ///
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
-/// * `unit_name` - The unique name for this server instance.
+/// * `channel` - The communication channel identifier used as the server instance name where
+///   this RPC server will listen for requests.
 /// * `methods` - A map from method names to their `RpcMethod` implementations.
 ///   This tells the transport how to handle incoming requests for each method.
 /// * `options` - `ServerOptions` to configure the server.
@@ -45,12 +46,12 @@ use sdv_status_rs::SdvResult;
 /// represents the active server transport. On failure, it returns an error.
 pub async fn create_server<Server: ToTypeName + ?Sized>(
     comms: &dyn Communicate,
-    unit_name: String,
+    channel: impl Into<String>,
     methods: std::collections::HashMap<String, sdv_comms::rpc::RpcMethod>,
     options: ServerOptions,
 ) -> SdvResult<std::sync::Arc<dyn ServerTransport>> {
     let attributes = ServerAttributes::builder()
-        .server_name(unit_name)
+        .server_name(channel)
         .type_name(Server::type_name()?)
         .server_options(options)
         .build()?;

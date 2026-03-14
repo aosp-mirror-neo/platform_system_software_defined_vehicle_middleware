@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{AclPolicyModel, AclPolicyProvider};
+use crate::{AclPolicyModel, AclPolicyProvider, VmAuthzPolicyModel};
 
 use anyhow::anyhow;
 use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName, VmName};
@@ -68,5 +68,13 @@ impl AclPolicyProvider for TestAclPolicyProvider {
         let mut vm_names: Vec<VmName> = self.mapping.keys().map(|k| k.0.clone()).collect();
         vm_names.sort_by_key(|vm_name| vm_name.name().to_string());
         vm_names
+    }
+
+    fn get_vm_authz_policy(
+        &self,
+        _vm_name: &VmName,
+    ) -> Result<Arc<VmAuthzPolicyModel>, anyhow::Error> {
+        // TODO(474314698)
+        unimplemented!("VM Authz policy not supported in test provider yet")
     }
 }

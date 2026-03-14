@@ -14,7 +14,7 @@
 
 //! ACL Policy Provider trait used to retrieve ACLs related information.
 
-use crate::AclPolicyModel;
+use crate::{AclPolicyModel, VmAuthzPolicyModel};
 
 use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName, VmName};
 
@@ -29,6 +29,16 @@ pub trait AclPolicyProvider: Send + Sync {
         package_name: &PackageName,
         service_bundle_name: Option<&ServiceBundleName>,
     ) -> Result<Arc<AclPolicyModel>, anyhow::Error>;
+
+    /// Gets the Authz policy for a given remote VM.
+    ///
+    /// This method retrieves the Authz policy for a remote VM.
+    /// The policy is stored on the local VM and can be used to check
+    /// authorization for services running on the remote VM.
+    fn get_vm_authz_policy(
+        &self,
+        vm_name: &VmName,
+    ) -> Result<Arc<VmAuthzPolicyModel>, anyhow::Error>;
 
     /// Gets a list of VM Names on which ACL policy could be queried.
     fn get_available_vm_names(&self) -> Vec<VmName>;

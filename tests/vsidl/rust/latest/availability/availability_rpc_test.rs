@@ -85,7 +85,7 @@ mod test {
         let mut registration_event_stream_before =
             clientlib::create_server_registration_event_stream(
                 sdv_comms.as_ref(),
-                client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS,
+                client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
             )
             .await
             .unwrap();
@@ -95,7 +95,7 @@ mod test {
         // GIVEN we have a server implementing TireStatus
         let _tire_status_producer = TireStatusProducer::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_sdv_vsidl_rpc_test_tire_status(Arc::new(TireStatusImpl {}))
+            .set_server_unary(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .unwrap();
@@ -104,7 +104,7 @@ mod test {
         let mut registration_event_stream_after =
             clientlib::create_server_registration_event_stream(
                 sdv_comms.as_ref(),
-                client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS,
+                client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
             )
             .await
             .unwrap();
@@ -124,7 +124,7 @@ mod test {
         // AND THEN the client can make a successful request
         let client = clientlib::create_rpc_client(
             sdv_comms.as_ref(),
-            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS,
+            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
             ClientOptions::default(),
         )
         .await
@@ -157,7 +157,7 @@ mod test {
         // AND WHEN the publisher becomes available again
         let _tire_status_producer = TireStatusProducer::builder()
             .set_comms(sdv_comms.clone())
-            .set_server_sdv_vsidl_rpc_test_tire_status(Arc::new(TireStatusImpl {}))
+            .set_server_unary(Arc::new(TireStatusImpl {}))
             .build()
             .await
             .unwrap();

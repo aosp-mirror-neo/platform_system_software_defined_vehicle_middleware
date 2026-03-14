@@ -197,7 +197,11 @@ impl AuthzService {
         }
 
         if is_authorized_by_acls != is_authorized_by_permissions {
-            let mismatch_log = format!("Access [subject: {subject_fqin}] to [object: {object_log_identifier}] mismatch: ACLs[{is_authorized_by_acls}], Permissions[{is_authorized_by_permissions}]");
+            let mismatch_log = format!(
+                "Access [subject: {subject_fqin}] to [object: {object_log_identifier}] mismatch: \
+                ACLs[{is_authorized_by_acls}: {audit_msg_from_acls}], \
+                Permissions[{is_authorized_by_permissions}: {audit_msg_from_permissions}]"
+            );
 
             if feature_flags::enforce_consistency() {
                 error!("{mismatch_log}");
@@ -268,17 +272,13 @@ fn validate_sud_input(
 mod tests {
     use super::*;
 
-    use crate::AclPolicyModel;
+    use crate::{AclPolicyModel, TestAclPolicyProvider};
 
-    use std::collections::HashMap;
     use std::str::FromStr;
 
-    use anyhow::anyhow;
     use protobuf::text_format;
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
-    use sdv_comms_id::names::{
-        PackageName, ServiceName as ServiceBundleName, ServiceUnitName, VmName,
-    };
+    use sdv_comms_id::names::ServiceUnitName;
 
     use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::metadata::
     {ApplicationMetadata::TypedMetadata::TypedMetadata, PublisherUnitMetadata::PublisherUnitMetadata};
@@ -296,58 +296,6 @@ mod tests {
     impl AuthzEnforcementFlag for TestAuthzEnforcementFlag {
         fn is_enabled(&self) -> bool {
             self.enabled
-        }
-    }
-
-    struct TestAclPolicyProvider {
-        mapping: HashMap<(VmName, PackageName, Option<ServiceBundleName>), AclPolicyModel>,
-    }
-
-    impl TestAclPolicyProvider {
-        fn new() -> Self {
-            Self { mapping: HashMap::new() }
-        }
-
-        fn set_alc_policy(
-            &mut self,
-            vm_name: VmName,
-            package_name: PackageName,
-            service_name: Option<ServiceBundleName>,
-            acl_policy: AclPolicyModel,
-        ) {
-            self.mapping.insert(
-                (vm_name.clone(), package_name.clone(), service_name.clone()),
-                acl_policy.clone(),
-            );
-            if service_name.is_some() {
-                self.mapping.insert((vm_name, package_name, None), acl_policy);
-            }
-        }
-    }
-
-    impl AclPolicyProvider for TestAclPolicyProvider {
-        fn get_acl_policy(
-            &self,
-            vm_name: &VmName,
-            package_name: &PackageName,
-            service_bundle_name: Option<&ServiceBundleName>,
-        ) -> Result<Arc<AclPolicyModel>, anyhow::Error> {
-            self.mapping
-                .get(&(vm_name.clone(), package_name.clone(), service_bundle_name.cloned()))
-                .ok_or(anyhow!(
-                    "ACLs for {:?}:{}.{:?} are not specified",
-                    vm_name,
-                    package_name,
-                    service_bundle_name
-                ))
-                .cloned()
-                .map(Arc::new)
-        }
-
-        fn get_available_vm_names(&self) -> Vec<VmName> {
-            let mut vm_names: Vec<VmName> = self.mapping.keys().map(|k| k.0.clone()).collect();
-            vm_names.sort_by_key(|vm_name| vm_name.name().to_string());
-            vm_names
         }
     }
 
@@ -374,7 +322,7 @@ mod tests {
         .unwrap();
 
         let mut test_acl_provider = TestAclPolicyProvider::new();
-        test_acl_provider.set_alc_policy(
+        test_acl_provider.set_authz_policy(
             object_fqin.vm_name().clone(),
             object_fqin.package_name().clone(),
             Some(object_fqin.service_name().clone()),

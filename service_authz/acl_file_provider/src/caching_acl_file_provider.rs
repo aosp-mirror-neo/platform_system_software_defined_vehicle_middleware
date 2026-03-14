@@ -21,30 +21,40 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::Context;
 use tracing::instrument;
 
-use sdv_authz::{AclPolicyModel, SingleVmAclPolicyProvider};
+use sdv_authz::{
+    AclPolicyModel, LocallyStoredAuthzPoliciesProvider, SingleVmAclPolicyProvider,
+    VmAuthzPolicyModel, VmLevelPermissionsProvider,
+};
 use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
-use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName};
+use sdv_authz_policy_proto_rust::vm_authz_policy::VmAuthzPolicy as VmAuthzPolicyProto;
+use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName, VmName};
 
-/// SingleVmAclPolicyProvider that caches ACLs read from textproto files.
+/// LocalVmAuthzPolicyProvider that caches ACLs read from textproto files.
 ///
 /// CachingAclFileProvider should be used in the environment where ACL files are
 /// not changing dynamically.
 pub struct CachingAclFileProvider {
-    inner_provider: Arc<dyn SingleVmAclPolicyProvider + Send + Sync>,
+    inner_provider: Arc<dyn LocallyStoredAuthzPoliciesProvider + Send + Sync>,
     proto_cache: Mutex<HashMap<(PackageName, Option<ServiceBundleName>), AclPolicyProto>>,
     model_cache: Mutex<HashMap<(PackageName, Option<ServiceBundleName>), Arc<AclPolicyModel>>>,
+    vm_proto_cache: Mutex<HashMap<VmName, VmAuthzPolicyProto>>,
+    vm_model_cache: Mutex<HashMap<VmName, Arc<VmAuthzPolicyModel>>>,
 }
 
 impl CachingAclFileProvider {
     /// Create a CachingAclFileProvider with the given inner provider.
-    pub fn new(inner_provider: Arc<dyn SingleVmAclPolicyProvider + Send + Sync>) -> Self {
+    pub fn new(inner_provider: Arc<dyn LocallyStoredAuthzPoliciesProvider + Send + Sync>) -> Self {
         Self {
             inner_provider,
             proto_cache: Mutex::new(HashMap::new()),
             model_cache: Mutex::new(HashMap::new()),
+            vm_proto_cache: Mutex::new(HashMap::new()),
+            vm_model_cache: Mutex::new(HashMap::new()),
         }
     }
 }
+
+impl LocallyStoredAuthzPoliciesProvider for CachingAclFileProvider {}
 
 impl SingleVmAclPolicyProvider for CachingAclFileProvider {
     /// Gets the Service Bundle ACL policy proto.
@@ -138,6 +148,65 @@ impl SingleVmAclPolicyProvider for CachingAclFileProvider {
     }
 }
 
+impl VmLevelPermissionsProvider for CachingAclFileProvider {
+    /// Gets the VM Authz policy proto.
+    ///
+    /// If the VM Authz policy proto is already cached, returns it from the cache.
+    /// Otherwise, gets the VM Authz policy proto from the inner provider, caches it,
+    /// and returns it.
+    fn get_vm_authz_policy_proto(
+        &self,
+        vm_name: &VmName,
+    ) -> Result<VmAuthzPolicyProto, anyhow::Error> {
+        let key = vm_name.clone();
+        {
+            let vm_proto_cache = self.vm_proto_cache.lock().unwrap();
+            if let Some(vm_authz_policy) = vm_proto_cache.get(&key) {
+                return Ok(vm_authz_policy.clone());
+            }
+        }
+
+        let vm_authz_policy_proto = self
+            .inner_provider
+            .get_vm_authz_policy_proto(vm_name)
+            .with_context(|| format!("{vm_name}: Failed to get VM Authz policy proto"))?;
+
+        {
+            let mut vm_proto_cache = self.vm_proto_cache.lock().unwrap();
+            vm_proto_cache.insert(key, vm_authz_policy_proto.clone());
+        }
+
+        Ok(vm_authz_policy_proto)
+    }
+
+    fn get_vm_authz_policy(
+        &self,
+        vm_name: &VmName,
+    ) -> Result<Arc<VmAuthzPolicyModel>, anyhow::Error> {
+        let key = vm_name.clone();
+        {
+            let vm_model_cache = self.vm_model_cache.lock().unwrap();
+            if let Some(vm_authz_policy) = vm_model_cache.get(&key) {
+                return Ok(vm_authz_policy.clone());
+            }
+        }
+
+        let vm_authz_policy_proto = self.get_vm_authz_policy_proto(vm_name)?;
+
+        let vm_authz_policy_model = VmAuthzPolicyModel::try_from(vm_authz_policy_proto)
+            .with_context(|| format!("{vm_name}: Failed to parse VM Authz policy from proto"))?;
+
+        let vm_authz_policy_model = Arc::new(vm_authz_policy_model);
+
+        {
+            let mut vm_model_cache = self.vm_model_cache.lock().unwrap();
+            vm_model_cache.insert(key, vm_authz_policy_model.clone());
+        }
+
+        Ok(vm_authz_policy_model)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,19 +216,31 @@ mod tests {
     use std::sync::Arc;
 
     use protobuf::text_format;
-    use sdv_authz::SingleVmAclPolicyProvider;
+    use sdv_authz::{
+        LocallyStoredAuthzPoliciesProvider, SingleVmAclPolicyProvider, VmLevelPermissionsProvider,
+    };
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
-    use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName, ServiceUnitName};
+    use sdv_authz_policy_proto_rust::vm_authz_policy::VmAuthzPolicy as VmAuthzPolicyProto;
+    use sdv_comms_id::names::{
+        PackageName, ServiceName as ServiceBundleName, ServiceUnitName, VmName,
+    };
 
     struct TestAclPolicyProvider {
         mapping: HashMap<(PackageName, Option<ServiceBundleName>), AclPolicyProto>,
+        vm_mapping: HashMap<VmName, VmAuthzPolicyProto>,
         // Here we use Mutex because `TestAclPolicyProvider` will be wrapper as Arc<>.
         calls_counter: Mutex<u32>,
+        vm_calls_counter: Mutex<u32>,
     }
 
     impl TestAclPolicyProvider {
         fn new() -> Self {
-            Self { mapping: HashMap::new(), calls_counter: Mutex::new(0) }
+            Self {
+                mapping: HashMap::new(),
+                vm_mapping: HashMap::new(),
+                calls_counter: Mutex::new(0),
+                vm_calls_counter: Mutex::new(0),
+            }
         }
 
         fn set_alc_policy(
@@ -174,10 +255,20 @@ mod tests {
             }
         }
 
+        fn set_vm_authz_policy(&mut self, vm_name: VmName, vm_authz_policy: VmAuthzPolicyProto) {
+            self.vm_mapping.insert(vm_name, vm_authz_policy);
+        }
+
         fn get_calls_counter(&self) -> u32 {
             *self.calls_counter.lock().unwrap()
         }
+
+        fn get_vm_calls_counter(&self) -> u32 {
+            *self.vm_calls_counter.lock().unwrap()
+        }
     }
+
+    impl LocallyStoredAuthzPoliciesProvider for TestAclPolicyProvider {}
 
     impl SingleVmAclPolicyProvider for TestAclPolicyProvider {
         fn get_acl_policy_proto(
@@ -204,6 +295,20 @@ mod tests {
             &self,
         ) -> Result<Vec<(PackageName, Option<ServiceBundleName>)>, anyhow::Error> {
             Ok(self.mapping.keys().cloned().collect())
+        }
+    }
+
+    impl VmLevelPermissionsProvider for TestAclPolicyProvider {
+        fn get_vm_authz_policy_proto(
+            &self,
+            vm_name: &VmName,
+        ) -> Result<VmAuthzPolicyProto, anyhow::Error> {
+            *self.vm_calls_counter.lock().unwrap() += 1;
+
+            self.vm_mapping
+                .get(vm_name)
+                .ok_or(anyhow::anyhow!("Authz policy for {vm_name} is not specified"))
+                .cloned()
         }
     }
 
@@ -380,5 +485,131 @@ mod tests {
         assert!(known_namespaces_set
             .contains(&(package_name.clone(), Some(service_bundle_name.clone()))));
         assert!(known_namespaces_set.contains(&(package_name.clone(), None)));
+    }
+
+    #[test]
+    fn test_get_vm_authz_policy_proto_success() {
+        let vm_name = VmName::from_str("vm-ivi").unwrap();
+        let vm_authz_policy_proto = text_format::parse_from_str::<VmAuthzPolicyProto>(
+            r#"
+            server {
+                service: "com.pkg.Svc"
+                allow_all_channels: true
+            }
+        "#,
+        )
+        .unwrap();
+
+        let test_provider = {
+            let mut test_provider = TestAclPolicyProvider::new();
+            test_provider.set_vm_authz_policy(vm_name.clone(), vm_authz_policy_proto.clone());
+            Arc::new(test_provider)
+        };
+
+        let caching_provider = CachingAclFileProvider::new(test_provider.clone());
+
+        assert_eq!(test_provider.get_vm_calls_counter(), 0);
+
+        // First call should populate the cache.
+        assert_eq!(
+            caching_provider.get_vm_authz_policy_proto(&vm_name).unwrap(),
+            vm_authz_policy_proto.clone()
+        );
+        assert_eq!(test_provider.get_vm_calls_counter(), 1);
+
+        // Second call should read from the cache.
+        assert_eq!(
+            caching_provider.get_vm_authz_policy_proto(&vm_name).unwrap(),
+            vm_authz_policy_proto
+        );
+        assert_eq!(test_provider.get_vm_calls_counter(), 1);
+    }
+
+    #[test]
+    fn test_get_vm_authz_policy_success() {
+        let vm_name = VmName::from_str("vm-ivi").unwrap();
+        let vm_authz_policy_proto = text_format::parse_from_str::<VmAuthzPolicyProto>(
+            r#"
+            server {
+                service: "com.pkg.Svc"
+                allow_all_channels: true
+            }
+        "#,
+        )
+        .unwrap();
+
+        let test_provider = {
+            let mut test_provider = TestAclPolicyProvider::new();
+            test_provider.set_vm_authz_policy(vm_name.clone(), vm_authz_policy_proto);
+            Arc::new(test_provider)
+        };
+
+        let caching_provider = CachingAclFileProvider::new(test_provider.clone());
+
+        assert_eq!(test_provider.get_vm_calls_counter(), 0);
+
+        // First call should populate the cache.
+        let policy = caching_provider.get_vm_authz_policy(&vm_name).unwrap();
+        let debug_str = format!("{:?}", policy);
+        assert!(debug_str.contains("com.pkg") && debug_str.contains("Svc"));
+        assert_eq!(test_provider.get_vm_calls_counter(), 1);
+
+        // Second call should read from the cache.
+        let policy = caching_provider.get_vm_authz_policy(&vm_name).unwrap();
+        let debug_str = format!("{:?}", policy);
+        assert!(debug_str.contains("com.pkg") && debug_str.contains("Svc"));
+        assert_eq!(test_provider.get_vm_calls_counter(), 1);
+    }
+
+    #[test]
+    fn test_get_vm_authz_policy_proto_error() {
+        let test_provider = TestAclPolicyProvider::new();
+        let caching_provider = CachingAclFileProvider::new(Arc::new(test_provider));
+
+        let vm_name = VmName::from_str("vm-ivi").unwrap();
+
+        assert!(caching_provider
+            .get_vm_authz_policy_proto(&vm_name)
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to get VM Authz policy proto"));
+    }
+
+    #[test]
+    fn test_get_vm_authz_policy_error() {
+        let test_provider = TestAclPolicyProvider::new();
+        let caching_provider = CachingAclFileProvider::new(Arc::new(test_provider));
+
+        let vm_name = VmName::from_str("vm-ivi").unwrap();
+
+        assert!(caching_provider
+            .get_vm_authz_policy(&vm_name)
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to get VM Authz policy proto"));
+    }
+
+    #[test]
+    fn test_get_vm_authz_policy_invalid_proto() {
+        let vm_name = VmName::from_str("vm-ivi").unwrap();
+        // Missing both 'package' and 'service' in server permission is invalid.
+        let vm_authz_policy_proto = text_format::parse_from_str::<VmAuthzPolicyProto>(
+            r#"
+            server {
+                allow_all_channels: true
+            }
+        "#,
+        )
+        .unwrap();
+
+        let mut test_provider = TestAclPolicyProvider::new();
+        test_provider.set_vm_authz_policy(vm_name.clone(), vm_authz_policy_proto);
+        let caching_provider = CachingAclFileProvider::new(Arc::new(test_provider));
+
+        assert!(caching_provider
+            .get_vm_authz_policy(&vm_name)
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to parse VM Authz policy from proto"));
     }
 }

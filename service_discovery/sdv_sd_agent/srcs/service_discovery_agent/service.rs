@@ -675,7 +675,9 @@ mod test {
         UnitNameParameters::UnitNameParameters,
     };
     use protobuf::text_format;
-    use sdv_authz::{AclPolicyModel, AclPolicyProvider, AuthzEnforcementFlag, AuthzService};
+    use sdv_authz::{
+        AclPolicyModel, AclPolicyProvider, AuthzEnforcementFlag, AuthzService, VmAuthzPolicyModel,
+    };
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
     use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName, VmName};
     use std::{
@@ -756,6 +758,13 @@ mod test {
             let mut vm_names: Vec<VmName> = self.mapping.keys().map(|k| k.0.clone()).collect();
             vm_names.sort_by_key(|vm_name| vm_name.name().to_string());
             vm_names
+        }
+
+        fn get_vm_authz_policy(
+            &self,
+            _vm_name: &VmName,
+        ) -> anyhow::Result<Arc<VmAuthzPolicyModel>> {
+            unimplemented!("get_vm_authz_policy is not implemented for test")
         }
     }
 

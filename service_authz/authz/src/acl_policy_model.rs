@@ -29,7 +29,7 @@ use sdv_comms_sd::discovery::UnitType;
 ///
 /// ACL Policy contains required information to guard access to Unit Types
 /// and Service Units implemented by that Service Bundle.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AclPolicyModel {
     service_units_acls: HashMap<ServiceUnitName, Vec<Acl>>,
     unit_types_acls: HashMap<UnitTypeName, Vec<Acl>>,

@@ -32,7 +32,7 @@ use crate::service_name_part::ServiceNamePart;
 use crate::vm_name_part::VmNamePart;
 
 /// Acl contains Access Control List information.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Acl {
     acl_name: AclName,
     include: FqinSet,

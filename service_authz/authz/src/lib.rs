@@ -23,6 +23,7 @@ mod authz_service;
 mod authz_via_acls;
 mod authz_via_permissions;
 mod feature_flags;
+mod local_vm_authz_policy_provider;
 mod multi_vm_authz_guard;
 mod parse_acl_policy_proto;
 mod single_vm_acl_policy_provider;
@@ -35,6 +36,8 @@ pub use acl_policy_provider::AclPolicyProvider;
 pub use authz_enforcement_flag::AuthzEnforcementFlag;
 pub use authz_service::AuthzService;
 pub use authz_service::ServiceUnitRegistry;
+pub use local_vm_authz_policy_provider::LocallyStoredAuthzPoliciesProvider;
+pub use local_vm_authz_policy_provider::VmLevelPermissionsProvider;
 pub use single_vm_acl_policy_provider::SingleVmAclPolicyProvider;
 pub use vm_authz_policy_model::VmAuthzPolicyModel;
 
