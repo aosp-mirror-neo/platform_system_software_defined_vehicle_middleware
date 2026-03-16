@@ -27,7 +27,7 @@ mod test {
     use sdv::mw::{clientlib, Availability, ClientOptions, SdvComms};
     use sdv::status::{SdvResult, SdvStatus, SdvStatusCode};
     // test catalog
-    use sdv_mw_rs_sdv_vsidl_rpc_test_tire_status_consumer::client;
+    use sdv_mw_rs_sdv_vsidl_rpc_test_tire_status_consumer::ClientDescriptors;
     use sdv_mw_rs_sdv_vsidl_rpc_test_tire_status_producer::TireStatusProducer;
     use vsidl_rpc_test_proto::tire_rpc::{
         GetTirePressureResponse, GetTireStatusRequest, TireLocation,
@@ -134,7 +134,7 @@ mod test {
         // AND GIVEN we have a client for TireStatus.
         let mut stream = clientlib::create_server_registration_event_stream(
             sdv_comms.as_ref(),
-            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
+            ClientDescriptors::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
         )
         .await
         .unwrap();
@@ -146,7 +146,7 @@ mod test {
         }
         let client = clientlib::create_rpc_client(
             sdv_comms.as_ref(),
-            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
+            ClientDescriptors::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
             ClientOptions::default(),
         )
         .await
@@ -210,7 +210,7 @@ mod test {
         // AND GIVEN we have a client for TireStatus.
         let mut stream = clientlib::create_server_registration_event_stream(
             sdv_comms.as_ref(),
-            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_SERVER_STREAM,
+            ClientDescriptors::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_SERVER_STREAM,
         )
         .await
         .unwrap();
@@ -222,7 +222,7 @@ mod test {
         }
         let client = clientlib::create_rpc_client(
             sdv_comms.as_ref(),
-            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_SERVER_STREAM,
+            ClientDescriptors::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_SERVER_STREAM,
             ClientOptions::default(),
         )
         .await
@@ -269,7 +269,7 @@ mod test {
         // AND GIVEN we have a client for TireStatus.
         let mut stream = clientlib::create_server_registration_event_stream(
             sdv_comms.as_ref(),
-            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_CLIENT_STREAM,
+            ClientDescriptors::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_CLIENT_STREAM,
         )
         .await
         .unwrap();
@@ -281,7 +281,7 @@ mod test {
         }
         let client = clientlib::create_rpc_client(
             sdv_comms.as_ref(),
-            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_CLIENT_STREAM,
+            ClientDescriptors::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_CLIENT_STREAM,
             ClientOptions::default(),
         )
         .await

@@ -27,10 +27,10 @@ mod test {
     use sdv::mw::{clientlib, Availability, SdvComms, SubscribeOptions};
     use sdv::status::SdvStatusCode;
     // test catalog
-    use sdv_mw_rs_sdv_vsidl_multipub_test_cabin_sensor::publisher as cabin_publisher;
-    use sdv_mw_rs_sdv_vsidl_multipub_test_hvac_control::subscriber as hvac_subscriber;
-    use sdv_mw_rs_sdv_vsidl_pubsub_test_publishing_bundle::publisher;
-    use sdv_mw_rs_sdv_vsidl_pubsub_test_subscribing_bundle::subscriber;
+    use sdv_mw_rs_sdv_vsidl_multipub_test_cabin_sensor::PublisherDescriptors as CabinPublisherDescriptors;
+    use sdv_mw_rs_sdv_vsidl_multipub_test_hvac_control::SubscriberDescriptors as HvacSubscriberDescriptors;
+    use sdv_mw_rs_sdv_vsidl_pubsub_test_publishing_bundle::PublisherDescriptors;
+    use sdv_mw_rs_sdv_vsidl_pubsub_test_subscribing_bundle::SubscriberDescriptors;
     use vsidl_multipub_test::cabin::CabinTemperature;
     use vsidl_pubsub_test_proto::tire::TirePressure;
 
@@ -59,7 +59,7 @@ mod test {
         // AND GIVEN an availability stream.
         let mut availability_stream = clientlib::create_registration_event_stream(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::TOPIC_ZERO,
+            SubscriberDescriptors::<TirePressure>::TOPIC_ZERO,
         )
         .await
         .expect("Availability stream creation failed");
@@ -67,7 +67,7 @@ mod test {
         // WHEN trying to create an observer.
         let result = clientlib::create_observer(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::TOPIC_ZERO,
+            SubscriberDescriptors::<TirePressure>::TOPIC_ZERO,
             &SubscribeOptions::default(),
         )
         .await;
@@ -81,10 +81,10 @@ mod test {
         // WHEN creating the publisher.
         let pressure_pub = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            publisher::Channel::<TirePressure>::TOPIC_ZERO,
+            PublisherDescriptors::<TirePressure>::TOPIC_ZERO,
         )
         .await
-        .expect("Creating publisher for Channel::TOPIC_ZERO failed.");
+        .expect("Creating publisher for PublisherDescriptors::TOPIC_ZERO failed.");
 
         // THEN the availability steam yields 'Available'.
         assert_eq!(
@@ -97,7 +97,7 @@ mod test {
 
         let mut observer = clientlib::create_observer(
             sdv_comms.as_ref(),
-            subscriber::Channel::<TirePressure>::TOPIC_ZERO,
+            SubscriberDescriptors::<TirePressure>::TOPIC_ZERO,
             &SubscribeOptions::default(),
         )
         .await
@@ -133,10 +133,10 @@ mod test {
         // AND WHEN the publisher becomes available again
         let pressure_pub = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            publisher::Channel::<TirePressure>::TOPIC_ZERO,
+            PublisherDescriptors::<TirePressure>::TOPIC_ZERO,
         )
         .await
-        .expect("creating publisher for Channel::TOPIC_ZERO failed.");
+        .expect("creating publisher for PublisherDescriptors::TOPIC_ZERO failed.");
         // THEN the availability steam yields 'Available'.
         assert_eq!(
             tokio::time::timeout(EVENT_STREAM_TIMEOUT, availability_stream.next()).await,
@@ -174,7 +174,7 @@ mod test {
         // AND GIVEN an availability stream.
         let mut availability_stream = clientlib::create_registration_event_stream(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
+            HvacSubscriberDescriptors::<CabinTemperature>::MULTIPUB,
         )
         .await
         .expect("Availability stream creation failed");
@@ -182,7 +182,7 @@ mod test {
         // WHEN trying to create an observer.
         let result = clientlib::create_observer(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
+            HvacSubscriberDescriptors::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
         .await;
@@ -194,7 +194,7 @@ mod test {
         // WHEN creating the publisher.
         let cabin_pub = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            cabin_publisher::Channel::<CabinTemperature>::MULTIPUB,
+            CabinPublisherDescriptors::<CabinTemperature>::MULTIPUB,
         )
         .await
         .expect("Creating publisher for CabinTemperature failed.");
@@ -209,7 +209,7 @@ mod test {
 
         let mut observer = clientlib::create_observer(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
+            HvacSubscriberDescriptors::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
         .await
