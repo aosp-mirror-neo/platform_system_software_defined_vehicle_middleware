@@ -174,13 +174,24 @@ impl Subscribe for SdvSubscriber {
     fn read_next_messages(&self, message_count: u32) -> SdvResult<Vec<Box<[u8]>>> {
         // Ensure we do not attempt to read more messages than the DT agent has otherwise
         // no messages will be read at all
-        let message_count = min(self.dt_handle.available_to_read()?, message_count);
+        let mut message_count = min(self.dt_handle.available_to_read()?, message_count);
         if message_count == 0 {
             return Ok(Vec::new());
         }
+
+        let metadata = self.dt_handle.get_publisher_unit_metadata();
+
+        // If message_count is greater than the publisher capacity, then available_to_read() must
+        // have returned a value greater than publisher capacity, meaning that this subscriber is
+        // in an overflow state and the read_messages() call below will fail with a DataLoss error.
+        // Given that, revise the message count to 1 to minimize the size the allocation that won't
+        // actually be used, and avoid a possible out-of-memory error.
+        if message_count > metadata.get_message_count() {
+            message_count = 1;
+        }
+
         // Dt uses the (maximum) message size specified in publication registration for all messages
-        let size_for_one_msg =
-            self.dt_handle.get_publisher_unit_metadata().get_message_size() as usize;
+        let size_for_one_msg = metadata.get_message_size() as usize;
         let buffer_size = size_for_one_msg
             .checked_mul(message_count as usize)
             .unwrap_or(usize::MAX - usize::MAX % size_for_one_msg);
