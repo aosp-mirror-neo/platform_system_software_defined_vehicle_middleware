@@ -260,7 +260,7 @@ mod tests {
         std::fs::write(
             &vm_authz_policy_file_path,
             r#"
-            publisher {
+            allow_publisher {
                 message: "com.pkg.Msg"
             }
         "#,
@@ -271,14 +271,14 @@ mod tests {
 
         // First read: should read from file
         let policy1 = reader.read_or_get_vm_cached(&vm_name, &vm_authz_policy_file_path).unwrap();
-        assert!(!policy1.publisher.is_empty());
+        assert!(!policy1.allow_publisher.is_empty());
 
         // Modify the file content
         std::fs::write(&vm_authz_policy_file_path, "").unwrap();
 
         // Second read: should return cached version (true)
         let policy2 = reader.read_or_get_vm_cached(&vm_name, &vm_authz_policy_file_path).unwrap();
-        assert!(!policy2.publisher.is_empty());
+        assert!(!policy2.allow_publisher.is_empty());
 
         // Check that policy1 and policy2 are the same instance
         assert_eq!(format!("{:?}", &policy1), format!("{:?}", &policy2));

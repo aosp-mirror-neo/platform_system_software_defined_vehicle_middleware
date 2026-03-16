@@ -23,35 +23,67 @@ fn test_parse_textproto_with_permissions() {
     let textproto_content = fs::read_to_string(TEST_TEXTPROTO_PATH).unwrap();
     let policy: VmAuthzPolicy = parse_from_str(&textproto_content).unwrap();
 
-    assert_eq!(policy.publisher.len(), 3);
-    assert_eq!(policy.publisher[0].message, Some("test.package.MessageType".to_string()));
-    assert_eq!(policy.publisher[0].topic[0], "test_topic");
-    assert_eq!(policy.publisher[1].message, Some("test.package.MessageType2".to_string()));
-    assert_eq!(policy.publisher[1].allow_all_topics, Some(true));
-    assert_eq!(policy.publisher[2].package, Some("test.blanket_package".to_string()));
-    assert_eq!(policy.publisher[2].allow_all_topics, None);
+    assert_eq!(policy.allow_publisher.len(), 3);
+    assert_eq!(policy.allow_publisher[0].message, "test.package.MessageType");
+    assert_eq!(policy.allow_publisher[0].topic[0], "test_topic");
+    assert_eq!(policy.allow_publisher[1].message, "test.package.MessageType2");
+    assert_eq!(policy.allow_publisher[1].topic[0], "*");
+    assert_eq!(policy.allow_publisher[2].message, "test.package.Allowed");
+    assert_eq!(policy.allow_publisher[2].topic[0], "*");
 
-    assert_eq!(policy.subscriber.len(), 3);
-    assert_eq!(policy.subscriber[0].message, Some("test.package.MessageType".to_string()));
-    assert_eq!(policy.subscriber[0].topic[0], "test_another_topic");
-    assert_eq!(policy.subscriber[1].message, Some("test.package.MessageType2".to_string()));
-    assert_eq!(policy.subscriber[1].allow_all_topics, Some(true));
-    assert_eq!(policy.subscriber[2].package, Some("test.blanket_package".to_string()));
-    assert_eq!(policy.subscriber[2].allow_all_topics, None);
+    assert_eq!(policy.allow_subscriber.len(), 3);
+    assert_eq!(policy.allow_subscriber[0].message, "test.package.MessageType");
+    assert_eq!(policy.allow_subscriber[0].topic[0], "test_another_topic");
+    assert_eq!(policy.allow_subscriber[1].message, "test.package.MessageType2");
+    assert_eq!(policy.allow_subscriber[1].topic[0], "*");
+    assert_eq!(policy.allow_subscriber[2].message, "test.package.Allowed");
+    assert_eq!(policy.allow_subscriber[2].topic[0], "*");
 
-    assert_eq!(policy.server.len(), 3);
-    assert_eq!(policy.server[0].service, Some("test.package.Server".to_string()));
-    assert_eq!(policy.server[0].channel[0], "test-channel");
-    assert_eq!(policy.server[1].service, Some("test.package.Server2".to_string()));
-    assert_eq!(policy.server[1].allow_all_channels, Some(true));
-    assert_eq!(policy.server[2].package, Some("test.blanket_package".to_string()));
-    assert_eq!(policy.server[2].allow_all_channels, None);
+    assert_eq!(policy.allow_server.len(), 3);
+    assert_eq!(policy.allow_server[0].service, "test.package.Server");
+    assert_eq!(policy.allow_server[0].channel[0], "test-channel");
+    assert_eq!(policy.allow_server[1].service, "test.package.Server2");
+    assert_eq!(policy.allow_server[1].channel[0], "*");
+    assert_eq!(policy.allow_server[2].service, "test.package.Allowed");
+    assert_eq!(policy.allow_server[2].channel[0], "*");
 
-    assert_eq!(policy.client.len(), 3);
-    assert_eq!(policy.client[0].service, Some("test.package.Server".to_string()));
-    assert_eq!(policy.client[0].channel[0], "test-another-channel");
-    assert_eq!(policy.client[1].service, Some("test.package.Server2".to_string()));
-    assert_eq!(policy.client[1].allow_all_channels, Some(true));
-    assert_eq!(policy.client[2].package, Some("test.blanket_package".to_string()));
-    assert_eq!(policy.client[2].allow_all_channels, None);
+    assert_eq!(policy.allow_client.len(), 3);
+    assert_eq!(policy.allow_client[0].service, "test.package.Server");
+    assert_eq!(policy.allow_client[0].channel[0], "test-another-channel");
+    assert_eq!(policy.allow_client[1].service, "test.package.Server2");
+    assert_eq!(policy.allow_client[1].channel[0], "*");
+    assert_eq!(policy.allow_client[2].service, "test.package.Allowed");
+    assert_eq!(policy.allow_client[2].channel[0], "*");
+
+    assert_eq!(policy.deny_publisher.len(), 3);
+    assert_eq!(policy.deny_publisher[0].message, "test.package.DeniedMessageType");
+    assert_eq!(policy.deny_publisher[0].topic[0], "denied_topic");
+    assert_eq!(policy.deny_publisher[1].message, "test.package.DeniedMessageType2");
+    assert_eq!(policy.deny_publisher[1].topic[0], "*");
+    assert_eq!(policy.deny_publisher[2].message, "test.package.Denied");
+    assert_eq!(policy.deny_publisher[2].topic[0], "*");
+
+    assert_eq!(policy.deny_subscriber.len(), 3);
+    assert_eq!(policy.deny_subscriber[0].message, "test.package.DeniedMessageType");
+    assert_eq!(policy.deny_subscriber[0].topic[0], "denied_topic");
+    assert_eq!(policy.deny_subscriber[1].message, "test.package.DeniedMessageType2");
+    assert_eq!(policy.deny_subscriber[1].topic[0], "*");
+    assert_eq!(policy.deny_subscriber[2].message, "test.package.Denied");
+    assert_eq!(policy.deny_subscriber[2].topic[0], "*");
+
+    assert_eq!(policy.deny_server.len(), 3);
+    assert_eq!(policy.deny_server[0].service, "test.package.DeniedServer");
+    assert_eq!(policy.deny_server[0].channel[0], "denied-channel");
+    assert_eq!(policy.deny_server[1].service, "test.package.DeniedServer2");
+    assert_eq!(policy.deny_server[1].channel[0], "*");
+    assert_eq!(policy.deny_server[2].service, "test.package.Denied");
+    assert_eq!(policy.deny_server[2].channel[0], "*");
+
+    assert_eq!(policy.deny_client.len(), 3);
+    assert_eq!(policy.deny_client[0].service, "test.package.DeniedServer");
+    assert_eq!(policy.deny_client[0].channel[0], "denied-channel");
+    assert_eq!(policy.deny_client[1].service, "test.package.DeniedServer2");
+    assert_eq!(policy.deny_client[1].channel[0], "*");
+    assert_eq!(policy.deny_client[2].service, "test.package.Denied");
+    assert_eq!(policy.deny_client[2].channel[0], "*");
 }

@@ -139,8 +139,9 @@ mod tests {
     "#;
 
     const VM_AUTHZ_POLICY: &str = r#"
-        subscriber {
-            package: "com.test"
+        allow_subscriber {
+            message: "*"
+            topic: "*"
         }
     "#;
 
