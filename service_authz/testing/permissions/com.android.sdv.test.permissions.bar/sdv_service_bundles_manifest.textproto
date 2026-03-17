@@ -1,0 +1,32 @@
+# Copyright (C) 2026 The Android Open Source Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# proto-file:
+# //system/software_defined_vehicle/service_bundles_registry/proto/sdv_service_bundles_manifest.proto
+# proto-message: SdvServiceBundleManifestEntry
+
+sdv_service_bundle_metadata {
+  # Service bundle name.
+  name: "AuthzTestDriver"
+  # Service Bundle Version Number.
+  version_number: 1
+  # Service Bundle Version Name.
+  version_name: "1.0"
+  # Path to the native library to be loaded as service bundle.
+  native_library_path: "lib64/libauthz_test_driver_permissions.so"
+  # Path to the orchestration config file.
+  orchestration_config_path: "etc/orch/orch.textproto"
+  # Path to the permissions policy file.
+  authorization_policy_path: "etc/permissions/permissions.textproto"
+}

@@ -1,0 +1,85 @@
+// Copyright (C) 2026 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+// Apex with AuthzTestDriver.
+apex {
+    name: "com.android.sdv.test.permissions.bar",
+    defaults: ["cuj_sample_apex@defaults"],
+    native_shared_libs: ["libauthz_test_driver_permissions"],
+    prebuilts: [
+        // SDV service bundles manifest file.
+        "com.android.sdv.test.permissions.bar.service_bundles_manifest",
+        // Orchestration configuration.
+        "com.android.sdv.test.permissions.bar.test_driver.orch.config",
+        // Permissions policy file.
+        "com.android.sdv.test.permissions.bar.test_driver.permissions.config",
+    ],
+    // Setting the security contexts to files in this APEX bundle.
+    file_contexts: "apex_file_contexts",
+}
+
+// SDV manifest file with the metadata information about service bundles stored in the apex.
+prebuilt_etc {
+    name: "com.android.sdv.test.permissions.bar.service_bundles_manifest",
+    // The source name of the manifest file.
+    src: "sdv_service_bundles_manifest.textproto",
+    // The name of the installed file shall be `sdv_service_bundles_manifest.textproto`.
+    filename: "sdv_service_bundles_manifest.textproto",
+    // Disable direct installation of the manifest to one of the partitions.
+    // The manifest will be used only inside of service bundles registry apexes.
+    installable: false,
+}
+
+// Orchestration configuration for AuthzTestDriver service bundle.
+prebuilt_etc {
+    name: "com.android.sdv.test.permissions.bar.test_driver.orch.config",
+    src: "service_bundle_config.textproto",
+    // Subdirectory under which the file(s) to be installed into.
+    sub_dir: "orch",
+    // Filename is used in sdv service bundle metadata manifest.
+    filename: "orch.textproto",
+    // Disable direct installation of the configuration to one of the partitions.
+    // The configuration will be used only inside of service bundles registry apexes.
+    installable: false,
+}
+
+// Permissions policy for AuthzTestDriver service bundle.
+prebuilt_etc {
+    name: "com.android.sdv.test.permissions.bar.test_driver.permissions.config",
+    src: "permissions.textproto",
+    sub_dir: "permissions",
+    // Filename is used in sdv service bundle metadata manifest.
+    filename: "permissions.textproto",
+    // Disable direct installation of the manifest to one of the partitions.
+    // The manifest will be used only inside of service bundles registry apexes.
+    installable: false,
+}
+
+// AuthzTestDriver service bundle library.
+rust_ffi_shared {
+    name: "libauthz_test_driver_permissions",
+    crate_name: "authz_test_driver_permissions",
+    srcs: ["test_driver.rs"],
+    defaults: [
+        "tests_authz_service_bundle@defaults",
+    ],
+    rustlibs: [
+        "liblazy_static",
+    ],
+    // Allows the library to be available inside of the related APEX.
+    apex_available: ["com.android.sdv.test.permissions.bar"],
+}

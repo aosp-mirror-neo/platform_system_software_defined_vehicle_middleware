@@ -16,18 +16,34 @@
 # //system/software_defined_vehicle/middleware/service_authz/proto/sdv/authz/policy/vm_authz_policy.proto
 # proto-message: VmAuthzPolicy
 
-publisher { message: "test.package.MessageType" topic: "test_topic" }
-publisher { message: "test.package.MessageType2" allow_all_topics: true }
-publisher { package: "test.blanket_package" }
+allow_publisher { message: "test.package.MessageType" topic: "test_topic" }
+allow_publisher { message: "test.package.MessageType2" topic: "*" }
+allow_publisher { message: "test.package.Allowed" topic: "*" }
 
-subscriber { message: "test.package.MessageType" topic: "test_another_topic" }
-subscriber { message: "test.package.MessageType2" allow_all_topics: true }
-subscriber { package: "test.blanket_package" }
+allow_subscriber { message: "test.package.MessageType" topic: "test_another_topic" }
+allow_subscriber { message: "test.package.MessageType2" topic: "*" }
+allow_subscriber { message: "test.package.Allowed" topic: "*" }
 
-server { service: "test.package.Server" channel: "test-channel" }
-server { service: "test.package.Server2" allow_all_channels: true }
-server { package: "test.blanket_package" }
+allow_server { service: "test.package.Server" channel: "test-channel" }
+allow_server { service: "test.package.Server2" channel: "*" }
+allow_server { service: "test.package.Allowed" channel: "*" }
 
-client { service: "test.package.Server" channel: "test-another-channel" }
-client { service: "test.package.Server2" allow_all_channels: true }
-client { package: "test.blanket_package" }
+allow_client { service: "test.package.Server" channel: "test-another-channel" }
+allow_client { service: "test.package.Server2" channel: "*" }
+allow_client { service: "test.package.Allowed" channel: "*" }
+
+deny_publisher { message: "test.package.DeniedMessageType" topic: "denied_topic" }
+deny_publisher { message: "test.package.DeniedMessageType2" topic: "*" }
+deny_publisher { message: "test.package.Denied" topic: "*" }
+
+deny_subscriber { message: "test.package.DeniedMessageType" topic: "denied_topic" }
+deny_subscriber { message: "test.package.DeniedMessageType2" topic: "*" }
+deny_subscriber { message: "test.package.Denied" topic: "*" }
+
+deny_server { service: "test.package.DeniedServer" channel: "denied-channel" }
+deny_server { service: "test.package.DeniedServer2" channel: "*" }
+deny_server { service: "test.package.Denied" channel: "*" }
+
+deny_client { service: "test.package.DeniedServer" channel: "denied-channel" }
+deny_client { service: "test.package.DeniedServer2" channel: "*" }
+deny_client { service: "test.package.Denied" channel: "*" }

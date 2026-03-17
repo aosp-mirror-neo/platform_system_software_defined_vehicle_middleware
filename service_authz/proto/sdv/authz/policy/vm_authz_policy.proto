@@ -17,125 +17,103 @@ syntax = "proto3";
 package sdv.authz.policy.vm_authz_policy;
 
 // VmAuthzPolicy defines the authorization policies for a remote VM.
+//
+// The policy is evaluated in the following way:
+//  - If no allow rule matches a requested action, it's denied by default.
+//  - If there's an allow rule for a requested action, it's allowed unless there's an equal or more
+//  specific deny rule.
+//  - If there's a deny rule for a requested action, it's denied unless there's a strictly more
+//  specific allow rule.
+//
+// Where "more specific" is defined by the following hierarchy:
+// 1.  A rule with a specific 'message'/'service' name is more specific
+//     than a rule with '*' for 'message'/'service'.
+// 2.  If 'message'/'service' fields are both specific names,
+//     a rule with specific 'topic'/'channel' names is more specific
+//     than a rule with '*' for 'topic'/'channel'.
+//
+// For example:
+// - `message: "a.b", topic: "*"` is more specific than `message: "*", topic: "*"`.
+// - `message: "a.b", topic: "t1"` is more specific than `message: "a.b", topic: "*"`.
+// - `message: "a.b", topic: "t1"` is more specific than `message: "*", topic: "*"`.
 message VmAuthzPolicy {
   // Optional. List of permissions to publish Data Tunnel publications.
-  repeated Publisher publisher = 1;
+  repeated Publisher allow_publisher = 1;
 
   // Optional. List of permissions to discover and subscribe to Data Tunnel
   // publications.
-  repeated Subscriber subscriber = 2;
+  repeated Subscriber allow_subscriber = 2;
 
   // Optional. List of permissions to serve an RPC server.
-  repeated Server server = 3;
+  repeated Server allow_server = 3;
 
   // Optional. List of permissions to discover and call methods of an RPC
   // server.
-  repeated Client client = 4;
+  repeated Client allow_client = 4;
+
+  // Optional. List of permissions to explicitly deny publishing Data Tunnel publications.
+  repeated Publisher deny_publisher = 5;
+
+  // Optional. List of permissions to explicitly deny subscribing to Data Tunnel publications.
+  repeated Subscriber deny_subscriber = 6;
+
+  // Optional. List of permissions to explicitly deny serving an RPC server.
+  repeated Server deny_server = 7;
+
+  // Optional. List of permissions to explicitly deny calling methods of an RPC server.
+  repeated Client deny_client = 8;
 }
 
-// Defines a permission to publish Data Tunnel publications.
+// Defines a permission to allow/deny publishing Data Tunnel publications.
 message Publisher {
-  // Optional. Allows to publish Data Tunnel publications with any protobuf message name from the
-  // package.
+  // Required. Publication's fully qualified protobuf message name or "*" to allow/deny all
+  // messages.
   //
-  // Either this or 'message' field must be set.
-  optional string package = 1;
+  // "*" is only allowed if "topic" field is "*".
+  string message = 1;
 
-  // Optional. Publication's protobuf message name.
+  // Required. Topic(s) to which this permission allows/denies publishing.
   //
-  // Either this or 'package' field must be set.
-  optional string message = 2;
-
-  // Topic(s) to which this permission allows to publish to.
-  //
-  // Setting this field or setting 'allow_all_topics == true' is required.
-  // Ignored if 'package' field is set.
-  repeated string topic = 3;
-
-  // Flag indicates that Service Bundle is allowed to register publication
-  // of the 'message' type with any 'topic'
-  //
-  // Should only be set to 'true' if the 'topic' field is not set.
-  // Set to 'true' by default, if 'package' field is set.
-  optional bool allow_all_topics = 4;
+  // Value can be either a specific topic name or "*" to allow/deny all topics.
+  repeated string topic = 2;
 }
 
 // Defines a permission to discover and subscribe to Data Tunnel publications.
 message Subscriber {
-  // Optional. Allows to discover and subscribe to Data Tunnel publications with any protobuf
-  // message name from the package.
+  // Required. Publication's fully qualified protobuf message name or "*" to allow/deny all
+  // messages.
   //
-  // Either this or 'message' field must be set.
-  optional string package = 1;
+  // "*" is only allowed if "topic" field is "*".
+  string message = 1;
 
-  // Optional. Publication's protobuf message name.
+  // Required. Topic(s) to which this permission allows/denies subscribing.
   //
-  // Either this or 'package' field must be set.
-  optional string message = 2;
-
-  // Topic(s) to which this permission allows to subscribe to.
-  //
-  // Setting this field or setting 'allow_all_topics == true' is required.
-  // Ignored if 'package' field is set.
-  repeated string topic = 3;
-
-  // Flag indicates that Service Bundle is allowed to discover and subscribe to
-  // all publications of the 'message' type.
-  //
-  // Should only be set to 'true' if the 'topic' field is not set.
-  // Set to 'true' by default, if 'package' field is set.
-  optional bool allow_all_topics = 4;
+  // Value can be either a specific topic name or "*" to allow/deny all topics.
+  repeated string topic = 2;
 }
 
 // Defines a permission to serve an RPC server.
 message Server {
-  // Optional. Allows to serve RPC servers with any protobuf service name from the package.
+  // Required. Server's fully qualified protobuf service name or "*" to allow/deny all services.
   //
-  // Either this or 'service' field must be set.
-  optional string package = 1;
+  // "*" is only allowed if "channel" field is "*".
+  string service = 1;
 
-  // Optional. Server's protobuf service name.
+  // Required. Channel(s) on which this permission allows/denies server registration.
   //
-  // Either this or 'package' field must be set.
-  optional string service = 2;
-
-  // Channel(s) which this permission allows to register.
-  //
-  // Setting this field or setting 'allow_all_channels == true' is required.
-  // Ignored if 'package' field is set.
-  repeated string channel = 3;
-
-  // Flag indicates that Service Bundle is allowed to register RPC servers
-  // of the 'service' type with any 'channel'
-  //
-  // Should only be set to 'true' if the 'channel' field is not set.
-  // Set to 'true' by default, if 'package' field is set.
-  optional bool allow_all_channels = 4;
+  // Value can be either a specific channel name or "*" to allow/deny all channels.
+  repeated string channel = 2;
 }
 
 // Defines a permission to discover and call methods of an RPC server.
 message Client {
-  // Optional. Allows to discover and call methods of RPC servers with any protobuf service name
-  // from the package.
+  // Required. Server's fully qualified protobuf service name or "*" to allow/deny all services.
   //
-  // Either this or 'service' field must be set.
-  optional string package = 1;
+  // "*" is only allowed if "channel" field is "*".
+  string service = 1;
 
-  // Optional. Server's protobuf service name.
+  // Required. Channel(s) on which this permission allows/denies client discovery and method calls.
   //
-  // Either this or 'package' field must be set.
-  optional string service = 2;
-
-  // Channel(s) which this permission allows to discover and call methods on.
-  //
-  // Setting this field or setting 'allow_all_channels == true' is required.
-  // Ignored if 'package' field is set.
-  repeated string channel = 3;
-
-  // Flag indicates that Service Bundle is allowed to discover and call all RPC
-  // servers of the 'service' type.
-  //
-  // Should only be set to 'true' if the 'channel' field is not set.
-  // Set to 'true' by default, if 'package' field is set.
-  optional bool allow_all_channels = 4;
+  // Value can be either a specific channel name or "*" to allow/deny all channels.
+  repeated string channel = 2;
 }
