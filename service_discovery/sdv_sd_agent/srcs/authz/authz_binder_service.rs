@@ -114,7 +114,9 @@ mod test {
 
     use anyhow::anyhow;
     use protobuf::text_format;
-    use sdv_authz::{AclPolicyModel, AclPolicyProvider, AuthzEnforcementFlag, VmAuthzPolicyModel};
+    use sdv_authz::{
+        AclPolicyModel, AclPolicyProvider, AuthzEnforcementFlag, AuthzStrategy, VmAuthzPolicyModel,
+    };
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
     use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName, VmName};
 
@@ -131,8 +133,12 @@ mod test {
     }
 
     impl AuthzEnforcementFlag for TestAuthzEnforcementFlag {
-        fn is_enabled(&self) -> bool {
-            self.enabled
+        fn get_enforcement_strategy(&self) -> AuthzStrategy {
+            if self.enabled {
+                Default::default()
+            } else {
+                AuthzStrategy::Disabled
+            }
         }
     }
 

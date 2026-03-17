@@ -14,17 +14,35 @@
 
 //! Authz enforcement flag trait that will be used to control authz service behavior.
 
-/// Trait to retrieve the Authz enforcement flag value.
+/// Trait to retrieve the Authz enforcement strategy.
 ///
 /// # For testing purposes, simply create your own testing implementation:
 /// ```
-/// struct TestAuthzEnforcementFlagEnabled;
+/// use crate::{AuthzEnforcementFlag, AuthzStrategy};
 ///
-/// impl AuthzEnforcementFlag for TestAuthzEnforcementFlagEnabled {
-///   fn is_enabled(&self) -> bool { true }
+/// struct TestAuthzEnforcementFlag;
+///
+/// impl AuthzEnforcementFlag for TestAuthzEnforcementFlag {
+///   fn get_enforcement_strategy(&self) -> AuthzStrategy { AuthzStrategy::Strict }
 /// }
 /// ```
 pub trait AuthzEnforcementFlag: Send + Sync {
-    /// Returns whether Authz enforcement flag is enabled.
-    fn is_enabled(&self) -> bool;
+    /// Returns exact Authz strategy to enforce.
+    fn get_enforcement_strategy(&self) -> AuthzStrategy;
+}
+
+/// Authz enforcement strategy.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+pub enum AuthzStrategy {
+    /// Only enforce permissions.
+    PermissionsOnly,
+    /// Enforce both permissions and ACLs, but allow access if either one permits.
+    #[default]
+    Lenient,
+    /// Enforce both permissions and ACLs, but deny access if either one denies.
+    Strict,
+    /// Only enforce ACLs.
+    AclsOnly,
+    /// Disable Authz.
+    Disabled,
 }

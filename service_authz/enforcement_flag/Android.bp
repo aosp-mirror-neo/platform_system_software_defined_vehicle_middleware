@@ -40,9 +40,8 @@ rust_library {
     min_sdk_version: "35",
 }
 
-rust_test {
-    name: "sdv_mt_core_services_integration_authz_enforcement_flag_default_test",
-    srcs: ["tests/authz_enforcement_flag_default_test.rs"],
+rust_defaults {
+    name: "sdv_authz_enforcement_flag_test_defaults",
     defaults: ["sdv_authz_enforcement_flag@rust_defaults"],
     test_suites: [
         "automotive-sdv-tests",
@@ -60,21 +59,49 @@ rust_test {
 }
 
 rust_test {
+    name: "sdv_mt_core_services_integration_authz_enforcement_flag_default_test",
+    srcs: ["tests/authz_enforcement_flag_default_test.rs"],
+    defaults: ["sdv_authz_enforcement_flag_test_defaults"],
+}
+
+rust_test {
     name: "sdv_mt_core_services_integration_authz_enforcement_flag_enabled_test",
     srcs: ["tests/authz_enforcement_flag_enabled_test.rs"],
-    defaults: ["sdv_authz_enforcement_flag@rust_defaults"],
-    test_suites: [
-        "automotive-sdv-tests",
-        "general-tests",
-    ],
-    test_options: {
-        unit_test: false,
-    },
-    require_root: true,
-    auto_gen_config: true,
+    defaults: ["sdv_authz_enforcement_flag_test_defaults"],
     test_config_template: ":sdv_authz_enforcement_flag_enabled_config_template",
-    compile_multilib: "first",
-    rustlibs: [
-        "libsdv_authz_enforcement_flag",
-    ],
+}
+
+rust_test {
+    name: "sdv_mt_core_services_integration_authz_enforcement_flag_acls_only_test",
+    srcs: ["tests/authz_enforcement_flag_acls_only_test.rs"],
+    defaults: ["sdv_authz_enforcement_flag_test_defaults"],
+    test_config_template: ":sdv_authz_enforcement_flag_acls_only_config_template",
+}
+
+rust_test {
+    name: "sdv_mt_core_services_integration_authz_enforcement_flag_lenient_test",
+    srcs: ["tests/authz_enforcement_flag_lenient_test.rs"],
+    defaults: ["sdv_authz_enforcement_flag_test_defaults"],
+    test_config_template: ":sdv_authz_enforcement_flag_lenient_config_template",
+}
+
+rust_test {
+    name: "sdv_mt_core_services_integration_authz_enforcement_flag_strict_test",
+    srcs: ["tests/authz_enforcement_flag_strict_test.rs"],
+    defaults: ["sdv_authz_enforcement_flag_test_defaults"],
+    test_config_template: ":sdv_authz_enforcement_flag_strict_config_template",
+}
+
+rust_test {
+    name: "sdv_mt_core_services_integration_authz_enforcement_flag_permissions_only_test",
+    srcs: ["tests/authz_enforcement_flag_permissions_only_test.rs"],
+    defaults: ["sdv_authz_enforcement_flag_test_defaults"],
+    test_config_template: ":sdv_authz_enforcement_flag_permissions_only_config_template",
+}
+
+rust_test {
+    name: "sdv_mt_core_services_integration_authz_enforcement_flag_disabled_test",
+    srcs: ["tests/authz_enforcement_flag_disabled_test.rs"],
+    defaults: ["sdv_authz_enforcement_flag_test_defaults"],
+    test_config_template: ":sdv_authz_enforcement_flag_disabled_config_template",
 }

@@ -33,7 +33,7 @@ mod vm_authz_policy_model;
 
 pub use acl_policy_model::AclPolicyModel;
 pub use acl_policy_provider::AclPolicyProvider;
-pub use authz_enforcement_flag::AuthzEnforcementFlag;
+pub use authz_enforcement_flag::{AuthzEnforcementFlag, AuthzStrategy};
 pub use authz_service::AuthzService;
 pub use authz_service::ServiceUnitRegistry;
 pub use local_vm_authz_policy_provider::LocallyStoredAuthzPoliciesProvider;
