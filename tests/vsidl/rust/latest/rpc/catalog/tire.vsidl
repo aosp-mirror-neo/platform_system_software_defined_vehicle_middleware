@@ -21,22 +21,18 @@ service_bundle {
   server {
     service: "TireStatus"
     channel: "tire-status-unary"
-    service_unit_name: "unary"
   }
   server {
     service: "TireStatus"
     channel: "tire-status-server-stream"
-    service_unit_name: "server-stream"
   }
   server {
     service: "TireStatus"
     channel: "tire-status-client-stream"
-    service_unit_name: "client-stream"
   }
   server {
     service: "TireStatus"
     channel: "tire-status-twice"
-    service_unit_name: "twice"
   }
 }
 
