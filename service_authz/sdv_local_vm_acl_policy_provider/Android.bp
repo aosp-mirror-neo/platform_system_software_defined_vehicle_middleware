@@ -80,4 +80,7 @@ rust_test {
         "automotive-sdv-tests",
         "general-tests",
     ],
+    rustlibs: [
+        "libtempfile",
+    ],
 }
