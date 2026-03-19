@@ -25,6 +25,8 @@ use google_sdv_identity::aidl::google::sdv::identity::ProcessIdentifier::Process
 use google_sdv_identity::aidl::google::sdv::identity::ServiceFqin::ServiceFqin as AidlServiceFqin;
 use google_sdv_privileged_service_discovery::aidl::google::sdv::privileged::service_discovery::IPrivilegedServiceDiscoveryAgent::IPrivilegedServiceDiscoveryAgentAsyncServer;
 use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::UnitType::UnitType;
+use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::metadata::ApplicationMetadata::
+{ApplicationMetadata, TypedMetadata::TypedMetadata};
 
 use sdv_authz::AuthzService;
 use sdv_comms_id::names::TopicName;
@@ -289,6 +291,21 @@ fn pretty_print_unit_type(unit_type: &UnitType, writer: &mut dyn Write) -> Resul
     Ok(())
 }
 
+fn pretty_print_application_metadata(
+    metadata: &ApplicationMetadata,
+    writer: &mut dyn Write,
+) -> Result<(), IoError> {
+    match &metadata.typedMetadata {
+        TypedMetadata::ServerUnit(_) => {
+            writeln!(writer, "Server")?;
+        }
+        TypedMetadata::PublisherUnit(pub_meta) => {
+            writeln!(writer, "Publisher: topic={}", pub_meta.topic_name)?;
+        }
+    }
+    Ok(())
+}
+
 fn pretty_print_vm_service_units(
     service_registry: &ServiceRegistry,
     vm_name: &str,
@@ -308,7 +325,10 @@ fn pretty_print_vm_service_units(
 
         write!(writer, "    Unit Type: ")?;
         pretty_print_unit_type(&sud.unitType, writer)?;
+        writeln!(writer)?;
 
+        write!(writer, "    ")?;
+        pretty_print_application_metadata(&sud.appMetadata, writer)?;
         writeln!(writer)?;
     }
 
