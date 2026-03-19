@@ -33,11 +33,16 @@ use crate::caching_acl_reader::CachingAclReader;
 /// Tuple struct mapping a single (package, service bundle) to an ACL policy file path.
 pub type AclFileMapping = ((PackageName, Option<ServiceBundleName>), PathBuf);
 
+/// Tuple struct mapping a single (vm_name) to an Authz policy file path.
+pub type VmAclFileMapping = (VmName, PathBuf);
+
 /// LocallyStoredAuthzPoliciesProvider that reads each ACL from a textproto file.
 #[derive(Debug, Default)]
 pub struct AclFileProvider {
     service_bundle_acls: HashMap<(PackageName, ServiceBundleName), PathBuf>,
     package_acls: HashMap<PackageName, HashSet<PathBuf>>,
+    vm_authz_policies: HashMap<VmName, PathBuf>,
+    default_vm_authz_policy: Option<PathBuf>,
     reader: CachingAclReader,
 }
 
@@ -45,7 +50,11 @@ impl AclFileProvider {
     /// Create an AclFileProvider with the given mappings.
     ///
     /// Can return error (e.g. if multiple mappings are provided for the same bundle).
-    pub fn new(mapping_iter: impl Iterator<Item = AclFileMapping>) -> anyhow::Result<Self> {
+    pub fn new(
+        mapping_iter: impl Iterator<Item = AclFileMapping>,
+        vm_mapping_iter: impl Iterator<Item = VmAclFileMapping>,
+        default_vm_mapping: Option<PathBuf>,
+    ) -> anyhow::Result<Self> {
         let mut provider = AclFileProvider::default();
         for (bundle_key, acl_policy_path) in mapping_iter {
             let (package_name, service_bundle_name) = bundle_key;
@@ -69,6 +78,22 @@ impl AclFileProvider {
             } else {
                 provider.package_acls.entry(package_name).or_default().insert(acl_policy_path);
             }
+        }
+
+        for (vm_name, authz_policy_path) in vm_mapping_iter {
+            if let Some(previous_authz_policy_path) = provider.vm_authz_policies.get(&vm_name) {
+                return Err(anyhow!(
+                    "Multiple Authz policy files found for {}: {} and {}",
+                    vm_name,
+                    previous_authz_policy_path.display(),
+                    authz_policy_path.display()
+                ));
+            }
+            provider.vm_authz_policies.insert(vm_name, authz_policy_path.clone());
+        }
+
+        if let Some(default_vm_authz_policy_path) = default_vm_mapping {
+            provider.default_vm_authz_policy = Some(default_vm_authz_policy_path);
         }
 
         let _span = trace_span!(
@@ -121,9 +146,15 @@ impl SingleVmAclPolicyProvider for AclFileProvider {
 impl VmLevelPermissionsProvider for AclFileProvider {
     fn get_vm_authz_policy_proto(
         &self,
-        _vm_name: &VmName,
+        vm_name: &VmName,
     ) -> Result<VmAuthzPolicyProto, anyhow::Error> {
-        unimplemented!("VM Authz policy not supported by AclFileProvider yet");
+        let vm_authz_policy_path = self
+            .vm_authz_policies
+            .get(vm_name)
+            .or(self.default_vm_authz_policy.as_ref())
+            .ok_or_else(|| anyhow!("{}: VM Authz policy is not found", vm_name))?;
+
+        self.reader.read_or_get_cached_vm(vm_name, vm_authz_policy_path)
     }
 }
 
@@ -150,6 +181,16 @@ mod tests {
         )
     }
 
+    fn make_vm_authz_textproto_string() -> String {
+        r#"
+            allow_publisher {
+                message: "com.pkg.Msg"
+                topic: "*"
+            }
+        "#
+        .to_string()
+    }
+
     // Only add empty files because we only care about file presence here.
     fn add_acl_file(
         root_dir: &Path,
@@ -162,6 +203,13 @@ mod tests {
         path.set_extension(bundle_name.name());
         std::fs::write(&path, make_acl_textproto_string(service_unit_name).as_str()).unwrap();
 
+        path
+    }
+
+    fn add_vm_authz_file(root_dir: &Path, vm_name: &str) -> PathBuf {
+        let mut path = PathBuf::from(root_dir);
+        path.push(format!("{}.textproto", vm_name));
+        std::fs::write(&path, make_vm_authz_textproto_string().as_str()).unwrap();
         path
     }
 
@@ -189,7 +237,8 @@ mod tests {
             ((pkg_name.clone(), Some(bundle_2_name.clone())), bundle_2_path.clone()),
         ];
 
-        let provider = AclFileProvider::new(mappings.into_iter()).unwrap();
+        let provider =
+            AclFileProvider::new(mappings.into_iter(), std::iter::empty(), None).unwrap();
         let known_namespaces_vec = provider.get_namespace_with_acl_policy().unwrap();
         assert_eq!(known_namespaces_vec.len(), 3); // 2 bundles + 1 package
 
@@ -210,6 +259,31 @@ mod tests {
     }
 
     #[test]
+    fn test_new_with_vm_mapping_success() {
+        let test_tempdir = TempDir::new().unwrap();
+        let root_path = test_tempdir.path();
+
+        let vm_1_name = VmName::from_str("vm-1").unwrap();
+        let vm_1_path = add_vm_authz_file(root_path, vm_1_name.name());
+
+        let vm_2_name = VmName::from_str("vm-2").unwrap();
+        let vm_2_path = add_vm_authz_file(root_path, vm_2_name.name());
+
+        let vm_mappings: [VmAclFileMapping; 2] =
+            [(vm_1_name.clone(), vm_1_path.clone()), (vm_2_name.clone(), vm_2_path.clone())];
+
+        let provider =
+            AclFileProvider::new(std::iter::empty(), vm_mappings.into_iter(), None).unwrap();
+
+        // Check that we got the right policy for each VM
+        let vm_1_policy = provider.get_vm_authz_policy_proto(&vm_1_name).unwrap();
+        assert!(!vm_1_policy.allow_publisher.is_empty());
+
+        let vm_2_policy = provider.get_vm_authz_policy_proto(&vm_2_name).unwrap();
+        assert!(!vm_2_policy.allow_publisher.is_empty());
+    }
+
+    #[test]
     fn test_new_errors_on_collision() {
         let pkg_name = PackageName::from_str("com.package").unwrap();
         let bundle_name = ServiceBundleName::from_str("Bundle").unwrap();
@@ -225,16 +299,33 @@ mod tests {
             ),
         ];
 
-        assert_eq!(AclFileProvider::new(mappings.into_iter())
+        assert_eq!(AclFileProvider::new(mappings.into_iter(), std::iter::empty(), None)
             .unwrap_err()
             .to_string(),
             "Multiple ACL policy files found for com.package.Bundle: /acls/com.package.Bundle.textproto and /more_acls/com.package.Bundle.textproto");
     }
 
     #[test]
+    fn test_new_errors_on_vm_collision() {
+        let vm_name = VmName::from_str("vm-name").unwrap();
+
+        let vm_mappings: [VmAclFileMapping; 2] = [
+            (vm_name.clone(), PathBuf::from("/acls/vm_authz.textproto")),
+            (vm_name.clone(), PathBuf::from("/more_acls/vm_authz.textproto")),
+        ];
+
+        assert_eq!(
+            AclFileProvider::new(std::iter::empty(), vm_mappings.into_iter(), None)
+                .unwrap_err()
+                .to_string(),
+            "Multiple Authz policy files found for vm-name: /acls/vm_authz.textproto and /more_acls/vm_authz.textproto"
+        );
+    }
+
+    #[test]
     fn test_new_succeeds_with_empty_mappings() {
         assert_eq!(
-            AclFileProvider::new(std::iter::empty())
+            AclFileProvider::new(std::iter::empty(), std::iter::empty(), None)
                 .unwrap()
                 .get_namespace_with_acl_policy()
                 .unwrap()
@@ -254,10 +345,14 @@ mod tests {
         std::fs::write(bad_acl_file_path.as_path(), "this won't parse as an AclPolicy textproto")
             .unwrap();
 
-        let provider = AclFileProvider::new(std::iter::once((
-            (pkg_name.clone(), Some(bundle_name.clone())),
-            bad_acl_file_path.clone(),
-        )))
+        let provider = AclFileProvider::new(
+            std::iter::once((
+                (pkg_name.clone(), Some(bundle_name.clone())),
+                bad_acl_file_path.clone(),
+            )),
+            std::iter::empty(),
+            None,
+        )
         .unwrap();
 
         assert!(provider
@@ -288,10 +383,11 @@ mod tests {
         )
         .unwrap();
 
-        let provider = AclFileProvider::new(std::iter::once((
-            (pkg_name.clone(), Some(bundle_name.clone())),
-            bad_acl_file_path,
-        )))
+        let provider = AclFileProvider::new(
+            std::iter::once(((pkg_name.clone(), Some(bundle_name.clone())), bad_acl_file_path)),
+            std::iter::empty(),
+            None,
+        )
         .unwrap();
 
         // We can get the proto...
@@ -302,5 +398,33 @@ mod tests {
             provider.get_acl_policy(&pkg_name, Some(&bundle_name)).unwrap_err().to_string(),
             "com.package.Bundle: Failed to parse ACL policy from proto"
         );
+    }
+
+    #[test]
+    fn test_get_vm_authz_policy_not_found() {
+        let provider = AclFileProvider::default();
+        let vm_name = VmName::from_str("unknown-vm").unwrap();
+
+        assert_eq!(
+            provider.get_vm_authz_policy_proto(&vm_name).unwrap_err().to_string(),
+            "unknown-vm: VM Authz policy is not found"
+        );
+    }
+
+    #[test]
+    fn test_get_vm_authz_policy_not_found_returns_policy_from_default_file() {
+        let test_tempdir = TempDir::new().unwrap();
+        let root_path = test_tempdir.path();
+
+        let default_path = add_vm_authz_file(root_path, ".default");
+
+        let provider =
+            AclFileProvider::new(std::iter::empty(), std::iter::empty(), Some(default_path))
+                .unwrap();
+
+        // Check that fallback to default file works
+        let vm_1_name = VmName::from_str("vm-1").unwrap();
+        let vm_1_policy = provider.get_vm_authz_policy_proto(&vm_1_name).unwrap();
+        assert!(!vm_1_policy.allow_publisher.is_empty());
     }
 }

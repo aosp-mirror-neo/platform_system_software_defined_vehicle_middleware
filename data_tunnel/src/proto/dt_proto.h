@@ -107,17 +107,13 @@ struct Payload_Ping : public Payload {
 struct Payload_Pong : public Payload {
     static constexpr Type payload_type = Type::Pong;
 
-    uint32_t ping_id;
+    Payload_Pong() : Payload(Pong) {}
 
-    Payload_Pong(uint32_t ping_id = 0) : Payload(Pong), ping_id(ping_id) {}
+    uint32_t Size() const override { return Payload::Size(); }
 
-    uint32_t Size() const override {
-        return Payload::Size() + static_cast<uint32_t>(sizeof(ping_id));
-    }
+    bool Serialize(BufferWriter&) const override { return true; }
 
-    bool Serialize(BufferWriter& bw) const override { return bw.Write(ping_id); }
-
-    bool Deserialize(BufferReader& br) override { return br.Read(ping_id); }
+    bool Deserialize(BufferReader&) override { return true; }
 };
 
 struct Payload_SubscribeRequest : public Payload {
@@ -370,44 +366,33 @@ inline std::unique_ptr<Payload> DeserializePayloadFromBuffer(BufferReader& br) {
 }
 
 struct Parcel {
-    enum class ParseResult { Success, NeedMoreData, UnknownPayload, Failure };
+    enum class ParseResult { Success, UnknownPayload, Failure };
 
+    // Magic number to avoid inadvertently interpreting arbitrary data as a Parcel.
     static constexpr uint32_t Header = 0xC00010FF;
-    static constexpr uint32_t HeaderSize = sizeof(Header) + /* sequential_id */ sizeof(uint32_t) +
-            /*  payload_size */ sizeof(uint32_t);
+    static constexpr uint32_t HeaderSize = sizeof(Header);
 
-    uint32_t sequential_id;
-
-    Parcel(uint32_t sequential_id = 0) : sequential_id(sequential_id) {}
+    Parcel() = default;
 
     static uint32_t ParcelSize(uint32_t payload_size) { return HeaderSize + payload_size; }
 
     static uint32_t ParcelSize(const Payload& payload) { return ParcelSize(payload.Size()); }
 
     static ParseResult CanReadParcel(const BufferReader& br) {
-        uint32_t header, sequential_id, payload_size;
-        if (br.AvailableToRead() < HeaderSize) {
-            return ParseResult::NeedMoreData;
-        }
+        uint32_t header = 0;
         BufferReader temp_reader(br);
-        if (!temp_reader.Read(header) || header != Header || !temp_reader.Read(sequential_id) ||
-            !temp_reader.Read(payload_size)) {
+        if (!temp_reader.Read(header) || header != Header) {
             return ParseResult::Failure;
-        }
-        if (temp_reader.AvailableToRead() < payload_size) {
-            return ParseResult::NeedMoreData;
         }
         return ParseResult::Success;
     }
 
     bool Serialize(BufferWriter& bw, const Payload& payload) const {
         return (ParcelSize(payload) <= bw.Available()) && bw.Write(Header) &&
-                bw.Write(sequential_id) && bw.Write(payload.Size()) &&
                 bw.Write(static_cast<int16_t>(payload.type)) && payload.Serialize(bw);
     }
 
-    static std::pair<ParseResult, std::unique_ptr<Payload>> Deserialize(BufferReader& br,
-                                                                        uint32_t* parcel_id) {
+    static std::pair<ParseResult, std::unique_ptr<Payload>> Deserialize(BufferReader& br) {
         uint32_t payload_size;
         // Ensure the parcel isn't corrupted and it's enough data to deserialize
         auto res = CanReadParcel(br);
@@ -415,9 +400,7 @@ struct Parcel {
             return {res, std::unique_ptr<Payload>(nullptr)};
         }
 
-        if (!br.MovePos(sizeof(uint32_t)) ||
-            !((parcel_id != nullptr) ? br.Read(*parcel_id) : (br.MovePos(sizeof(uint32_t)) > 0)) ||
-            !br.Read(payload_size)) {
+        if (!br.MovePos(sizeof(uint32_t))) {
             return {ParseResult::Failure, std::unique_ptr<Payload>(nullptr)};
         }
 

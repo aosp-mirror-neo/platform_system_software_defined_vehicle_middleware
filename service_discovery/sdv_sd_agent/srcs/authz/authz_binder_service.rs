@@ -145,7 +145,7 @@ mod test {
             Self { mapping: HashMap::new() }
         }
 
-        fn set_alc_policy(
+        fn set_acl_policy(
             &mut self,
             vm_name: VmName,
             package_name: PackageName,
@@ -218,7 +218,7 @@ mod test {
         .unwrap();
 
         let mut test_provider = TestAclPolicyProvider::new();
-        test_provider.set_alc_policy(
+        test_provider.set_acl_policy(
             object_fqin.vm_name().clone(),
             object_fqin.package_name().clone(),
             Some(object_fqin.service_name().clone()),
@@ -226,6 +226,7 @@ mod test {
         );
 
         AuthzService::new(
+            VmName::from_str("local-vm").unwrap(),
             Arc::new(test_provider),
             authz_enforcement_flag,
             Arc::new(TestRegistry {}),

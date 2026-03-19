@@ -18,18 +18,27 @@ use std::path::Path;
 use tracing::instrument;
 
 use crate::read_acl_file_mappings_from_directory;
+use crate::read_vm_file_mappings_from_directory;
 use crate::AclFileProvider;
 
 /// Build an AclFileProvider by scanning mappings from a list of directories.
 #[instrument(name = "authz_perf::provider::build_acl_provider_from_directories", skip_all)]
 pub fn build_acl_provider_from_directories<P: AsRef<Path>>(
     directories: impl Iterator<Item = P>,
+    vm_directory: impl AsRef<Path>,
 ) -> anyhow::Result<AclFileProvider> {
-    let dir_iters = directories
+    let acl_file_mappings = directories
         .map(|d| read_acl_file_mappings_from_directory(d.as_ref()))
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    AclFileProvider::new(dir_iters.into_iter().flatten())
+    let (vm_file_mappings, default_vm_file) =
+        read_vm_file_mappings_from_directory(vm_directory.as_ref())?;
+
+    AclFileProvider::new(
+        acl_file_mappings.into_iter().flatten(),
+        vm_file_mappings.into_iter(),
+        default_vm_file,
+    )
 }
 
 #[cfg(test)]
@@ -81,8 +90,41 @@ mod tests {
         let bundle_2_name = ServiceBundleName::from_str("Bundle2").unwrap();
         add_acl_file(root_path_2.as_path(), &pkg_name, &bundle_2_name);
 
+        let mut vm_root_path = test_tempdir.path().to_path_buf();
+        vm_root_path.push("vm_root");
+        std::fs::create_dir(&vm_root_path).unwrap();
+
+        // Add a vm-1.textproto to vm_root
+        let mut vm_1_file = vm_root_path.clone();
+        vm_1_file.push("vm-1.textproto");
+        std::fs::write(
+            &vm_1_file,
+            r#"
+            allow_publisher {
+                message: "com.pkg.Msg"
+                topic: "*"
+            }
+        "#,
+        )
+        .unwrap();
+
+        // Add a .default.textproto to vm_root
+        let mut default_vm_file = vm_root_path.clone();
+        default_vm_file.push(".default.textproto");
+        std::fs::write(
+            &default_vm_file,
+            r#"
+            deny_publisher {
+                message: "com.pkg.Msg"
+                topic: "*"
+            }
+        "#,
+        )
+        .unwrap();
+
         let provider = build_acl_provider_from_directories(
             [root_path_1.as_path(), root_path_2.as_path()].into_iter(),
+            vm_root_path.as_path(),
         )
         .unwrap();
 
@@ -96,5 +138,18 @@ mod tests {
         assert!(known_namespaces_set.contains(&(pkg_name.clone(), Some(bundle_1_name.clone()))));
         assert!(known_namespaces_set.contains(&(pkg_name.clone(), Some(bundle_2_name.clone()))));
         assert!(known_namespaces_set.contains(&(pkg_name.clone(), None)));
+
+        // Check the vm-1 policy
+        use sdv_authz::VmLevelPermissionsProvider;
+        use sdv_comms_id::names::VmName;
+        let vm_name = VmName::from_str("vm-1").unwrap();
+        let vm_policy = provider.get_vm_authz_policy_proto(&vm_name).unwrap();
+        assert!(!vm_policy.allow_publisher.is_empty());
+
+        // Check that the default VM policy works
+        // (vm-2 is not in the directory, so it should use the default policy)
+        let vm_name = VmName::from_str("vm-2").unwrap();
+        let vm_policy = provider.get_vm_authz_policy_proto(&vm_name).unwrap();
+        assert!(!vm_policy.deny_publisher.is_empty());
     }
 }

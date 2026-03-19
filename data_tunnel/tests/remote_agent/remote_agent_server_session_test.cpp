@@ -19,6 +19,7 @@
 #include "connection.h"
 #include "proto/dt_proto.h"
 #include "remote_agent/remote_agent_test_utils.h"
+#include "remote_agent_test_utils.h"
 #include "topic_manager.h"
 
 #include <gtest/gtest.h>
@@ -205,7 +206,7 @@ TEST_F(RemoteAgentServerSessionTest, RequestTerminate_Shuts_Down_Connection) {
 TEST_F(RemoteAgentServerSessionTest, LastMessage_FailsForUnknownTopic) {
     PrepareSession();
 
-    connection_->EnqueueParcelForReceive(123, Payload_LastMessageRequest(kTestTopicName));
+    connection_->EnqueueParcelForReceive(Payload_LastMessageRequest(kTestTopicName));
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_LastMessageResult>();
     ASSERT_TRUE(payload);
@@ -214,11 +215,34 @@ TEST_F(RemoteAgentServerSessionTest, LastMessage_FailsForUnknownTopic) {
     EXPECT_EQ(payload->buffer.Size(), 0);
 }
 
+TEST_F(RemoteAgentServerSessionTest, ConnectionThread_IgnoresUnknownPayload) {
+    ALOGE("AAAAA Starting Ignore Test");
+    PrepareSession();
+
+    // Construct and fake receipt of a parcel with an unknown payload type.
+    RawBuffer buffer(1024);
+    BufferWriter bw(buffer);
+    bw.Write(proto::Parcel::Header);
+    bw.Write(static_cast<uint16_t>(42 /* Not a legitimate payload type */));
+    bw.Write("Not real payload content.");
+
+    BufferReader br({bw.Ptr(), bw.GetPos()});
+    connection_->EnqueueDataForReceive(br);
+
+    // Session does not terminate.
+    EXPECT_FALSE(WaitForConditionOrTimeout([&]() { return session_->IsTerminated(); }));
+
+    // Still receives and responds to messages.
+    connection_->EnqueueParcelForReceive(Payload_LastMessageRequest(kTestTopicName));
+    EXPECT_TRUE(connection_->GetNextSentDataIfPayload<Payload_LastMessageResult>());
+    ALOGE("AAAAA Finishing Ignore Test");
+}
+
 TEST_F(RemoteAgentServerSessionTest, LastMessage_FailsForRemoteTopic) {
     PrepareSession();
     CreateTestTopic(/* is_remote= */ true);
 
-    connection_->EnqueueParcelForReceive(123, Payload_LastMessageRequest(kTestTopicName));
+    connection_->EnqueueParcelForReceive(Payload_LastMessageRequest(kTestTopicName));
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_LastMessageResult>();
     ASSERT_TRUE(payload);
@@ -231,7 +255,7 @@ TEST_F(RemoteAgentServerSessionTest, LastMessage_SucceedsWithEmptyBufferForEmpty
     PrepareSession();
     CreateTestTopic(/* is_remote= */ false);
 
-    connection_->EnqueueParcelForReceive(123, Payload_LastMessageRequest(kTestTopicName));
+    connection_->EnqueueParcelForReceive(Payload_LastMessageRequest(kTestTopicName));
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_LastMessageResult>();
     ASSERT_TRUE(payload);
@@ -245,7 +269,7 @@ TEST_F(RemoteAgentServerSessionTest, LastMessage_Success) {
     CreateTestTopic(/* is_remote= */ false);
     WriteTestTopicMessages({42, 31337});
 
-    connection_->EnqueueParcelForReceive(123, Payload_LastMessageRequest(kTestTopicName));
+    connection_->EnqueueParcelForReceive(Payload_LastMessageRequest(kTestTopicName));
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_LastMessageResult>();
     ASSERT_TRUE(payload);
@@ -266,7 +290,7 @@ TEST_F(RemoteAgentServerSessionTest, LastMessage_SuccessWithLargeMessages) {
     memset(&big_messages[1], 2, kBigMessageSize);
     WriteTestTopicRawData(big_messages, sizeof(big_messages));
 
-    connection_->EnqueueParcelForReceive(123, Payload_LastMessageRequest(kTestTopicName));
+    connection_->EnqueueParcelForReceive(Payload_LastMessageRequest(kTestTopicName));
 
     auto payload = connection_->GetNextSentDataIfPayload<Payload_LastMessageResult>();
     ASSERT_TRUE(payload);
@@ -284,8 +308,7 @@ TEST_F(RemoteAgentServerSessionTest, Subscription_FullFlow) {
 
     WriteTestTopicMessages({15, 25});
 
-    connection_->EnqueueParcelForReceive(1234,
-                                         Payload_SubscribeRequest(kTestTopicName, kTestTopicSubId));
+    connection_->EnqueueParcelForReceive(Payload_SubscribeRequest(kTestTopicName, kTestTopicSubId));
 
     // Get a subscribe result including the last message content.
     auto sub_result_payload = connection_->GetNextSentDataIfPayload<Payload_SubscribeResult>();

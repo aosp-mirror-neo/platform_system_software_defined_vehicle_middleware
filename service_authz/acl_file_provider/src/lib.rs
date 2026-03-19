@@ -14,9 +14,8 @@
 
 //! Crate for SingleVmAclPolicyProvider that reads ACLs from textproto files
 
-mod acl_file_provider;
-pub use acl_file_provider::AclFileMapping;
-pub use acl_file_provider::AclFileProvider;
+pub mod acl_file_provider;
+pub use acl_file_provider::{AclFileMapping, AclFileProvider, VmAclFileMapping};
 
 mod acl_merger;
 mod caching_acl_reader;
@@ -26,6 +25,7 @@ pub use caching_acl_file_provider::CachingAclFileProvider;
 
 mod read_mappings_from_directory;
 pub(crate) use read_mappings_from_directory::read_acl_file_mappings_from_directory;
+pub use read_mappings_from_directory::read_vm_file_mappings_from_directory;
 
 mod build_acl_provider_from_directories;
 pub use build_acl_provider_from_directories::build_acl_provider_from_directories;

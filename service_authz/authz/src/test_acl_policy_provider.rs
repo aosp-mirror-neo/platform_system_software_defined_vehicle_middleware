@@ -21,11 +21,13 @@ use std::sync::Arc;
 
 pub struct TestAclPolicyProvider {
     mapping: HashMap<(VmName, PackageName, Option<ServiceBundleName>), AclPolicyModel>,
+    vm_mapping: HashMap<VmName, Arc<VmAuthzPolicyModel>>,
+    default_vm_authz_policy: Option<Arc<VmAuthzPolicyModel>>,
 }
 
 impl TestAclPolicyProvider {
     pub fn new() -> Self {
-        Self { mapping: HashMap::new() }
+        Self { mapping: HashMap::new(), vm_mapping: HashMap::new(), default_vm_authz_policy: None }
     }
 
     pub fn set_authz_policy(
@@ -42,6 +44,10 @@ impl TestAclPolicyProvider {
         if service_name.is_some() {
             self.mapping.insert((vm_name, package_name, None), acl_policy);
         }
+    }
+
+    pub fn set_vm_authz_policy(&mut self, vm_name: VmName, vm_authz_policy: VmAuthzPolicyModel) {
+        self.vm_mapping.insert(vm_name, Arc::new(vm_authz_policy));
     }
 }
 
@@ -72,9 +78,12 @@ impl AclPolicyProvider for TestAclPolicyProvider {
 
     fn get_vm_authz_policy(
         &self,
-        _vm_name: &VmName,
-    ) -> Result<Arc<VmAuthzPolicyModel>, anyhow::Error> {
-        // TODO(474314698)
-        unimplemented!("VM Authz policy not supported in test provider yet")
+        vm_name: &VmName,
+    ) -> Result<Arc<crate::VmAuthzPolicyModel>, anyhow::Error> {
+        self.vm_mapping
+            .get(vm_name)
+            .or(self.default_vm_authz_policy.as_ref())
+            .ok_or(anyhow!("VM Authz policy for VM '{}' is not specified", vm_name))
+            .cloned()
     }
 }

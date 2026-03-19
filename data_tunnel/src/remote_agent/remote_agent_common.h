@@ -39,8 +39,7 @@ extern const ::aidl::google::sdv::service_discovery::common::UnitType kDtAgentUn
 std::string MakeFqinString(const ::aidl::google::sdv::identity::ServiceFqin& fqin);
 
 // Send the given payload over the given connection, using data_buffer for scratch space.
-bool SendPayload(IConnection& conn, const proto::Payload& payload, uint32_t parcel_id,
-                 RawBuffer& data_buffer);
+bool SendPayload(IConnection& conn, const proto::Payload& payload, RawBuffer& data_buffer);
 
 // Try to Receive a payload from the given parcel, using writer as scratch space.
 std::pair<proto::Parcel::ParseResult, std::unique_ptr<proto::Payload>> ReceivePayload(

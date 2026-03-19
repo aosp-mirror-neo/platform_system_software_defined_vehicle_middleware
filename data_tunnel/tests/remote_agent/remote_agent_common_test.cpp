@@ -51,7 +51,7 @@ TEST_F(RemoteAgentCommonTest, MakeFqinString) {
 TEST_F(RemoteAgentCommonTest, SendPayload_Success) {
     proto::Payload_LastMessageRequest sent_payload;
     sent_payload.topic_name = kTestTopicName;
-    ASSERT_TRUE(SendPayload(connection_, sent_payload, 1234, buffer_));
+    ASSERT_TRUE(SendPayload(connection_, sent_payload, buffer_));
 
     auto payload = connection_.GetNextSentDataIfPayload<proto::Payload_LastMessageRequest>();
     ASSERT_TRUE(payload);
@@ -64,7 +64,7 @@ TEST_F(RemoteAgentCommonTest, SendPayload_FailsWithTooSmallBuffer) {
     proto::Payload_LastMessageRequest sent_payload;
     sent_payload.topic_name = kTestTopicName;
     RawBuffer small_buffer(1);
-    ASSERT_FALSE(SendPayload(connection_, sent_payload, 1234, small_buffer));
+    ASSERT_FALSE(SendPayload(connection_, sent_payload, small_buffer));
     ASSERT_FALSE(connection_.GetNextSentData(/* timeout_seconds= */ 2));
 }
 
@@ -73,7 +73,7 @@ TEST_F(RemoteAgentCommonTest, SendPayload_FailsWhenSendDataFails) {
 
     proto::Payload_LastMessageRequest sent_payload;
     sent_payload.topic_name = kTestTopicName;
-    ASSERT_FALSE(SendPayload(connection_, sent_payload, 4321, buffer_));
+    ASSERT_FALSE(SendPayload(connection_, sent_payload, buffer_));
     ASSERT_TRUE(connection_.GetNextSentData());  // Send data was called.
 }
 
@@ -84,10 +84,10 @@ TEST_F(RemoteAgentCommonTest, ReceivePayload_Failure) {
     ASSERT_EQ(result, proto::Parcel::ParseResult::Failure);
 }
 
-TEST_F(RemoteAgentCommonTest, ReceivePayload_ExactlyOne) {
+TEST_F(RemoteAgentCommonTest, ReceivePayload_Success) {
     proto::Payload_LastMessageRequest sent_payload;
     sent_payload.topic_name = kTestTopicName;
-    connection_.EnqueueParcelForReceive(123, sent_payload);
+    connection_.EnqueueParcelForReceive(sent_payload);
 
     auto [result, payload] = ReceivePayload(connection_);
     ASSERT_EQ(result, proto::Parcel::ParseResult::Success);

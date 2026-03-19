@@ -364,6 +364,7 @@ fn run() -> Result<()> {
     let service_registry = Arc::new(ServiceRegistry::default());
 
     let authz_service = Arc::new(AuthzService::new(
+        vvm_config.own_cfg.name.clone(),
         mesh_acl_policy_provider.clone(),
         authz_flag,
         service_registry.clone(),

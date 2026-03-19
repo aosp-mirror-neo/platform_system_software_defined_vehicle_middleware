@@ -50,8 +50,7 @@ static uint32_t kTestTopicSubId = 42;
 class RemoteAgentTopicExporterTest : public ::testing::Test {
 protected:
     RemoteAgentTopicExporterTest() :
-          exporter_(kTestVmName, topic_manager_, connection_, parcel_id_counter_),
-          send_buffer_(4096) {}
+          exporter_(kTestVmName, topic_manager_, connection_), send_buffer_(4096) {}
 
     using TestMessageType = int;
     static constexpr size_t kTestMessageSize = sizeof(TestMessageType);
@@ -117,7 +116,6 @@ protected:
     // retain a raw pointer so they can interact with it.
     TopicManager topic_manager_;
     FakeConnection connection_;
-    std::atomic<uint32_t> parcel_id_counter_;
     RemoteAgentTopicExporter exporter_;
     Topic* topic_ = nullptr;
     RawBuffer send_buffer_;

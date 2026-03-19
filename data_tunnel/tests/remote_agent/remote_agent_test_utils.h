@@ -74,7 +74,7 @@ public:
     void EnqueueDataForReceive(BufferReader& reader, std::optional<size_t> length = std::nullopt);
 
     // Serialize a payload in a parcel with the given ID and enqueue it for ReceiveData
-    void EnqueueParcelForReceive(int32_t parcel_id, const proto::Payload& payload);
+    void EnqueueParcelForReceive(const proto::Payload& payload);
 
     // Enqueue a receive failure to be returned by ReceiveData.
     void EnqueueReceiveFailure();

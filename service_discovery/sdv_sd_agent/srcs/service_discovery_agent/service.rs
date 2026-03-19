@@ -947,6 +947,7 @@ mod test {
         let authz_enforcement_flag: Arc<dyn AuthzEnforcementFlag> =
             Arc::new(TestAuthzEnforcementFlag(enable_authz));
         let authz_service = Arc::new(AuthzService::new(
+            VmName::from_str(VM_NAME).unwrap(),
             Arc::clone(&acl_policy_provider),
             Arc::clone(&authz_enforcement_flag),
             Arc::new(TestRegistry {}),

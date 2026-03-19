@@ -24,6 +24,10 @@ use sdv_authz::LocallyStoredAuthzPoliciesProvider;
 use sdv_authz_acl_file_provider::build_acl_provider_from_directories;
 use sdv_authz_acl_file_provider::AclFileProvider;
 
+// allow dead code, as this code is also compiled for non-SDV targets
+#[allow(dead_code)]
+const VM_PERMISSIONS_LOCATION: &str = "/apex/com.oem.sdv.authz/etc";
+
 /// Build SDV version of ACL provider that gets mappings from SBR.
 #[cfg(sdv_acl_provider)]
 #[instrument(name = "authz_perf::provider_factory::create_for_core", skip_all)]
@@ -33,8 +37,9 @@ pub fn create_local_vm_acl_policy_provider(
     use sdv_authz_acl_file_provider::CachingAclFileProvider;
     use sdv_authz_sdv_local_vm_acl_policy_provider::create_acl_provider_from_service_bundle_registry;
 
-    let provider: AclFileProvider = create_acl_provider_from_service_bundle_registry()
-        .with_context(|| "Failed to create SdvLocalVmAclPolicyProvider")?;
+    let provider: AclFileProvider =
+        create_acl_provider_from_service_bundle_registry(VM_PERMISSIONS_LOCATION)
+            .with_context(|| "Failed to create SdvLocalVmAclPolicyProvider")?;
 
     let caching_provider = CachingAclFileProvider::new(Arc::new(provider));
 
@@ -60,8 +65,10 @@ pub fn create_local_vm_acl_policy_provider(
         "/vendor/etc/sdv_authz_acls",
     ];
 
-    let provider: AclFileProvider =
-        create_provider_from_directories_lenient(IVI_AUTHZ_POLICY_DIRECTORIES.into_iter())?;
+    let provider: AclFileProvider = create_provider_from_directories_lenient(
+        IVI_AUTHZ_POLICY_DIRECTORIES.into_iter(),
+        VM_PERMISSIONS_LOCATION,
+    )?;
 
     let caching_provider = CachingAclFileProvider::new(Arc::new(provider));
 
@@ -77,6 +84,7 @@ pub fn create_local_vm_acl_policy_provider(
 #[allow(dead_code)]
 fn create_provider_from_directories_lenient<'a>(
     directories: impl Iterator<Item = &'a str>,
+    vm_directory: &'a str,
 ) -> Result<AclFileProvider, anyhow::Error> {
     // Convert to PathBufs and filter out those that don't exist.
     let paths = directories.map(PathBuf::from).filter(|path| {
@@ -100,7 +108,7 @@ fn create_provider_from_directories_lenient<'a>(
         }
     });
 
-    build_acl_provider_from_directories(paths)
+    build_acl_provider_from_directories(paths, PathBuf::from(vm_directory))
 }
 
 /// Allow compiling on non SDV and non IVI targets, but crash at runtime because
@@ -123,13 +131,18 @@ mod tests {
 
     #[test]
     fn test_create_local_vm_policy_provider_for_ivi_succeeds_with_missing_directory() {
-        let test_dir = TempDir::new();
-        let mut nonexistent_path = test_dir.unwrap().path().to_path_buf();
+        let test_dir = TempDir::new().unwrap();
+        let mut nonexistent_path = test_dir.path().to_path_buf();
         nonexistent_path.push("nonexistent");
 
-        create_provider_from_directories_lenient(std::iter::once(
-            nonexistent_path.to_str().unwrap(),
-        ))
+        let mut vm_authz_path = test_dir.path().to_path_buf();
+        vm_authz_path.push("vm_authz");
+        std::fs::create_dir(&vm_authz_path).unwrap();
+
+        create_provider_from_directories_lenient(
+            std::iter::once(nonexistent_path.to_str().unwrap()),
+            vm_authz_path.to_str().unwrap(),
+        )
         .unwrap();
     }
 
@@ -140,9 +153,14 @@ mod tests {
         regular_file_path.push("regular_file");
         std::fs::write(regular_file_path.as_path(), "").unwrap();
 
-        assert!(create_provider_from_directories_lenient(std::iter::once(
-            regular_file_path.to_str().unwrap(),
-        ))
+        let mut vm_authz_path = test_dir.path().to_path_buf();
+        vm_authz_path.push("vm_authz");
+        std::fs::create_dir(&vm_authz_path).unwrap();
+
+        assert!(create_provider_from_directories_lenient(
+            std::iter::once(regular_file_path.to_str().unwrap()),
+            vm_authz_path.to_str().unwrap(),
+        )
         .is_err());
     }
 }

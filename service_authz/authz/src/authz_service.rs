@@ -19,7 +19,7 @@ use crate::authz_via_permissions::AuthzViaPermissions;
 use crate::feature_flags;
 use crate::{AclPolicyProvider, AuthzEnforcementFlag, AuthzResult};
 
-use sdv_comms_id::names::{PackageName, ServiceUnitName, UnitTypeName};
+use sdv_comms_id::names::{PackageName, ServiceUnitName, UnitTypeName, VmName};
 use sdv_comms_id::ServiceFqin;
 
 use anyhow::Context;
@@ -52,13 +52,14 @@ pub struct AuthzService {
 impl AuthzService {
     /// Creates new instance of Authz Service.
     pub fn new(
+        current_vm_name: VmName,
         acl_policy_provider: Arc<dyn AclPolicyProvider>,
         authz_enforcement_flag: Arc<dyn AuthzEnforcementFlag>,
         service_unit_registry: Arc<dyn ServiceUnitRegistry>,
     ) -> Self {
         let authz_via_acls = AuthzViaAcls::new(acl_policy_provider.clone());
         let authz_via_permissions =
-            AuthzViaPermissions::new(acl_policy_provider, service_unit_registry);
+            AuthzViaPermissions::new(current_vm_name, acl_policy_provider, service_unit_registry);
 
         AuthzService { authz_via_acls, authz_via_permissions, authz_enforcement_flag }
     }
@@ -330,6 +331,7 @@ mod tests {
         );
 
         AuthzService::new(
+            VmName::from_str("local-vm").unwrap(),
             Arc::new(test_acl_provider),
             Arc::new(TestAuthzEnforcementFlag::new(is_enforcement_flag_enabled)),
             Arc::new(TestRegistry {}),

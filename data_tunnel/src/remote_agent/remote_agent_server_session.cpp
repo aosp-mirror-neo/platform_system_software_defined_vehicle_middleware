@@ -110,7 +110,7 @@ bool RemoteAgentServerSession::HandleLastMessageRequest(const Payload_LastMessag
         send_buffer.Resize(parcel_size, /*copy_data=*/false);
     }
 
-    if (!SendPayload(*connection_, response, parcel_id_counter_++, send_buffer)) {
+    if (!SendPayload(*connection_, response, send_buffer)) {
         ALOGE("RemoteAgentServerSession(%s): Unable to send last message result for %s",
               peer_vm_name_.c_str(), topic_name.c_str());
         return false;
@@ -133,22 +133,21 @@ void RemoteAgentServerSession::ConnectionThread(
     peer_vm_name_ = *opt_vm_name;
 
     // Construction of exporter delayed until we have VM name.
-    RemoteAgentTopicExporter exporter(peer_vm_name_, topic_manager_, *connection_,
-                                      parcel_id_counter_);
+    RemoteAgentTopicExporter exporter(peer_vm_name_, topic_manager_, *connection_);
 
     bool should_continue = true;
     while (should_continue) {
         auto [parse_result, payload] = ReceivePayload(*connection_);
 
-        if (parse_result != Parcel::ParseResult::Success) {
-            ALOGE("RemoteAgentServerSession(%s): ReceivePayload failed", peer_vm_name_.c_str());
-            break;
-        }
-
         if (parse_result == Parcel::ParseResult::UnknownPayload) {
             ALOGW("RemoteAgentServerSession(%s): Received unknown payload. Ignoring.",
                   peer_vm_name_.c_str());
             continue;
+        }
+
+        if (parse_result != Parcel::ParseResult::Success) {
+            ALOGE("RemoteAgentServerSession(%s): ReceivePayload failed", peer_vm_name_.c_str());
+            break;
         }
 
         if (auto lmr_request = payload->As<Payload_LastMessageRequest>()) {

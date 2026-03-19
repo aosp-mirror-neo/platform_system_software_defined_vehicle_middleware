@@ -27,15 +27,22 @@ use google_sdv_service_bundles_registry::aidl::google::sdv::service_bundles_regi
 use google_sdv_service_bundles_registry::aidl::google::sdv::service_bundles_registry::ServiceBundleMetadata::ServiceBundleMetadata;
 use sdv_authz_acl_file_provider::{AclFileMapping, AclFileProvider};
 use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName};
+use sdv_authz_acl_file_provider::read_vm_file_mappings_from_directory;
 
 /// SDV Local VM ACL policy provider.
 
 #[instrument(name = "authz_perf::provider::create_from_sbr", skip_all)]
-pub fn create_acl_provider_from_service_bundle_registry() -> anyhow::Result<AclFileProvider> {
+pub fn create_acl_provider_from_service_bundle_registry(
+    vm_permissions_location: &str,
+) -> anyhow::Result<AclFileProvider> {
     let mappings = read_acl_file_mappings_from_service_bundle_registry()
         .with_context(|| "Failure while reading ACL file mappings from Service Bundle Registry")?;
 
-    AclFileProvider::new(mappings.into_iter())
+    let (vm_mappings, default_vm_file) =
+        read_vm_file_mappings_from_directory(vm_permissions_location)
+            .with_context(|| "Failure while reading VM file mappings from directory")?;
+
+    AclFileProvider::new(mappings.into_iter(), vm_mappings.into_iter(), default_vm_file)
         .with_context(|| "Error adding ACL mappings read from Service Bundle Registry.")
 }
 
@@ -115,6 +122,10 @@ fn get_service_bundles_registry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sdv_comms_id::names::VmName;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
     use google_sdv_service_bundles_registry::aidl::google::sdv::service_bundles_registry::ServiceBundleMetadata::ServiceBundleMetadata;
 
     const VALID_PACKAGE_NAME: &str = "com.google.test";
@@ -155,5 +166,52 @@ mod tests {
         };
 
         assert!(parse_service_bundle_metadata(&metadata).is_none());
+    }
+
+    #[test]
+    fn test_read_vm_file_mappings_from_directory_success() {
+        let test_tempdir = TempDir::new().unwrap();
+        let root_path = test_tempdir.path();
+
+        let vm_name = VmName::from_str("local-vm").unwrap();
+        let mut vm_authz_file_path = root_path.to_path_buf();
+        vm_authz_file_path.push("local-vm.textproto");
+        std::fs::write(&vm_authz_file_path, "").unwrap();
+
+        let (read_mappings, _) = read_vm_file_mappings_from_directory(root_path).unwrap();
+        let actual_mappings = HashMap::<VmName, PathBuf>::from_iter(read_mappings);
+
+        assert_eq!(actual_mappings.len(), 1);
+        assert_eq!(actual_mappings.get(&vm_name), Some(&vm_authz_file_path));
+    }
+
+    #[test]
+    fn test_read_vm_file_mappings_from_directory_malformed_vm_name() {
+        let test_tempdir = TempDir::new().unwrap();
+        let root_path = test_tempdir.path();
+
+        // Create a file with a malformed VM name (contains an underscore).
+        let mut malformed_path = root_path.to_path_buf();
+        malformed_path.push("invalid_vm_name.textproto");
+        std::fs::write(&malformed_path, "").unwrap();
+
+        let (read_mappings, _) = read_vm_file_mappings_from_directory(root_path).unwrap();
+
+        // The mapping should be empty as the malformed name should be ignored.
+        assert!(read_mappings.is_empty());
+    }
+
+    #[test]
+    fn test_read_vm_file_mappings_from_directory_non_existent_path() {
+        let non_existent_path = PathBuf::from("/non/existent/path");
+        let result = read_vm_file_mappings_from_directory(&non_existent_path);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Cannot read VM authz policies from {}: path does not exist.",
+                non_existent_path.display()
+            )
+        );
     }
 }

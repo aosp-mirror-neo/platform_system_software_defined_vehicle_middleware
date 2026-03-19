@@ -61,7 +61,7 @@ impl CachingAclReader {
 
     /// Reads the VM Authz policy proto from the given path, using the cache if possible.
     #[allow(dead_code)]
-    pub(crate) fn read_or_get_vm_cached(
+    pub(crate) fn read_or_get_cached_vm(
         &self,
         vm_name: &VmName,
         acl_policy_path: &PathBuf,
@@ -270,14 +270,14 @@ mod tests {
         let reader = CachingAclReader::default();
 
         // First read: should read from file
-        let policy1 = reader.read_or_get_vm_cached(&vm_name, &vm_authz_policy_file_path).unwrap();
+        let policy1 = reader.read_or_get_cached_vm(&vm_name, &vm_authz_policy_file_path).unwrap();
         assert!(!policy1.allow_publisher.is_empty());
 
         // Modify the file content
         std::fs::write(&vm_authz_policy_file_path, "").unwrap();
 
         // Second read: should return cached version (true)
-        let policy2 = reader.read_or_get_vm_cached(&vm_name, &vm_authz_policy_file_path).unwrap();
+        let policy2 = reader.read_or_get_cached_vm(&vm_name, &vm_authz_policy_file_path).unwrap();
         assert!(!policy2.allow_publisher.is_empty());
 
         // Check that policy1 and policy2 are the same instance
@@ -290,7 +290,7 @@ mod tests {
         let non_existent_path = PathBuf::from("/path/to/non/existent/vm_file.textproto");
 
         let reader = CachingAclReader::default();
-        let result = reader.read_or_get_vm_cached(&vm_name, &non_existent_path);
+        let result = reader.read_or_get_cached_vm(&vm_name, &non_existent_path);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -309,7 +309,7 @@ mod tests {
         std::fs::write(&acl_file_path, "this is not a valid textproto").unwrap();
 
         let reader = CachingAclReader::default();
-        let result = reader.read_or_get_vm_cached(&vm_name, &acl_file_path);
+        let result = reader.read_or_get_cached_vm(&vm_name, &acl_file_path);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()

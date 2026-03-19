@@ -286,6 +286,8 @@ mod test {
     use protobuf::text_format;
     use sdv_authz::{AclPolicyModel, AclPolicyProvider, AuthzEnforcementFlag, VmAuthzPolicyModel};
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
+    use sdv_authz_policy_proto_rust::vm_authz_policy::{
+        Publisher, Subscriber, Server, Client, VmAuthzPolicy as VmAuthzPolicyProto};
     use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName, VmName};
     use std::collections::HashMap;
 
@@ -314,7 +316,7 @@ mod test {
             Self { mapping: HashMap::new() }
         }
 
-        fn set_alc_policy(
+        fn set_acl_policy(
             &mut self,
             vm_name: VmName,
             package_name: PackageName,
@@ -360,7 +362,32 @@ mod test {
             &self,
             _vm_name: &VmName,
         ) -> Result<Arc<VmAuthzPolicyModel>, anyhow::Error> {
-            unimplemented!("get_vm_authz_policy is not implemented for test")
+            Ok(Arc::new(
+                VmAuthzPolicyModel::try_from(VmAuthzPolicyProto {
+                    allow_publisher: vec![Publisher {
+                        message: "*".to_string(),
+                        topic: vec!["*".to_string()],
+                        ..Default::default()
+                    }],
+                    allow_subscriber: vec![Subscriber {
+                        message: "*".to_string(),
+                        topic: vec!["*".to_string()],
+                        ..Default::default()
+                    }],
+                    allow_server: vec![Server {
+                        service: "*".to_string(),
+                        channel: vec!["*".to_string()],
+                        ..Default::default()
+                    }],
+                    allow_client: vec![Client {
+                        service: "*".to_string(),
+                        channel: vec!["*".to_string()],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                })
+                .unwrap(),
+            ))
         }
     }
 
@@ -387,7 +414,7 @@ mod test {
         .unwrap();
 
         let mut test_provider = TestAclPolicyProvider::new();
-        test_provider.set_alc_policy(
+        test_provider.set_acl_policy(
             object_fqin.vm_name().clone(),
             object_fqin.package_name().clone(),
             Some(object_fqin.service_name().clone()),
@@ -395,6 +422,7 @@ mod test {
         );
 
         AuthzService::new(
+            VmName::from_str("local-vm").unwrap(),
             Arc::new(test_provider),
             authz_enforcement_flag,
             Arc::new(TestRegistry {}),
