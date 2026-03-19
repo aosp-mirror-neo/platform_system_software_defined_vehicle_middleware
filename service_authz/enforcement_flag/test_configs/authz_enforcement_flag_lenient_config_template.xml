@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copyright (C) 2026 The Android Open Source Project
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License. -->
+
+<!-- This test config is based on the auto-generated test config - the only
+     change is setting android property to false before the test and restoring
+     it to its previous value after the test. -->
+<configuration description="Config to run {MODULE} device tests.">
+
+    {EXTRA_CONFIGS}
+
+    <!-- NOTE: To run tests using this template in a local dev env, use:
+
+         NOTIFY_AS_NATIVE=<Test device serial #> atest <test target>
+
+         For example,
+           NOTIFY_AS_NATIVE=0.0.0.0:6520 atest sdv_core_middleware_unit_comms_rs_sdk_test
+    -->
+    <target_preparer class="com.android.tradefed.targetprep.DeviceSetup">
+        <!-- Needed to prevent DeviceSetup from trying to set device features,
+             unsupported on minimal SDV device. -->
+        <option name="force-skip-settings" value="true" />
+        <!-- Ensure authz is set to "lenient" for this test -->
+        <option name="set-property" key="sdv.authz.enable" value="lenient" />
+        <!-- Restore default authz setting on teardown -->
+        <option name="restore-properties" value="true" />
+        <!-- Needed to prevent DeviceSetup from trying to list device features,
+             unsupported on minimal SDV device. -->
+        <option name="screen-always-on" value="IGNORE" />
+        <!-- Add this line to disable the external storage space check -->
+        <option name="min-external-storage-kb" value="0" />
+    </target_preparer>
+
+    <target_preparer class="com.android.tradefed.targetprep.PushFilePreparer">
+        <option name="cleanup" value="true" />
+        <option name="push" value="{MODULE}->/data/local/tmp/{MODULE}" />
+    </target_preparer>
+
+    <test class="com.android.tradefed.testtype.rust.RustBinaryTest" >
+        <option name="test-device-path" value="/data/local/tmp" />
+        <option name="module-name" value="{MODULE}" />
+    </test>
+
+</configuration>

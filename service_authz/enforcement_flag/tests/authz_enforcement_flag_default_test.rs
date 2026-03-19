@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use sdv_authz::AuthzEnforcementFlag;
+use sdv_authz::{AuthzEnforcementFlag, AuthzStrategy};
 use sdv_authz_enforcement_flag::SystemPropertyAuthzEnforcementFlag;
 
 /// Verifies that Authz enforcement flag is enabled by default.
 ///
 #[test]
-fn authz_enforcement_flag_default_is_enabled() {
-    assert!(SystemPropertyAuthzEnforcementFlag::new().is_enabled());
+fn authz_enforcement_flag_default_config_is_lenient() {
+    assert_eq!(
+        SystemPropertyAuthzEnforcementFlag::new().get_enforcement_strategy(),
+        AuthzStrategy::Lenient
+    );
 }

@@ -31,8 +31,8 @@
         <!-- Needed to prevent DeviceSetup from trying to set device features,
              unsupported on minimal SDV device. -->
         <option name="force-skip-settings" value="true" />
-        <!-- Ensure authz is enabled for this test -->
-        <option name="set-property" key="sdv.authz.enable" value="true" />
+        <!-- Ensure authz is set to "permissions_only" for this test -->
+        <option name="set-property" key="sdv.authz.enable" value="permissions_only" />
         <!-- Restore default authz setting on teardown -->
         <option name="restore-properties" value="true" />
         <!-- Needed to prevent DeviceSetup from trying to list device features,

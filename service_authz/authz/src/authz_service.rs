@@ -17,7 +17,7 @@
 use crate::authz_via_acls::AuthzViaAcls;
 use crate::authz_via_permissions::AuthzViaPermissions;
 use crate::feature_flags;
-use crate::{AclPolicyProvider, AuthzEnforcementFlag, AuthzResult};
+use crate::{AclPolicyProvider, AuthzEnforcementFlag, AuthzResult, AuthzStrategy};
 
 use sdv_comms_id::names::{PackageName, ServiceUnitName, UnitTypeName, VmName};
 use sdv_comms_id::ServiceFqin;
@@ -173,6 +173,52 @@ impl AuthzService {
         self.handle_authz_result(subject_fqin, object_log_identifier, acl_result, permission_result)
     }
 
+    fn log_permissions_violation(
+        subject_fqin: &ServiceFqin,
+        object_log_identifier: &str,
+        audit_msg: &str,
+    ) {
+        error!(
+            "Authz violation. {subject_fqin} does not declare permission to access {object_log_identifier}, audit message: {audit_msg}"
+        );
+    }
+
+    fn log_permissions_soft_violation(
+        subject_fqin: &ServiceFqin,
+        object_log_identifier: &str,
+        audit_msg: &str,
+    ) {
+        debug!(
+            "Permissions Authz violation (access granted by ACLs): {subject_fqin} does not declare permission to access {object_log_identifier}, audit message: {audit_msg}"
+        );
+    }
+
+    fn log_permissions_granted(
+        subject_fqin: &ServiceFqin,
+        object_log_identifier: &str,
+        audit_msg: &str,
+    ) {
+        debug!(
+            "{subject_fqin} declares permission to access {object_log_identifier}, audit message: {audit_msg}"
+        );
+    }
+
+    fn log_acls_violation(
+        subject_fqin: &ServiceFqin,
+        object_log_identifier: &str,
+        audit_msg: &str,
+    ) {
+        error!(
+            "Authz violation. {object_log_identifier} denies access to {subject_fqin}, audit message: {audit_msg}"
+        );
+    }
+
+    fn log_acls_granted(subject_fqin: &ServiceFqin, object_log_identifier: &str, audit_msg: &str) {
+        debug!(
+            "{object_log_identifier} allows access to {subject_fqin}, audit message: {audit_msg}"
+        );
+    }
+
     fn handle_authz_result(
         &self,
         subject_fqin: &ServiceFqin,
@@ -185,57 +231,110 @@ impl AuthzService {
         let (is_authorized_by_permissions, audit_msg_from_permissions) =
             convert_authz_result(authz_result_from_permissions);
 
-        if is_authorized_by_acls {
-            debug!(
-                "{object_log_identifier} allows access to {subject_fqin}, audit message: {audit_msg_from_acls}"
-            );
-        }
-
-        if is_authorized_by_permissions {
-            debug!(
-                "{subject_fqin} declares permission to access {object_log_identifier}, audit message: {audit_msg_from_permissions}"
-            );
-        }
-
-        if is_authorized_by_acls != is_authorized_by_permissions {
-            let mismatch_log = format!(
-                "Access [subject: {subject_fqin}] to [object: {object_log_identifier}] mismatch: \
-                ACLs[{is_authorized_by_acls}: {audit_msg_from_acls}], \
-                Permissions[{is_authorized_by_permissions}: {audit_msg_from_permissions}]"
-            );
-
-            if feature_flags::enforce_consistency() {
-                error!("{mismatch_log}");
-                return false;
-            } else {
-                debug!("{mismatch_log}");
+        match self.authz_enforcement_flag.get_enforcement_strategy() {
+            AuthzStrategy::PermissionsOnly => {
+                if !is_authorized_by_permissions {
+                    Self::log_permissions_violation(
+                        subject_fqin,
+                        &object_log_identifier,
+                        &audit_msg_from_permissions,
+                    );
+                } else {
+                    Self::log_permissions_granted(
+                        subject_fqin,
+                        &object_log_identifier,
+                        &audit_msg_from_permissions,
+                    );
+                }
+                is_authorized_by_permissions
             }
-        }
+            AuthzStrategy::Lenient => {
+                if is_authorized_by_acls || is_authorized_by_permissions {
+                    if is_authorized_by_acls {
+                        Self::log_acls_granted(
+                            subject_fqin,
+                            &object_log_identifier,
+                            &audit_msg_from_acls,
+                        );
+                    }
+                    if is_authorized_by_permissions {
+                        Self::log_permissions_granted(
+                            subject_fqin,
+                            &object_log_identifier,
+                            &audit_msg_from_permissions,
+                        );
+                    }
 
-        if is_authorized_by_acls || is_authorized_by_permissions {
-            return true;
+                    // Log soft violation if ACLs grant access, but permissions do not, to simplify migration.
+                    if is_authorized_by_acls && !is_authorized_by_permissions {
+                        Self::log_permissions_soft_violation(
+                            subject_fqin,
+                            &object_log_identifier,
+                            &audit_msg_from_permissions,
+                        );
+                    }
+                } else {
+                    Self::log_permissions_violation(
+                        subject_fqin,
+                        &object_log_identifier,
+                        &audit_msg_from_permissions,
+                    );
+                    Self::log_acls_violation(
+                        subject_fqin,
+                        &object_log_identifier,
+                        &audit_msg_from_acls,
+                    );
+                }
+                is_authorized_by_acls || is_authorized_by_permissions
+            }
+            AuthzStrategy::Strict => {
+                if is_authorized_by_acls && is_authorized_by_permissions {
+                    Self::log_acls_granted(
+                        subject_fqin,
+                        &object_log_identifier,
+                        &audit_msg_from_acls,
+                    );
+                    Self::log_permissions_granted(
+                        subject_fqin,
+                        &object_log_identifier,
+                        &audit_msg_from_permissions,
+                    );
+                } else {
+                    if !is_authorized_by_permissions {
+                        Self::log_permissions_violation(
+                            subject_fqin,
+                            &object_log_identifier,
+                            &audit_msg_from_permissions,
+                        );
+                    }
+                    if !is_authorized_by_acls {
+                        Self::log_acls_violation(
+                            subject_fqin,
+                            &object_log_identifier,
+                            &audit_msg_from_acls,
+                        );
+                    }
+                }
+                is_authorized_by_acls && is_authorized_by_permissions
+            }
+            AuthzStrategy::AclsOnly => {
+                if !is_authorized_by_acls {
+                    Self::log_acls_violation(
+                        subject_fqin,
+                        &object_log_identifier,
+                        &audit_msg_from_acls,
+                    );
+                } else {
+                    Self::log_acls_granted(
+                        subject_fqin,
+                        &object_log_identifier,
+                        &audit_msg_from_acls,
+                    );
+                }
+                is_authorized_by_acls
+            }
+            AuthzStrategy::Disabled => true,
         }
-
-        if !self.authz_enforcement_flag.is_enabled() {
-            // This is so called soft enforcement:
-            //   1. Access is granted even though `Subject` is not authorized to the `Object`;
-            //   2. Access violation is logged.
-            warn!(
-                "Authz violation. Access is granted by flag. {object_log_identifier} denies access to {subject_fqin}, audit message: {audit_msg_from_acls}"
-            );
-            warn!(
-                "Authz violation. Access is granted by flag. {subject_fqin} does not declare permission to access {object_log_identifier}, audit message: {audit_msg_from_permissions}"
-            );
-            return true;
-        }
-
-        error!(
-            "Authz violation. {object_log_identifier} denies access to {subject_fqin}, audit message: {audit_msg_from_acls}"
-        );
-        error!(
-            "Authz violation. {subject_fqin} does not declare permission to access {object_log_identifier}, audit message: {audit_msg_from_permissions}"
-        );
-        false
     }
 }
 
@@ -280,23 +379,24 @@ mod tests {
     use protobuf::text_format;
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
     use sdv_comms_id::names::ServiceUnitName;
+    use sdv_comms_sd::discovery::UnitType;
 
     use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::metadata::
     {ApplicationMetadata::TypedMetadata::TypedMetadata, PublisherUnitMetadata::PublisherUnitMetadata};
 
     struct TestAuthzEnforcementFlag {
-        enabled: bool,
+        enforcement_strategy: AuthzStrategy,
     }
 
     impl TestAuthzEnforcementFlag {
-        fn new(enabled: bool) -> Self {
-            Self { enabled }
+        fn new(enforcement_strategy: AuthzStrategy) -> Self {
+            Self { enforcement_strategy }
         }
     }
 
     impl AuthzEnforcementFlag for TestAuthzEnforcementFlag {
-        fn is_enabled(&self) -> bool {
-            self.enabled
+        fn get_enforcement_strategy(&self) -> AuthzStrategy {
+            self.enforcement_strategy
         }
     }
 
@@ -308,49 +408,86 @@ mod tests {
             _fqin: &ServiceFqinAidl,
             _unit_name: &str,
         ) -> Option<ServiceUnitDefinition> {
-            None
+            let object_service_unit_name = object_service_unit_name();
+            let app_metadata = app_metadata();
+            Some(ServiceUnitDefinition {
+                serviceUnitName: object_service_unit_name.to_string(),
+                unitType: UnitType::from_str("com.android.TirePressureTopic").unwrap().into(),
+                appMetadata: app_metadata,
+                ..Default::default()
+            })
         }
     }
 
-    fn create_test_authz_service(
-        object_fqin: &ServiceFqin,
-        acl_policy_text_proto: &str,
-        is_enforcement_flag_enabled: bool,
-    ) -> AuthzService {
-        let acl_policy_model = AclPolicyModel::try_from(
-            text_format::parse_from_str::<AclPolicyProto>(acl_policy_text_proto).unwrap(),
-        )
-        .unwrap();
+    fn subject_with_allowed_by_permissions_and_acls() -> ServiceFqin {
+        ServiceFqin::from_str("vm:com.android.permissions_and_acls.Bundle/default").unwrap()
+    }
 
-        let mut test_acl_provider = TestAclPolicyProvider::new();
-        test_acl_provider.set_authz_policy(
+    fn subject_with_allowed_by_permissions_only() -> ServiceFqin {
+        ServiceFqin::from_str("vm:com.android.permissions_only.Bundle/default").unwrap()
+    }
+
+    fn subject_with_allowed_by_acls_only() -> ServiceFqin {
+        ServiceFqin::from_str("vm:com.android.acls_only.Bundle/default").unwrap()
+    }
+
+    fn subject_with_denied_by_permissions_and_acls() -> ServiceFqin {
+        ServiceFqin::from_str("vm:com.android.none.SubjectBundle/default").unwrap()
+    }
+
+    fn object_fqin() -> ServiceFqin {
+        ServiceFqin::from_str("vm:com.android.ObjectBundle/default").unwrap()
+    }
+
+    fn object_service_unit_name() -> ServiceUnitName {
+        ServiceUnitName::from_str("tire-pressure-publisher").unwrap()
+    }
+
+    fn object_unit_type_name() -> UnitTypeName {
+        UnitTypeName::from_str("TirePressureTopic").unwrap()
+    }
+
+    fn app_metadata() -> ApplicationMetadata {
+        ApplicationMetadata {
+            typedMetadata: TypedMetadata::PublisherUnit(PublisherUnitMetadata {
+                topic_name: "tire-pressure-publisher".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn set_authz_policy(
+        acl_provider: &mut TestAclPolicyProvider,
+        object_fqin: &ServiceFqin,
+        policy_textproto: &str,
+    ) {
+        acl_provider.set_authz_policy(
             object_fqin.vm_name().clone(),
             object_fqin.package_name().clone(),
             Some(object_fqin.service_name().clone()),
-            acl_policy_model,
+            AclPolicyModel::try_from(
+                text_format::parse_from_str::<AclPolicyProto>(policy_textproto)
+                    .expect("Valid policy textproto"),
+            )
+            .expect("Valid policy"),
         );
-
-        AuthzService::new(
-            VmName::from_str("local-vm").unwrap(),
-            Arc::new(test_acl_provider),
-            Arc::new(TestAuthzEnforcementFlag::new(is_enforcement_flag_enabled)),
-            Arc::new(TestRegistry {}),
-        )
     }
 
-    fn setup_test(
-        is_enforcement_flag_enabled: bool,
-    ) -> (AuthzService, ServiceFqin, ServiceUnitName, UnitTypeName, ApplicationMetadata) {
-        let object_fqin = ServiceFqin::from_str("vm:com.google.sdv.WindowManager/main").unwrap();
+    fn setup_test(enforcement_strategy: AuthzStrategy) -> AuthzService {
+        let object_fqin = object_fqin();
 
-        let authz_service = create_test_authz_service(
+        let mut test_acl_provider = TestAclPolicyProvider::new();
+        set_authz_policy(
+            &mut test_acl_provider,
             &object_fqin,
             r#"
                 acls {
                     name: "TirePressureAcl"
-                    include: "vm-allow:*"
-                    never_include: "vm-deny:*"
+                    include: "vm:com.android.permissions_and_acls.Bundle/default"
+                    include: "vm:com.android.acls_only.Bundle/default"
                 }
+
                 service_units {
                     name: "tire-pressure-publisher"
                     acl_names: "TirePressureAcl"
@@ -360,122 +497,323 @@ mod tests {
                     acl_names: "TirePressureAcl"
                 }
             "#,
-            is_enforcement_flag_enabled,
         );
 
-        let object_service_unit_name =
-            ServiceUnitName::from_str("tire-pressure-publisher").unwrap();
+        set_authz_policy(
+            &mut test_acl_provider,
+            &subject_with_allowed_by_permissions_and_acls(),
+            r#"
+                publisher {
+                    topic: "tire-pressure-publisher"
+                    message: "com.android.TirePressureTopic"
+                }
+                subscriber {
+                    topic: "tire-pressure-publisher"
+                    message: "com.android.TirePressureTopic"
+                }
+            "#,
+        );
 
-        let object_unit_type_name = UnitTypeName::from_str("TirePressureTopic").unwrap();
+        set_authz_policy(
+            &mut test_acl_provider,
+            &subject_with_allowed_by_permissions_only(),
+            r#"
+                publisher {
+                    topic: "tire-pressure-publisher"
+                    message: "com.android.TirePressureTopic"
+                }
+                subscriber {
+                    topic: "tire-pressure-publisher"
+                    message: "com.android.TirePressureTopic"
+                }
+            "#,
+        );
 
-        let app_metadata = ApplicationMetadata {
-            typedMetadata: TypedMetadata::PublisherUnit(PublisherUnitMetadata {
-                topic_name: "tire-pressure-publisher".to_string(),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-
-        (authz_service, object_fqin, object_service_unit_name, object_unit_type_name, app_metadata)
+        AuthzService::new(
+            VmName::from_str("vm").unwrap(),
+            Arc::new(test_acl_provider),
+            Arc::new(TestAuthzEnforcementFlag::new(enforcement_strategy)),
+            Arc::new(TestRegistry {}),
+        )
     }
 
     #[test]
-    fn test_is_authorized_for_service_unit_permitted() {
-        let (authz_service, object_fqin, object_service_unit_name, _, _) =
-            setup_test(/*is_enforcement_flag_enabled=*/ true);
+    fn test_is_authorized_for_service_unit_disabled() {
+        let authz_service = setup_test(AuthzStrategy::Disabled);
 
-        let subject_fqin = ServiceFqin::from_str("vm-allow:com.oem.TunnelService/main").unwrap();
+        let allowed_subject_fqins = [
+            subject_with_allowed_by_permissions_and_acls(),
+            subject_with_allowed_by_permissions_only(),
+            subject_with_allowed_by_acls_only(),
+            subject_with_denied_by_permissions_and_acls(),
+        ];
 
-        assert!(authz_service.is_authorized(
-            &subject_fqin,
-            &object_fqin,
-            &object_service_unit_name
-        ));
+        for allowed_subject_fqin in allowed_subject_fqins {
+            assert!(authz_service.is_authorized(
+                &allowed_subject_fqin,
+                &object_fqin(),
+                &object_service_unit_name()
+            ));
+        }
     }
 
     #[test]
-    fn test_is_authorized_for_service_unit_denied() {
-        let (authz_service, object_fqin, object_service_unit_name, _, _) =
-            setup_test(/*is_enforcement_flag_enabled=*/ true);
+    fn test_is_authorized_for_service_unit_acls_only() {
+        let authz_service = setup_test(AuthzStrategy::AclsOnly);
 
-        for subject_fqin in [
-            ServiceFqin::from_str("vm-deny:com.oem.TunnelService/main").unwrap(),
-            ServiceFqin::from_str("vm-deny-implicit:com.oem.TunnelService/main").unwrap(),
+        let allowed_subject_fqins =
+            [subject_with_allowed_by_permissions_and_acls(), subject_with_allowed_by_acls_only()];
+
+        for allowed_subject_fqin in allowed_subject_fqins {
+            assert!(authz_service.is_authorized(
+                &allowed_subject_fqin,
+                &object_fqin(),
+                &object_service_unit_name()
+            ));
+        }
+
+        for denied_subject_fqin in [
+            subject_with_allowed_by_permissions_only(),
+            subject_with_denied_by_permissions_and_acls(),
         ] {
             assert!(!authz_service.is_authorized(
-                &subject_fqin,
-                &object_fqin,
-                &object_service_unit_name
+                &denied_subject_fqin,
+                &object_fqin(),
+                &object_service_unit_name()
             ));
         }
     }
 
     #[test]
-    fn test_is_authorized_for_service_unit_permitted_by_flag() {
-        let (authz_service, object_fqin, object_service_unit_name, _, _) =
-            setup_test(/*is_enforcement_flag_enabled=*/ false);
+    fn test_is_authorized_for_service_unit_permissions_only() {
+        let authz_service = setup_test(AuthzStrategy::PermissionsOnly);
 
-        for subject_fqin in [
-            ServiceFqin::from_str("vm-deny:com.oem.TunnelService/main").unwrap(),
-            ServiceFqin::from_str("vm-deny-implicit:com.oem.TunnelService/main").unwrap(),
-        ] {
+        let allowed_subject_fqins = [
+            subject_with_allowed_by_permissions_and_acls(),
+            subject_with_allowed_by_permissions_only(),
+        ];
+
+        for allowed_subject_fqin in allowed_subject_fqins {
             assert!(authz_service.is_authorized(
-                &subject_fqin,
-                &object_fqin,
-                &object_service_unit_name
+                &allowed_subject_fqin,
+                &object_fqin(),
+                &object_service_unit_name()
+            ));
+        }
+
+        for denied_subject_fqin in
+            [subject_with_allowed_by_acls_only(), subject_with_denied_by_permissions_and_acls()]
+        {
+            assert!(!authz_service.is_authorized(
+                &denied_subject_fqin,
+                &object_fqin(),
+                &object_service_unit_name()
             ));
         }
     }
 
     #[test]
-    fn test_is_authorized_for_unit_type_permitted() {
-        let (authz_service, object_fqin, object_service_unit_name, object_unit_type_name, metadata) =
-            setup_test(/*is_enforcement_flag_enabled=*/ true);
+    fn test_is_authorized_for_service_unit_lenient() {
+        let authz_service = setup_test(AuthzStrategy::Lenient);
 
-        let subject_fqin = ServiceFqin::from_str("vm-allow:com.oem.TunnelService/main").unwrap();
+        let allowed_subject_fqins = [
+            subject_with_allowed_by_permissions_and_acls(),
+            subject_with_allowed_by_permissions_only(),
+            subject_with_allowed_by_acls_only(),
+        ];
 
-        assert!(authz_service.is_authorized_for_unit_type(
-            &subject_fqin,
-            object_fqin.package_name(),
-            &object_unit_type_name,
-            &metadata,
-            &object_service_unit_name,
+        for allowed_subject_fqin in allowed_subject_fqins {
+            assert!(authz_service.is_authorized(
+                &allowed_subject_fqin,
+                &object_fqin(),
+                &object_service_unit_name()
+            ));
+        }
+
+        assert!(!authz_service.is_authorized(
+            &subject_with_denied_by_permissions_and_acls(),
+            &object_fqin(),
+            &object_service_unit_name()
         ));
     }
 
     #[test]
-    fn test_is_authorized_for_unit_type_denied() {
-        let (authz_service, object_fqin, object_service_unit_name, object_unit_type_name, metadata) =
-            setup_test(/*is_enforcement_flag_enabled=*/ true);
+    fn test_is_authorized_for_service_unit_strict() {
+        let authz_service = setup_test(AuthzStrategy::Strict);
 
-        for subject_fqin in [
-            ServiceFqin::from_str("vm-deny:com.oem.TunnelService/main").unwrap(),
-            ServiceFqin::from_str("vm-deny-implicit:com.oem.TunnelService/main").unwrap(),
+        assert!(authz_service.is_authorized(
+            &subject_with_allowed_by_permissions_and_acls(),
+            &object_fqin(),
+            &object_service_unit_name()
+        ));
+
+        for denied_subject_fqin in [
+            subject_with_allowed_by_permissions_only(),
+            subject_with_allowed_by_acls_only(),
+            subject_with_denied_by_permissions_and_acls(),
         ] {
-            assert!(!authz_service.is_authorized_for_unit_type(
-                &subject_fqin,
+            assert!(!authz_service.is_authorized(
+                &denied_subject_fqin,
+                &object_fqin(),
+                &object_service_unit_name()
+            ));
+        }
+    }
+
+    #[test]
+    fn test_is_authorized_for_unit_type_disabled() {
+        let authz_service = setup_test(AuthzStrategy::Disabled);
+
+        let object_fqin = object_fqin();
+        let object_unit_type_name = object_unit_type_name();
+        let object_service_unit_name = object_service_unit_name();
+        let app_metadata = app_metadata();
+
+        for allowed_subject_fqin in [
+            subject_with_allowed_by_permissions_and_acls(),
+            subject_with_allowed_by_permissions_only(),
+            subject_with_allowed_by_acls_only(),
+            subject_with_denied_by_permissions_and_acls(),
+        ] {
+            assert!(authz_service.is_authorized_for_unit_type(
+                &allowed_subject_fqin,
                 object_fqin.package_name(),
                 &object_unit_type_name,
-                &metadata,
+                &app_metadata,
                 &object_service_unit_name,
             ));
         }
     }
 
     #[test]
-    fn test_is_authorized_for_unit_type_permitted_by_flag() {
-        let (authz_service, object_fqin, object_service_unit_name, object_unit_type_name, metadata) =
-            setup_test(/*is_enforcement_flag_enabled=*/ false);
+    fn test_is_authorized_for_unit_type_permissions_only() {
+        let authz_service = setup_test(AuthzStrategy::PermissionsOnly);
 
-        for subject_fqin in [
-            ServiceFqin::from_str("vm-deny:com.oem.TunnelService/main").unwrap(),
-            ServiceFqin::from_str("vm-deny-implicit:com.oem.TunnelService/main").unwrap(),
+        let object_fqin = object_fqin();
+        let object_unit_type_name = object_unit_type_name();
+        let object_service_unit_name = object_service_unit_name();
+        let app_metadata = app_metadata();
+
+        for allowed_subject_fqin in [
+            subject_with_allowed_by_permissions_and_acls(),
+            subject_with_allowed_by_permissions_only(),
         ] {
             assert!(authz_service.is_authorized_for_unit_type(
-                &subject_fqin,
+                &allowed_subject_fqin,
                 object_fqin.package_name(),
                 &object_unit_type_name,
-                &metadata,
+                &app_metadata,
+                &object_service_unit_name,
+            ));
+        }
+
+        for denied_subject_fqin in
+            [subject_with_allowed_by_acls_only(), subject_with_denied_by_permissions_and_acls()]
+        {
+            assert!(!authz_service.is_authorized_for_unit_type(
+                &denied_subject_fqin,
+                object_fqin.package_name(),
+                &object_unit_type_name,
+                &app_metadata,
+                &object_service_unit_name,
+            ));
+        }
+    }
+
+    #[test]
+    fn test_is_authorized_for_unit_type_acls_only() {
+        let authz_service = setup_test(AuthzStrategy::AclsOnly);
+
+        let object_fqin = object_fqin();
+        let object_unit_type_name = object_unit_type_name();
+        let object_service_unit_name = object_service_unit_name();
+        let app_metadata = app_metadata();
+
+        for allowed_subject_fqin in
+            [subject_with_allowed_by_permissions_and_acls(), subject_with_allowed_by_acls_only()]
+        {
+            assert!(authz_service.is_authorized_for_unit_type(
+                &allowed_subject_fqin,
+                object_fqin.package_name(),
+                &object_unit_type_name,
+                &app_metadata,
+                &object_service_unit_name,
+            ));
+        }
+
+        for denied_subject_fqin in [
+            subject_with_allowed_by_permissions_only(),
+            subject_with_denied_by_permissions_and_acls(),
+        ] {
+            assert!(!authz_service.is_authorized_for_unit_type(
+                &denied_subject_fqin,
+                object_fqin.package_name(),
+                &object_unit_type_name,
+                &app_metadata,
+                &object_service_unit_name,
+            ));
+        }
+    }
+
+    #[test]
+    fn test_is_authorized_for_unit_type_lenient() {
+        let authz_service = setup_test(AuthzStrategy::Lenient);
+
+        let object_fqin = object_fqin();
+        let object_unit_type_name = object_unit_type_name();
+        let object_service_unit_name = object_service_unit_name();
+        let app_metadata = app_metadata();
+
+        for allowed_subject_fqin in [
+            subject_with_allowed_by_permissions_and_acls(),
+            subject_with_allowed_by_permissions_only(),
+            subject_with_allowed_by_acls_only(),
+        ] {
+            assert!(authz_service.is_authorized_for_unit_type(
+                &allowed_subject_fqin,
+                object_fqin.package_name(),
+                &object_unit_type_name,
+                &app_metadata,
+                &object_service_unit_name,
+            ));
+        }
+
+        assert!(!authz_service.is_authorized_for_unit_type(
+            &subject_with_denied_by_permissions_and_acls(),
+            object_fqin.package_name(),
+            &object_unit_type_name,
+            &app_metadata,
+            &object_service_unit_name,
+        ));
+    }
+
+    #[test]
+    fn test_is_authorized_for_unit_type_strict() {
+        let authz_service = setup_test(AuthzStrategy::Strict);
+
+        let object_fqin = object_fqin();
+        let object_unit_type_name = object_unit_type_name();
+        let object_service_unit_name = object_service_unit_name();
+        let app_metadata = app_metadata();
+
+        assert!(authz_service.is_authorized_for_unit_type(
+            &subject_with_allowed_by_permissions_and_acls(),
+            object_fqin.package_name(),
+            &object_unit_type_name,
+            &app_metadata,
+            &object_service_unit_name,
+        ));
+
+        for denied_subject_fqin in [
+            subject_with_allowed_by_permissions_only(),
+            subject_with_allowed_by_acls_only(),
+            subject_with_denied_by_permissions_and_acls(),
+        ] {
+            assert!(!authz_service.is_authorized_for_unit_type(
+                &denied_subject_fqin,
+                object_fqin.package_name(),
+                &object_unit_type_name,
+                &app_metadata,
                 &object_service_unit_name,
             ));
         }

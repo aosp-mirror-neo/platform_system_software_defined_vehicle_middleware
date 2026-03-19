@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use sdv_authz::AuthzEnforcementFlag;
+use sdv_authz::{AuthzEnforcementFlag, AuthzStrategy};
 use sdv_authz_enforcement_flag::SystemPropertyAuthzEnforcementFlag;
 
 /// Verifies that Authz enforcement flag is turned on when a designated test
 /// template config is applied which turns on authz enforcement flag
 /// before test run and turns it off after the test run.
 #[test]
-fn authz_enforcement_flag_enabled_explicitly_by_config_template() {
-    assert!(SystemPropertyAuthzEnforcementFlag::new().is_enabled());
+fn authz_enforcement_flag_enabled_by_config_is_lenient() {
+    assert_eq!(
+        SystemPropertyAuthzEnforcementFlag::new().get_enforcement_strategy(),
+        AuthzStrategy::Lenient
+    );
 }
