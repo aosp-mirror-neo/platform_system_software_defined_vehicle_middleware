@@ -108,8 +108,7 @@ RemoteAgentClient::LastMessageResultFuture RemoteAgentClient::FetchLastMessage(
     guard.unlock();
 
     RawBuffer data_buffer(kDefaultBufferSize);
-    if (!SendPayload(*connection_, Payload_LastMessageRequest(topic_name), parcel_id_counter_++,
-                     data_buffer)) {
+    if (!SendPayload(*connection_, Payload_LastMessageRequest(topic_name), data_buffer)) {
         ALOGE("RemoteAgentClient(%s): Error sending last message request for %s",
               peer_vm_name_.c_str(), topic_name.c_str());
 
@@ -197,7 +196,7 @@ void RemoteAgentClient::ActivateConnection() {
                                                          int32_t publication_id) {
     RawBuffer data_buffer(kDefaultBufferSize);
     if (!SendPayload(*connection_, Payload_SubscribeRequest(topic_name, publication_id),
-                     parcel_id_counter_++, data_buffer)) {
+                     data_buffer)) {
         return ::sdv::SdvStatus(::sdv::SdvStatusCode::kInternal,
                                 std::format("SendPayload(Payload_SubscribeRequest, {}) failed!",
                                             topic_name));

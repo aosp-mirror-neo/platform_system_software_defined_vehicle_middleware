@@ -40,9 +40,8 @@ std::string MakeFqinString(const ServiceFqin& fqin) {
             fqin.serviceInstanceName;
 }
 
-bool SendPayload(IConnection& conn, const proto::Payload& payload, uint32_t parcel_id,
-                 RawBuffer& data_buffer) {
-    proto::Parcel parcel(parcel_id);
+bool SendPayload(IConnection& conn, const proto::Payload& payload, RawBuffer& data_buffer) {
+    proto::Parcel parcel;
     BufferWriter writer(data_buffer);
     if (!parcel.Serialize(writer, payload)) {
         ALOGE("Unable to Serialize payload %u bytes", proto::Parcel::ParcelSize(payload));
@@ -62,7 +61,7 @@ std::pair<proto::Parcel::ParseResult, std::unique_ptr<proto::Payload>> ReceivePa
 
     BufferReader reader(received.span());
 
-    auto payload_result = proto::Parcel::Deserialize(reader, nullptr);
+    auto payload_result = proto::Parcel::Deserialize(reader);
 
     if (payload_result.first == proto::Parcel::ParseResult::Failure) {
         ALOGE("ReceivePayload(): Got malformed parcel from connection!");
@@ -71,12 +70,7 @@ std::pair<proto::Parcel::ParseResult, std::unique_ptr<proto::Payload>> ReceivePa
 
     if (payload_result.first == proto::Parcel::ParseResult::UnknownPayload) {
         ALOGE("ReceivePayload(): Got unknown payload type from connection!");
-        return {proto::Parcel::ParseResult::Failure, nullptr};
-    }
-
-    if (payload_result.first == proto::Parcel::ParseResult::NeedMoreData) {
-        ALOGE("ReceivePayload(): Got incomplete parcel from connection!");
-        return {proto::Parcel::ParseResult::Failure, nullptr};
+        return {proto::Parcel::ParseResult::UnknownPayload, nullptr};
     }
 
     // Result was success

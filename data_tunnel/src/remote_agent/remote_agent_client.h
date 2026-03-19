@@ -137,8 +137,6 @@ private:
 
     // Thread executing ConnectionThread
     std::jthread connection_thread_;
-
-    std::atomic<uint32_t> parcel_id_counter_;
 };
 
 }  // namespace android::sdv::dt::agent

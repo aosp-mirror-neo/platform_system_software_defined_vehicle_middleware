@@ -64,7 +64,6 @@ private:
     IConnectionHolder connection_;
     TopicManager& topic_manager_;
     std::string peer_vm_name_;
-    std::atomic<uint32_t> parcel_id_counter_;
 
     // Used to ensure we don't release connection_ while in use outside of ConnectionThread.
     mutable std::mutex connection_lock_;

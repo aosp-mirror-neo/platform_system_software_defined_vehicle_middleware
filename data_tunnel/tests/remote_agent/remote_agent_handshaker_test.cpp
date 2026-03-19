@@ -92,7 +92,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Outbound_Secure_Success) {
     EXPECT_CALL(connection_, AuthenticatedIdentity()).WillOnce(Return(kPeerEncodedIdentity_1));
 
     // Simulate receipt of expected peer ping.
-    connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
+    connection_.EnqueueParcelForReceive(Payload_Ping(kPeerVmName_1));
 
     // Should send pong.
     const auto pong_payload = connection_.GetNextSentDataIfPayload<Payload_Pong>();
@@ -102,7 +102,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Outbound_Secure_Success) {
     EXPECT_EQ(result_future.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
 
     // Simulate receipt of expected peer pong.
-    connection_.EnqueueParcelForReceive(123, Payload_Pong());
+    connection_.EnqueueParcelForReceive(Payload_Pong());
 
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     EXPECT_EQ(result_future.get(), kPeerVmName_1);
@@ -121,7 +121,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Inbound_Secure_Success) {
     EXPECT_CALL(connection_, AuthenticatedIdentity()).WillOnce(Return(kPeerEncodedIdentity_1));
 
     // Simulate receipt of expected peer ping.
-    connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
+    connection_.EnqueueParcelForReceive(Payload_Ping(kPeerVmName_1));
 
     // Should send pong.
     const auto pong_payload = connection_.GetNextSentDataIfPayload<Payload_Pong>();
@@ -131,7 +131,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Inbound_Secure_Success) {
     EXPECT_EQ(result_future.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
 
     // Simulate receipt of expected peer pong.
-    connection_.EnqueueParcelForReceive(123, Payload_Pong());
+    connection_.EnqueueParcelForReceive(Payload_Pong());
 
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     EXPECT_EQ(result_future.get(), kPeerVmName_1);
@@ -146,14 +146,14 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Outbound_Insecure_Success) {
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt of expected peer ping.
-    connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
+    connection_.EnqueueParcelForReceive(Payload_Ping(kPeerVmName_1));
 
     // Should send pong.
     const auto pong_payload = connection_.GetNextSentDataIfPayload<Payload_Pong>();
     ASSERT_TRUE(pong_payload);
 
     // Simulate receipt of expected peer pong.
-    connection_.EnqueueParcelForReceive(123, Payload_Pong());
+    connection_.EnqueueParcelForReceive(Payload_Pong());
 
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     EXPECT_EQ(result_future.get(), kPeerVmName_1);
@@ -168,14 +168,14 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Inbound_Insecure_Success) {
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt of expected peer ping.
-    connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
+    connection_.EnqueueParcelForReceive(Payload_Ping(kPeerVmName_1));
 
     // Should send pong.
     const auto pong_payload = connection_.GetNextSentDataIfPayload<Payload_Pong>();
     ASSERT_TRUE(pong_payload);
 
     // Simulate receipt of expected peer pong.
-    connection_.EnqueueParcelForReceive(123, Payload_Pong());
+    connection_.EnqueueParcelForReceive(Payload_Pong());
 
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     EXPECT_EQ(result_future.get(), kPeerVmName_1);
@@ -190,7 +190,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_FailsOnMissingPong) {
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt of expected peer ping.
-    connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
+    connection_.EnqueueParcelForReceive(Payload_Ping(kPeerVmName_1));
 
     // Should send pong.
     const auto pong_payload = connection_.GetNextSentDataIfPayload<Payload_Pong>();
@@ -212,14 +212,14 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_FailsOnNonPong) {
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt of expected peer ping.
-    connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
+    connection_.EnqueueParcelForReceive(Payload_Ping(kPeerVmName_1));
 
     // Should send pong.
     const auto pong_payload = connection_.GetNextSentDataIfPayload<Payload_Pong>();
     ASSERT_TRUE(pong_payload);
 
     // Simulate receipt of UNEXPECTED peer ping when we should be getting pong
-    connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
+    connection_.EnqueueParcelForReceive(Payload_Ping(kPeerVmName_1));
 
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     EXPECT_EQ(result_future.get(), std::nullopt);
@@ -238,7 +238,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnMissingAuthIden
     EXPECT_CALL(connection_, AuthenticatedIdentity()).WillOnce(Return(std::nullopt));
 
     // Simulate receipt of expected peer ping.
-    connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
+    connection_.EnqueueParcelForReceive(Payload_Ping(kPeerVmName_1));
 
     // Failure returned
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
@@ -261,7 +261,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnIncorrectAuthId
     EXPECT_CALL(connection_, AuthenticatedIdentity()).WillOnce(Return(kPeerEncodedIdentity_2));
 
     // Simulate receipt of expected peer ping.
-    connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
+    connection_.EnqueueParcelForReceive(Payload_Ping(kPeerVmName_1));
 
     // Failure returned
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
@@ -283,7 +283,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnMissingAuthVmNa
     EXPECT_CALL(connection_, AuthenticatedVmName()).WillOnce(Return(std::nullopt));
 
     // Simulate receipt of expected peer ping.
-    connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
+    connection_.EnqueueParcelForReceive(Payload_Ping(kPeerVmName_1));
 
     // Failure returned
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
@@ -305,7 +305,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Secure_FailsOnIncorrectAuthVm
     EXPECT_CALL(connection_, AuthenticatedVmName()).WillOnce(Return(kPeerVmName_2));
 
     // Simulate receipt of expected peer ping.
-    connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_1));
+    connection_.EnqueueParcelForReceive(Payload_Ping(kPeerVmName_1));
 
     // Failure returned
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
@@ -326,14 +326,14 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_AcceptsLowerVersionNumber) {
     // Simulate receipt of peer ping with lower version #.
     Payload_Ping ping(kPeerVmName_1);
     ping.version_number = proto::kVersionNumber - 1;
-    connection_.EnqueueParcelForReceive(123, ping);
+    connection_.EnqueueParcelForReceive(ping);
 
     // Should send pong.
     const auto pong_payload = connection_.GetNextSentDataIfPayload<Payload_Pong>();
     ASSERT_TRUE(pong_payload);
 
     // Simulate receipt of expected peer pong.
-    connection_.EnqueueParcelForReceive(123, Payload_Pong());
+    connection_.EnqueueParcelForReceive(Payload_Pong());
 
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     EXPECT_EQ(result_future.get(), kPeerVmName_1);
@@ -350,14 +350,14 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_AcceptsHigherVersionNumber) {
     // Simulate receipt of peer ping with higher version #.
     Payload_Ping ping(kPeerVmName_1);
     ping.version_number = proto::kVersionNumber + 1;
-    connection_.EnqueueParcelForReceive(123, ping);
+    connection_.EnqueueParcelForReceive(ping);
 
     // Should send pong.
     const auto pong_payload = connection_.GetNextSentDataIfPayload<Payload_Pong>();
     ASSERT_TRUE(pong_payload);
 
     // Simulate receipt of expected peer pong.
-    connection_.EnqueueParcelForReceive(123, Payload_Pong());
+    connection_.EnqueueParcelForReceive(Payload_Pong());
 
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     EXPECT_EQ(result_future.get(), kPeerVmName_1);
@@ -372,7 +372,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_Outbound_FailsOnUnexpectedPin
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt of peer ping with unexpected VM name.
-    connection_.EnqueueParcelForReceive(123, Payload_Ping(kPeerVmName_2));
+    connection_.EnqueueParcelForReceive(Payload_Ping(kPeerVmName_2));
 
     // Failure returned
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
@@ -410,7 +410,7 @@ TEST_F(RemoteAgentHandshakerTest, PerformHandshake_FailsOnNonPing) {
     EXPECT_EQ(ping_payload->vm_name, kSelfVmName);
 
     // Simulate receipt of non-ping payload.
-    connection_.EnqueueParcelForReceive(123, Payload_Pong());
+    connection_.EnqueueParcelForReceive(Payload_Pong());
 
     // Failure returned
     ASSERT_EQ(result_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);

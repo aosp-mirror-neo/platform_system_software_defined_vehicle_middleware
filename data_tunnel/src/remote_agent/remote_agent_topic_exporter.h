@@ -37,8 +37,7 @@ namespace android::sdv::dt::agent {
 // exported publication.
 class RemoteAgentTopicExporter final {
 public:
-    RemoteAgentTopicExporter(const std::string& vm_name, TopicManager&, IConnection&,
-                             std::atomic<uint32_t>& parcel_id_counter);
+    RemoteAgentTopicExporter(const std::string& vm_name, TopicManager&, IConnection&);
     ~RemoteAgentTopicExporter();
 
     // Threshold at which we split topic data into multiple TopicRawData payloads.
@@ -87,7 +86,6 @@ private:
     const std::string vm_name_;
     TopicManager& topic_manager_;
     IConnection& connection_;
-    std::atomic<uint32_t>& parcel_id_counter_;
 
     // Record of all currently exported topics.
     std::shared_mutex exported_topics_lock_;
