@@ -243,7 +243,7 @@ mod tests {
             }
         }
 
-        fn set_alc_policy(
+        fn set_acl_policy(
             &mut self,
             package_name: PackageName,
             service_name: Option<ServiceBundleName>,
@@ -334,7 +334,7 @@ mod tests {
 
         let test_provider = {
             let mut test_provider = TestAclPolicyProvider::new();
-            test_provider.set_alc_policy(
+            test_provider.set_acl_policy(
                 package_name.clone(),
                 Some(service_bundle_name.clone()),
                 acl_policy_proto.clone(),
@@ -404,7 +404,7 @@ mod tests {
 
         let test_provider = {
             let mut test_provider = TestAclPolicyProvider::new();
-            test_provider.set_alc_policy(
+            test_provider.set_acl_policy(
                 package_name.clone(),
                 Some(service_bundle_name.clone()),
                 acl_policy_proto,
@@ -454,7 +454,7 @@ mod tests {
         let service_bundle_name = ServiceBundleName::from_str("WindowManager").unwrap();
 
         let mut test_provider = TestAclPolicyProvider::new();
-        test_provider.set_alc_policy(
+        test_provider.set_acl_policy(
             package_name.clone(),
             Some(service_bundle_name.clone()),
             text_format::parse_from_str::<AclPolicyProto>(
