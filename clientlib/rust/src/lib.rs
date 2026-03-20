@@ -40,9 +40,6 @@ pub use rpc_server::*;
 pub mod availability;
 pub use availability::*;
 
-#[cfg(test)]
-mod tests;
-
 /// A trait for vsidlc-generated types (channels and services) to provide their logical type
 /// identifier.
 ///

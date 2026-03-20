@@ -28,19 +28,19 @@ use std::marker::PhantomData;
 #[derive(Debug, Clone)]
 pub struct PublisherDescriptor<Proto> {
     /// The name of the topic.
-    pub topic: &'static str,
+    pub(crate) topic: &'static str,
     /// The fully qualified name of the message type (e.g., "com.android.sdv.sample.Pressure").
-    pub message: &'static str,
+    pub(crate) message: &'static str,
     /// The capacity of the publication queue.
-    pub capacity: u32,
+    pub(crate) capacity: u32,
     /// The maximum size of a message on this topic.
-    pub max_message_size: u32,
+    pub(crate) max_message_size: u32,
     /// The name of the service unit.
-    pub service_unit_name: &'static str,
+    pub(crate) service_unit_name: &'static str,
     /// Whether message metadata is required.
-    pub is_message_metadata_required: bool,
+    pub(crate) is_message_metadata_required: bool,
     /// A function pointer to generate the metadata at runtime
-    pub message_metadata_getter: fn() -> MessageMetadata,
+    pub(crate) message_metadata_getter: fn() -> MessageMetadata,
     pub(crate) _marker: PhantomData<Proto>,
 }
 
@@ -126,14 +126,15 @@ impl<Proto: protobuf::Message> IntoPublisherAttributes for PublisherDescriptor<P
 }
 
 /// A descriptor that binds a specific topic to a publication (Manual use case).
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct PublisherDescriptorFull<Proto> {
     /// The name of the topic.
-    pub topic: String,
+    pub(crate) topic: String,
     /// The capacity of the publication.
-    pub capacity: u32,
+    pub(crate) capacity: u32,
     /// The name of the service unit.
-    pub service_unit_name: String,
+    pub(crate) service_unit_name: String,
 
     pub(crate) _marker: PhantomData<Proto>,
 }
@@ -197,9 +198,9 @@ impl<Proto: protobuf::MessageFull> IntoPublisherAttributes for PublisherDescript
 #[derive(Debug, Clone)]
 pub struct SubscriberDescriptor<Proto> {
     /// The name of the topic.
-    pub topic: &'static str,
+    pub(crate) topic: &'static str,
     /// The fully qualified name of the message type (e.g., "sdv.sample.Pressure").
-    pub message: &'static str,
+    pub(crate) message: &'static str,
 
     pub(crate) _marker: PhantomData<Proto>,
 }
@@ -227,6 +228,7 @@ impl<Proto: protobuf::Message> IntoSubscriberAttributes for SubscriberDescriptor
 }
 
 /// A descriptor that binds a specific topic to a subscription (Manual use case).
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct SubscriberDescriptorFull<Proto> {
     /// The name of the topic.
@@ -254,4 +256,76 @@ impl<Proto: protobuf::MessageFull> IntoSubscriberAttributes for SubscriberDescri
 
 fn default_message_metadata() -> MessageMetadata {
     MessageMetadata::default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sdv_mw_commstests_protos::test_messages::Pressure;
+
+    #[test]
+    fn test_publisher_descriptor_to_attributes() {
+        let desc = PublisherDescriptor::<Pressure>::new("topic")
+            .with_message("sdv.sample.Pressure")
+            .with_capacity(10)
+            .with_max_message_size(1024)
+            .with_service_unit_name("service")
+            .with_message_metadata_required(true);
+
+        let attrs = desc.to_attributes().expect("Failed to convert to attributes");
+        assert_eq!(attrs.get_topic_name(), "topic");
+        assert_eq!(attrs.get_publication_name(), "service");
+        assert_eq!(attrs.get_type_name().get_package_name(), "sdv.sample");
+        assert_eq!(attrs.get_type_name().get_type_name(), "Pressure");
+        assert_eq!(attrs.get_metadata().get_message_count(), 10);
+        assert_eq!(attrs.get_metadata().get_message_size(), 1024);
+        assert!(attrs.get_metadata().is_message_metadata_required());
+    }
+
+    #[test]
+    fn test_publisher_descriptor_full_to_attributes() {
+        let desc = PublisherDescriptorFull::<Pressure>::new("topic")
+            .with_service_unit_name("service_full")
+            .with_capacity(12);
+
+        let attrs = desc.to_attributes().expect("Failed to convert to attributes");
+        assert_eq!(attrs.get_topic_name(), "topic");
+        assert_eq!(attrs.get_publication_name(), "service_full");
+        // Pressure's FQN is sdv.mw.commstests.Pressure in the rust crate
+        assert_eq!(attrs.get_type_name().get_package_name(), "sdv.mw.commstests");
+        assert_eq!(attrs.get_type_name().get_type_name(), "Pressure");
+        assert_eq!(attrs.get_metadata().get_message_count(), 12);
+        // message_size is auto-calculated from Pressure proto
+        assert!(attrs.get_metadata().get_message_size() > 0);
+    }
+
+    #[test]
+    fn test_publisher_descriptor_full_defaults() {
+        let desc = PublisherDescriptorFull::<Pressure>::new("topic");
+        assert_eq!(desc.topic, "topic");
+        assert_eq!(desc.capacity, 8); // default capacity
+        assert_eq!(desc.service_unit_name, "");
+    }
+
+    #[test]
+    fn test_subscriber_descriptor_to_attributes() {
+        let desc =
+            SubscriberDescriptor::<Pressure>::new("topic").with_message("sdv.sample.Pressure");
+
+        let (type_name, topic) = desc.to_attributes().expect("Failed to convert to attributes");
+        assert_eq!(topic, "topic");
+        assert_eq!(type_name.get_package_name(), "sdv.sample");
+        assert_eq!(type_name.get_type_name(), "Pressure");
+    }
+
+    #[test]
+    fn test_subscriber_descriptor_full_to_attributes() {
+        let desc = SubscriberDescriptorFull::<Pressure>::new("topic_full");
+
+        let (type_name, topic) = desc.to_attributes().expect("Failed to convert to attributes");
+        assert_eq!(topic, "topic_full");
+        // Pressure's FQN is sdv.mw.commstests.Pressure in the rust crate
+        assert_eq!(type_name.get_package_name(), "sdv.mw.commstests");
+        assert_eq!(type_name.get_type_name(), "Pressure");
+    }
 }
