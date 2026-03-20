@@ -174,7 +174,9 @@ impl<Proto: protobuf::MessageFull> IntoPublisherAttributes for PublisherDescript
         let type_name_obj =
             TypeName::builder().package_name(package).type_name(type_name).build()?;
 
-        let message_size = crate::topic_utils::get_message_size::<Proto>()?;
+        let message_size = sdv_proto_utils::get_message_size::<Proto>()
+            .map_err(|e| SdvStatus::with_message(SdvStatusCode::InvalidArgument, e.to_string()))?
+            as u32;
 
         PublisherAttributes::builder()
             .publication_name(&self.service_unit_name)

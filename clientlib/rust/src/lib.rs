@@ -28,8 +28,6 @@ pub use pubsub_descriptor::{
     PublisherDescriptor, PublisherDescriptorFull, SubscriberDescriptor, SubscriberDescriptorFull,
 };
 
-pub(crate) mod topic_utils;
-
 /// RPC
 pub mod rpc_client;
 pub use rpc_client::*;
