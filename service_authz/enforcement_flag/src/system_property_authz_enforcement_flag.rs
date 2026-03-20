@@ -67,8 +67,8 @@ fn get_enforcement_strategy_from_property(property_path: &str) -> AuthzStrategy 
     match is_user_build() {
         Ok(is_user_build) => {
             if is_user_build {
-                // For `user` build we should always return `AuthzStrategy::PermissionsOnly` regardless of `sdv.authz.enable` value.
-                return AuthzStrategy::PermissionsOnly;
+                // For `user` build we should always return DEFAULT_ENFORCEMENT_STRATEGY regardless of `sdv.authz.enable` value.
+                return DEFAULT_ENFORCEMENT_STRATEGY;
             }
         }
         Err(err) => {
