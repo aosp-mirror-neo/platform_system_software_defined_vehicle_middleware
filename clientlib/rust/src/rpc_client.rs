@@ -16,10 +16,19 @@
 
 //! Clientlib methods related to RPC client
 
-use crate::rpc_descriptor::client;
-use sdv_mw_rs_comms::{ClientOptions, Communicate, RpcClient};
+use sdv_mw_rs_comms::{ClientOptions, Communicate, RpcClient, TypeName};
+use sdv_status_rs::SdvResult;
 
-/// Creates an RPC client for a specified client descriptor.
+/// A trait for types that can be converted into RPC client attributes.
+pub trait IntoRpcClientAttributes {
+    /// The RPC client stub type.
+    type Client: RpcClient;
+
+    /// Converts the type into RPC client attributes (Type name and Channel name).
+    fn to_attributes(&self) -> SdvResult<(TypeName, String)>;
+}
+
+/// Creates an RPC client for a specified RPC descriptor.
 ///
 /// This function attempts to connect to an RPC server identified by the descriptor.
 /// If the connection is successful, it returns a client stub that can be used to
@@ -27,23 +36,21 @@ use sdv_mw_rs_comms::{ClientOptions, Communicate, RpcClient};
 ///
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
-/// * `descriptor` - The client descriptor.
-/// * `options` - `ClientOptions` to configure the client.
+/// * `descriptor` - The RPC descriptor for the service.
+/// * `options` - Client options, which can specify details like the target VM or instance.
 ///
 /// # Returns
-/// An `SdvResult` containing the RPC client stub of type `Client` on success.
-pub async fn create_rpc_client<Descriptor: client::Descriptor>(
+/// An `SdvResult` containing the RPC client stub of type `Descriptor::Client` on success.
+pub async fn create_rpc_client<Descriptor>(
     comms: &dyn Communicate,
     descriptor: &Descriptor,
     options: ClientOptions,
-) -> sdv_status_rs::SdvResult<Descriptor::ClientType> {
-    Ok(Descriptor::ClientType::new(
-        comms
-            .create_client_transport_for_channel(
-                &Descriptor::type_name()?,
-                descriptor.get_channel(),
-                &options,
-            )
-            .await?,
-    ))
+) -> SdvResult<Descriptor::Client>
+where
+    Descriptor: IntoRpcClientAttributes,
+{
+    let (type_name, channel) = descriptor.to_attributes()?;
+    let transport =
+        comms.create_client_transport_for_channel(&type_name, &channel, &options).await?;
+    Ok(Descriptor::Client::new(transport))
 }

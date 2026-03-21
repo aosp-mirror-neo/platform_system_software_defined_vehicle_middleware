@@ -16,28 +16,30 @@
 
 //! SDV Middleware Clientlib methods related to availability.
 
-use crate::rpc_descriptor::client;
-use crate::subscriber;
+use crate::{IntoRpcClientAttributes, IntoSubscriberAttributes};
 use sdv_mw_rs_comms::{Availability, Communicate, UnitQuery};
 use sdv_status_rs::SdvResult;
 use std::pin::Pin;
 
 /// Creates a stream that yields an [`Availability`] event whenever a publisher for the given
-/// channel becomes available or unavailable.
+/// topic becomes available or unavailable.
 ///
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
-/// * `channel` - The subscription channel to monitor for publisher availability.
-/// * `options` - Subscription options, which can specify details like the target VM or instance
-///   for single-pub channels.
+/// * `descriptor` - The subscriber descriptor to monitor for publisher availability.
 ///
 /// # Returns
 /// A `SdvResult` containing a pinned, boxed, dynamic `Stream` of `Availability` events.
-pub async fn create_registration_event_stream<Channel: subscriber::Channel>(
+pub async fn create_registration_event_stream<Descriptor>(
     comms: &dyn Communicate,
-    channel: &Channel,
-) -> SdvResult<Pin<Box<dyn futures::Stream<Item = Availability> + Send>>> {
-    let unit_query = UnitQuery::Topic((Channel::type_name()?, channel.get_name().to_string()));
+    descriptor: &Descriptor,
+) -> SdvResult<Pin<Box<dyn futures::Stream<Item = Availability> + Send>>>
+where
+    Descriptor: IntoSubscriberAttributes,
+{
+    let (type_name_obj, topic) = descriptor.to_attributes()?;
+
+    let unit_query = UnitQuery::Topic((type_name_obj, topic));
     comms.create_registration_event_stream(&unit_query).await
 }
 
@@ -46,21 +48,19 @@ pub async fn create_registration_event_stream<Channel: subscriber::Channel>(
 ///
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
-/// * `descriptor` - The descriptor to monitor for availability.
+/// * `descriptor` - The client descriptor to monitor for availability.
 ///
 /// # Returns
 /// A `SdvResult` containing a pinned, boxed, dynamic `Stream` of `Availability` events on
-/// success.
-pub async fn create_server_registration_event_stream<Descriptor: client::Descriptor>(
+/// Success.
+pub async fn create_server_registration_event_stream<Descriptor>(
     comms: &dyn Communicate,
     descriptor: &Descriptor,
-) -> sdv_status_rs::SdvResult<std::pin::Pin<Box<dyn futures::Stream<Item = Availability> + Send>>> {
-    let channel_name = descriptor.get_channel();
-    let type_name = Descriptor::type_name()?;
-    comms
-        .create_registration_event_stream(&UnitQuery::Channel((
-            type_name,
-            channel_name.to_string(),
-        )))
-        .await
+) -> sdv_status_rs::SdvResult<std::pin::Pin<Box<dyn futures::Stream<Item = Availability> + Send>>>
+where
+    Descriptor: IntoRpcClientAttributes,
+{
+    let (type_name, channel) = descriptor.to_attributes()?;
+
+    comms.create_registration_event_stream(&UnitQuery::Channel((type_name, channel))).await
 }

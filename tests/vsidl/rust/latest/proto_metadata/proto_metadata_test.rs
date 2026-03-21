@@ -34,8 +34,8 @@ mod test {
     use sdv::mw::{clientlib, Publisher, SdvComms};
     use sdv_proto_reflection_rs::message_metadata::MessageMetadata;
     // sample
-    use sdv_mw_rs_sdv_vsidl_tests_metadata_sample_bundle::publisher as publisher_foo;
-    use sdv_mw_rs_sdv_vsidl_tests_metadata_sample_bundle_without::publisher as publisher_bar;
+    use sdv_mw_rs_sdv_vsidl_tests_metadata_sample_bundle::PublisherDescriptors as PublisherDescriptorsFoo;
+    use sdv_mw_rs_sdv_vsidl_tests_metadata_sample_bundle_without::PublisherDescriptors as PublisherDescriptorsBar;
     use vsidl_tests_proto_metadata::childdir::Child;
     use vsidl_tests_proto_metadata::reference::Neighbor;
     use vsidl_tests_proto_metadata::sample_message::sample_message::Nested;
@@ -64,7 +64,7 @@ mod test {
         // GIVEN a publisher from a service bundle that does not register message metadata.
         let _publisher = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            publisher_bar::Channel::<SampleMessage>::BAR,
+            PublisherDescriptorsBar::<SampleMessage>::BAR,
         )
         .await
         .expect("creating publisher::BAR failed.");
@@ -95,7 +95,7 @@ mod test {
         // GIVEN a publisher from a service bundle that registers message metadata.
         let publisher = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            publisher_foo::Channel::<SampleMessage>::FOO,
+            PublisherDescriptorsFoo::<SampleMessage>::FOO,
         )
         .await
         .expect("taking xpublisher::FOO failed.");

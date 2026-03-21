@@ -14,24 +14,46 @@
  * limitations under the License.
  */
 
-//! Contains traits related to RPC client channels.
+//! Contains descriptors related to RPC client channels.
+
+use crate::rpc_client::IntoRpcClientAttributes;
+use sdv_mw_rs_comms::{RpcClient, TypeName};
+use sdv_status_rs::SdvResult;
+use std::marker::PhantomData;
+
+/// A descriptor that binds a specific RPC client type to a communication channel
+/// (Code-gen use case)
 ///
-/// The traits in this module are implemented by the `vsidlc` code generator
-/// for channel types. Service bundle authors interact with types that implement
-/// these traits, but should not implement them manually.
-pub mod client {
-    use crate::ToTypeName;
-    use std::fmt::Debug;
+/// This struct carries the identity and configuration required to create an RPC client.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct ClientDescriptor<T> {
+    /// The name of the channel.
+    pub channel: &'static str,
+    /// The fully qualified service name (e.g., "sdv.sample.TireService").
+    pub service: &'static str,
+    /// Marker for the client stub type.
+    pub(crate) _marker: PhantomData<T>,
+}
 
-    /// A descriptor that binds a specific RPC client type to a communication channel.
-    ///
-    /// This trait carries the channel identifier required to connect to the service and
-    /// enforces type safety by associating the specific `ClientType` stub with that channel.
-    pub trait Descriptor: ToTypeName + Debug {
-        /// The client type associated with this descriptor.
-        type ClientType: sdv_mw_rs_comms::RpcClient;
+impl<T> ClientDescriptor<T> {
+    /// Creates a new RPC descriptor with mandatory fields.
+    pub const fn new(channel: &'static str) -> Self {
+        Self { channel, service: "", _marker: PhantomData }
+    }
 
-        #[doc(hidden)]
-        fn get_channel(&self) -> &str;
+    /// Sets the fully qualified service name.
+    pub const fn with_service(mut self, name: &'static str) -> Self {
+        self.service = name;
+        self
+    }
+}
+
+impl<T: RpcClient> IntoRpcClientAttributes for ClientDescriptor<T> {
+    type Client = T;
+
+    fn to_attributes(&self) -> SdvResult<(TypeName, String)> {
+        let type_name_obj = TypeName::from_fqn(self.service)?;
+        Ok((type_name_obj, self.channel.to_string()))
     }
 }

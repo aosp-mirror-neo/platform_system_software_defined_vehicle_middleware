@@ -29,9 +29,12 @@ mod test {
     };
     use sdv::status::SdvResult;
     // test catalog
-    use sdv_mw_rs_sdv_vsidl_sendsync_test_bundle_one::{publisher as publisher_one, BundleOne};
+    use sdv_mw_rs_sdv_vsidl_sendsync_test_bundle_one::{
+        BundleOne, PublisherDescriptors as PublisherDescriptorsOne,
+    };
     use sdv_mw_rs_sdv_vsidl_sendsync_test_bundle_two::{
-        client, publisher as publisher_two, subscriber, BundleTwo,
+        BundleTwo, ClientDescriptors, PublisherDescriptors as PublisherDescriptorsTwo,
+        SubscriberDescriptors,
     };
     use vsidl_sendsync_test_proto::tire::TirePressure;
     use vsidl_sendsync_test_proto::tire_rpc::GetTirePressureResponse;
@@ -140,7 +143,7 @@ mod test {
     async fn publish_repeat(comms: Arc<dyn Communicate>, pressure: u32) {
         let publisher = clientlib::create_publisher(
             comms.as_ref(),
-            publisher_one::Channel::<TirePressure>::FRONT_LEFT,
+            PublisherDescriptorsOne::<TirePressure>::FRONT_LEFT,
         )
         .await
         .expect("creating publisher_one::FRONT_LEFT failed.");
@@ -160,10 +163,12 @@ mod test {
         comms: &dyn Communicate,
     ) -> Option<SdvResult<Vec<TirePressure>>> {
         // Create publisher, to ensure this API is used.
-        let publisher =
-            clientlib::create_publisher(comms, publisher_two::Channel::<TirePressure>::FRONT_RIGHT)
-                .await
-                .expect("taking publisher_two::FRONT_RIGHT failed.");
+        let publisher = clientlib::create_publisher(
+            comms,
+            PublisherDescriptorsTwo::<TirePressure>::FRONT_RIGHT,
+        )
+        .await
+        .expect("taking publisher_two::FRONT_RIGHT failed.");
         publisher
             .publish(&TirePressure { pressure: 0, ..Default::default() })
             .expect("publisher pulishing failed.");
@@ -171,7 +176,7 @@ mod test {
         // Wait for client availability, to ensure create_client API is used.
         let mut stream = clientlib::create_server_registration_event_stream(
             comms,
-            client::Descriptor::<sdv_vsidl_sendsync_test_other_tire_status_rpc::Client>::OTHER_TIRE_STATUS,
+            ClientDescriptors::<sdv_vsidl_sendsync_test_other_tire_status_rpc::Client>::OTHER_TIRE_STATUS,
         )
         .await
         .expect("Server registration event stream creation failed");
@@ -184,7 +189,7 @@ mod test {
 
         clientlib::create_rpc_client(
             comms,
-            client::Descriptor::<sdv_vsidl_sendsync_test_other_tire_status_rpc::Client>::OTHER_TIRE_STATUS,
+            ClientDescriptors::<sdv_vsidl_sendsync_test_other_tire_status_rpc::Client>::OTHER_TIRE_STATUS,
             ClientOptions::default(),
         )
         .await
@@ -193,7 +198,7 @@ mod test {
         // Check publication availability.
         let mut availability_stream = clientlib::create_registration_event_stream(
             comms,
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            SubscriberDescriptors::<TirePressure>::FRONT_LEFT,
         )
         .await
         .expect("Availability stream creation failed");
@@ -206,7 +211,7 @@ mod test {
         // Create all subscribe options to ensure APIs are called.
         let subscribe_result = clientlib::create_subscriber(
             comms,
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            SubscriberDescriptors::<TirePressure>::FRONT_LEFT,
             &SubscribeOptions::default(),
         )
         .await;
@@ -214,7 +219,7 @@ mod test {
 
         let history_result = clientlib::create_history(
             comms,
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            SubscriberDescriptors::<TirePressure>::FRONT_LEFT,
             &SubscribeOptions::builder().message_count(6).build().unwrap(),
         )
         .await;
@@ -222,7 +227,7 @@ mod test {
 
         let instant_result = clientlib::create_instant_reader(
             comms,
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            SubscriberDescriptors::<TirePressure>::FRONT_LEFT,
             &SubscribeOptions::default(),
         )
         .await;
@@ -230,7 +235,7 @@ mod test {
 
         let mut observer = clientlib::create_observer(
             comms,
-            subscriber::Channel::<TirePressure>::FRONT_LEFT,
+            SubscriberDescriptors::<TirePressure>::FRONT_LEFT,
             &SubscribeOptions::default(),
         )
         .await
