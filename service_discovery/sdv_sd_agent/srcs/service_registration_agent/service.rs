@@ -285,6 +285,7 @@ mod test {
     use google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition;
     use protobuf::text_format;
     use sdv_authz::{AclPolicyModel, AclPolicyProvider, AuthzEnforcementFlag, VmAuthzPolicyModel};
+    use sdv_authz::AuthzStrategy;
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
     use sdv_authz_policy_proto_rust::vm_authz_policy::{
         Publisher, Subscriber, Server, Client, VmAuthzPolicy as VmAuthzPolicyProto};
@@ -302,8 +303,12 @@ mod test {
     }
 
     impl AuthzEnforcementFlag for TestAuthzEnforcementFlag {
-        fn is_enabled(&self) -> bool {
-            self.enabled
+        fn get_enforcement_strategy(&self) -> AuthzStrategy {
+            if self.enabled {
+                Default::default()
+            } else {
+                AuthzStrategy::Disabled
+            }
         }
     }
 

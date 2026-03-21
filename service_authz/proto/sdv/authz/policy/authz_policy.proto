@@ -22,20 +22,26 @@ package sdv.authz.policy.authz_policy;
 // Service bundle manifest file may include a path to a policy file that
 // includes an AclPolicy proto.
 message AuthzPolicy {
+  // Deprecated: Use permissions related fields instead.
+  //
   // Optional. List of ACLs.
   //
   // ACL names should be unique for this AclPolicy message.
-  repeated Acl acls = 1;
+  repeated Acl acls = 1 [deprecated = true];
 
+  // Deprecated: Use permissions related fields instead.
+  //
   // Optional. List of Access Control policy for Unit Types.
   //
   // Unit Type names should be unique for this AclPolicy message.
-  repeated UnitAclMapping unit_types = 2;
+  repeated UnitAclMapping unit_types = 2 [deprecated = true];
 
+  // Deprecated: Use permissions related fields instead.
+  //
   // Optional. List of Access Control policy for Service Units.
   //
   // Service Unit names should be unique for this AclPolicy message.
-  repeated UnitAclMapping service_units = 3;
+  repeated UnitAclMapping service_units = 3 [deprecated = true];
 
   // Optional. List of permissions to publish Data Tunnel publications.
   repeated Publisher publisher = 4;

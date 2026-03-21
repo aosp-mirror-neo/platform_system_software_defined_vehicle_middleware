@@ -17,18 +17,17 @@ package {
     default_team: "trendy_team_automotive",
 }
 
+// Deprecated: use sdv_authz_enforcement_flag_lenient_config_template instead
+//
 // NOTE: To run tests using this template in a local dev env, use:
 //
 // NOTIFY_AS_NATIVE=<Test device serial #> atest <test target>
 //
 // For example,
 //   NOTIFY_AS_NATIVE=0.0.0.0:6520 atest sdv_core_middleware_unit_comms_rs_sdk_test
-//
-// WARNING: this filegroup should not be added to other targets anymore.
-//          Instead provide proper ACLs for your targets.
 filegroup {
     name: "sdv_authz_enforcement_flag_enabled_config_template",
-    srcs: ["authz_enforcement_flag_enabled_config_template.xml"],
+    srcs: ["authz_enforcement_flag_lenient_config_template.xml"],
 }
 
 // NOTE: To run tests using this template in a local dev env, use:
@@ -57,4 +56,48 @@ filegroup {
 filegroup {
     name: "sdv_authz_enforcement_flag_disabled_gtest_config_template",
     srcs: ["authz_enforcement_flag_disabled_gtest_config_template.xml"],
+}
+
+// NOTE: To run tests using this template in a local dev env, use:
+//
+// NOTIFY_AS_NATIVE=<Test device serial #> atest <test target>
+//
+// For example,
+//   NOTIFY_AS_NATIVE=0.0.0.0:6520 atest sdv_core_middleware_unit_comms_rs_sdk_test
+filegroup {
+    name: "sdv_authz_enforcement_flag_acls_only_config_template",
+    srcs: ["authz_enforcement_flag_acls_only_config_template.xml"],
+}
+
+// NOTE: To run tests using this template in a local dev env, use:
+//
+// NOTIFY_AS_NATIVE=<Test device serial #> atest <test target>
+//
+// For example,
+//   NOTIFY_AS_NATIVE=0.0.0.0:6520 atest sdv_core_middleware_unit_comms_rs_sdk_test
+filegroup {
+    name: "sdv_authz_enforcement_flag_strict_config_template",
+    srcs: ["authz_enforcement_flag_strict_config_template.xml"],
+}
+
+// NOTE: To run tests using this template in a local dev env, use:
+//
+// NOTIFY_AS_NATIVE=<Test device serial #> atest <test target>
+//
+// For example,
+//   NOTIFY_AS_NATIVE=0.0.0.0:6520 atest sdv_core_middleware_unit_comms_rs_sdk_test
+filegroup {
+    name: "sdv_authz_enforcement_flag_lenient_config_template",
+    srcs: ["authz_enforcement_flag_lenient_config_template.xml"],
+}
+
+// NOTE: To run tests using this template in a local dev env, use:
+//
+// NOTIFY_AS_NATIVE=<Test device serial #> atest <test target>
+//
+// For example,
+//   NOTIFY_AS_NATIVE=0.0.0.0:6520 atest sdv_core_middleware_unit_comms_rs_sdk_test
+filegroup {
+    name: "sdv_authz_enforcement_flag_permissions_only_config_template",
+    srcs: ["authz_enforcement_flag_permissions_only_config_template.xml"],
 }

@@ -54,6 +54,7 @@ rust_defaults {
     installable: false,
     product_available: true,
     vendor_available: true,
+    rustlibs: ["liblibc"],
     apex_available: [
         "//apex_available:platform",
         "//apex_available:anyapex",

@@ -19,7 +19,7 @@ use log::error;
 use rustutils::android::system_properties::read;
 use tracing::{instrument, trace_span};
 
-use sdv_authz::AuthzEnforcementFlag;
+use sdv_authz::{AuthzEnforcementFlag, AuthzStrategy};
 
 const AUTHZ_ENFORCEMENT_FLAG: &str = "sdv.authz.enable";
 
@@ -29,82 +29,87 @@ const AUTHZ_ENFORCEMENT_FLAG_A15: &str = "vendor.sdv.authz.enable";
 
 /// System property based implementation of AuthzEnforcementFlag trait.
 pub struct SystemPropertyAuthzEnforcementFlag {
-    properly_path: &'static str,
+    property_path: &'static str,
 }
 
 impl SystemPropertyAuthzEnforcementFlag {
     /// Creates new instance of SystemPropertyAuthzEnforcementFlag.
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        Self { properly_path: AUTHZ_ENFORCEMENT_FLAG }
+        Self { property_path: AUTHZ_ENFORCEMENT_FLAG }
     }
 
     /// Creates new instance of SystemPropertyAuthzEnforcementFlag for Android 15.
     #[allow(clippy::new_without_default)]
     pub fn new_for_a15() -> Self {
-        Self { properly_path: AUTHZ_ENFORCEMENT_FLAG_A15 }
+        Self { property_path: AUTHZ_ENFORCEMENT_FLAG_A15 }
     }
 
-    fn properly_path(&self) -> &'static str {
-        self.properly_path
+    fn property_path(&self) -> &'static str {
+        self.property_path
     }
 }
 
 impl AuthzEnforcementFlag for SystemPropertyAuthzEnforcementFlag {
-    #[instrument(name = "authz_perf::flag::is_enabled", skip_all)]
-    fn is_enabled(&self) -> bool {
-        authz_enforcement_flag(self.properly_path())
+    #[instrument(name = "authz_perf::flag::get_enforcement_strategy", skip_all)]
+    fn get_enforcement_strategy(&self) -> AuthzStrategy {
+        get_enforcement_strategy_from_property(self.property_path())
     }
 }
 
-/// Returns authz enforcement flag read from `sdv.authz.enable` system property.
+/// Returns authz enforcement strategy read from `sdv.authz.enable` system property.
 ///
-/// Returns `true` if flag is not set correctly, or error during reading system
-/// property, or property does not exist, or failed to determine whether the build
-/// type is "user".
-fn authz_enforcement_flag(properly_path: &str) -> bool {
-    const DEFAULT_FLAG_VALUE: bool = true;
+/// Returns `AuthzStrategy::Lenient` if flag is not set correctly, or error during reading system
+/// property, or property does not exist, or failed to determine whether the build type is "user".
+fn get_enforcement_strategy_from_property(property_path: &str) -> AuthzStrategy {
+    const DEFAULT_ENFORCEMENT_STRATEGY: AuthzStrategy = AuthzStrategy::Lenient;
 
     match is_user_build() {
         Ok(is_user_build) => {
             if is_user_build {
-                // For `user` build we should always return `true` regardless of
-                // `sdv.authz.enable` value.
-                return true;
+                // For `user` build we should always return DEFAULT_ENFORCEMENT_STRATEGY regardless of `sdv.authz.enable` value.
+                return DEFAULT_ENFORCEMENT_STRATEGY;
             }
         }
         Err(err) => {
             error!(
-                r#"Failed to determine whether build type is "user": {err:?}. Defaulting to {DEFAULT_FLAG_VALUE:?}"#
+                r#"Failed to determine whether build type is "user": {err:?}. Defaulting to {DEFAULT_ENFORCEMENT_STRATEGY:?}"#
             );
-            return DEFAULT_FLAG_VALUE;
+            return DEFAULT_ENFORCEMENT_STRATEGY;
         }
     }
 
     let _span = trace_span!("authz_perf::flag::is_enabled_by_system_property").entered();
 
-    match read(properly_path) {
+    match read(property_path) {
         Ok(Some(value)) => match value.as_str() {
-            "1" | "y" | "yes" | "on" | "true" => true,
-            "0" | "n" | "no" | "off" | "false" => false,
+            // Property values mapped to AuthzStrategy enum
+            "acls_only" => AuthzStrategy::AclsOnly,
+            "permissions_only" => AuthzStrategy::PermissionsOnly,
+            "lenient" => AuthzStrategy::Lenient,
+            "strict" => AuthzStrategy::Strict,
+            "disabled" => AuthzStrategy::Disabled,
+            // Legacy property values
+            "true" => AuthzStrategy::Lenient,
+            "false" => AuthzStrategy::Disabled,
             _ => {
                 error!(
-                    r#"{properly_path:?} system property has unexpected value: {value:?}. Defaulting to {DEFAULT_FLAG_VALUE:?}"#
+                    r#"{property_path:?} system property has unexpected value: {value:?}. Defaulting to {DEFAULT_ENFORCEMENT_STRATEGY:?}"#
                 );
-                DEFAULT_FLAG_VALUE
+                DEFAULT_ENFORCEMENT_STRATEGY
             }
         },
         Ok(None) => {
             error!(
-                r#"{properly_path:?} system property does not exist. Defaulting to {DEFAULT_FLAG_VALUE:?}"#
+                r#"{property_path:?} system property does not exist. Defaulting to {DEFAULT_ENFORCEMENT_STRATEGY:?}"#
             );
-            DEFAULT_FLAG_VALUE
+            DEFAULT_ENFORCEMENT_STRATEGY
         }
         Err(err) => {
             error!(
-                r#"Error during reading {properly_path:?} system property: {err:?}. Defaulting to {DEFAULT_FLAG_VALUE:?}"#
+                r#"Error during reading {property_path:?} system property: {err:?}. Defaulting to {DEFAULT_ENFORCEMENT_STRATEGY:?}"#
             );
-            DEFAULT_FLAG_VALUE
+            DEFAULT_ENFORCEMENT_STRATEGY
         }
     }
 }
