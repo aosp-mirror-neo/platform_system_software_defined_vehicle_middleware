@@ -27,7 +27,7 @@ mod test {
     use sdv::comms::ContextRef;
     use sdv::mw::{clientlib, SdvComms, SubscribeOptions};
     // test catalog
-    use sdv_mw_rs_sdv_vsidl_multipub_test_hvac_control::subscriber as hvac_subscriber;
+    use sdv_mw_rs_sdv_vsidl_multipub_test_hvac_control::SubscriberDescriptors as HvacSubscriberDescriptors;
     use vsidl_multipub_test::cabin::CabinTemperature;
 
     #[tokio::test]
@@ -46,42 +46,41 @@ mod test {
         let cabin_pub =
             clientlib::create_publisher(
                 sdv_comms.as_ref(),
-                sdv_mw_rs_sdv_vsidl_multipub_test_cabin_sensor::publisher::Channel::<
+                sdv_mw_rs_sdv_vsidl_multipub_test_cabin_sensor::PublisherDescriptors::<
                     CabinTemperature,
                 >::MULTIPUB,
             )
             .await
             .expect("taking cabin pub failed.");
         // AND GIVEN a second 'mutlipub' publisher.
-        let footwell_pub =
-            clientlib::create_publisher(
-                sdv_comms.as_ref(),
-                sdv_mw_rs_sdv_vsidl_multipub_test_footwell_sensor::publisher::Channel::<
-                    CabinTemperature,
-                >::MULTIPUB,
-            )
-            .await
-            .expect("taking footwell pub failed.");
+        let footwell_pub = clientlib::create_publisher(
+            sdv_comms.as_ref(),
+            sdv_mw_rs_sdv_vsidl_multipub_test_footwell_sensor::PublisherDescriptors::<
+                CabinTemperature,
+            >::MULTIPUB,
+        )
+        .await
+        .expect("taking footwell pub failed.");
 
         // AND GIVEN a 'multipub' subscriber, observer
         // and history reader (see VSIDL declaration).
         let subscriber = sdv::mw::clientlib::create_subscriber(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
+            HvacSubscriberDescriptors::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
         .await
         .expect("Create CabinTemperature subscriber failed.");
         let mut observer = sdv::mw::clientlib::create_observer(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
+            HvacSubscriberDescriptors::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
         .await
         .expect("Create CabinTemperature observer failed.");
         let history_reader = sdv::mw::clientlib::create_history(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
+            HvacSubscriberDescriptors::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::builder().message_count(10).build().unwrap(),
         )
         .await
@@ -141,7 +140,7 @@ mod test {
         // WHEN trying to instant read a multipub message.
         let instant_reader = sdv::mw::clientlib::create_instant_reader(
             sdv_comms.as_ref(),
-            hvac_subscriber::Channel::<CabinTemperature>::MULTIPUB,
+            HvacSubscriberDescriptors::<CabinTemperature>::MULTIPUB,
             &SubscribeOptions::default(),
         )
         .await
@@ -170,7 +169,7 @@ mod test {
         // GIVEN a NEW 'multipub' publisher (see VSIDL declaration).
         let passenger_pub = clientlib::create_publisher(
             sdv_comms.as_ref(),
-            sdv_mw_rs_sdv_vsidl_multipub_test_passenger_sensor::publisher::Channel::<
+            sdv_mw_rs_sdv_vsidl_multipub_test_passenger_sensor::PublisherDescriptors::<
                 CabinTemperature,
             >::MULTIPUB,
         )

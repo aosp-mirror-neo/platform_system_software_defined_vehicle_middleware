@@ -18,27 +18,32 @@
 use sdv_mw_rs_comms::TypeName;
 use sdv_status_rs::SdvResult;
 
-/// Channel
-pub mod channel;
-pub use channel::{publisher, subscriber};
-
 /// PubSub
 pub mod subscribe;
 pub use subscribe::*;
 pub mod publish;
 pub use publish::*;
+pub mod pubsub_descriptor;
+pub use pubsub_descriptor::{
+    PublisherDescriptor, PublisherDescriptorFull, SubscriberDescriptor, SubscriberDescriptorFull,
+};
+
+pub(crate) mod topic_utils;
 
 /// RPC
 pub mod rpc_client;
 pub use rpc_client::*;
 pub mod rpc_descriptor;
-pub use rpc_descriptor::client;
+pub use rpc_descriptor::ClientDescriptor;
 pub mod rpc_server;
 pub use rpc_server::*;
 
 /// Availability
 pub mod availability;
 pub use availability::*;
+
+#[cfg(test)]
+mod tests;
 
 /// A trait for vsidlc-generated types (channels and services) to provide their logical type
 /// identifier.

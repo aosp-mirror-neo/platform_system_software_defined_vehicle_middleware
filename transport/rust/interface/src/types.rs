@@ -133,10 +133,24 @@ impl fmt::Display for TypeName {
     }
 }
 
+impl TryFrom<&str> for TypeName {
+    type Error = SdvStatus;
+
+    fn try_from(fqn: &str) -> SdvResult<Self> {
+        Self::from_fqn(fqn)
+    }
+}
+
 impl TypeName {
     /// returns a Builder for TypeName
     pub fn builder() -> TypeNameBuilder {
         TypeNameBuilder::default()
+    }
+    /// Creates a TypeName from a fully qualified name (e.g. "sdv.sample.Pressure").
+    /// If no dot is present, the package name is empty.
+    pub fn from_fqn(fqn: &str) -> SdvResult<Self> {
+        let (package, name) = fqn.rsplit_once('.').unwrap_or(("", fqn));
+        Self::builder().package_name(package).type_name(name).build()
     }
     /// package name
     pub fn get_package_name(&self) -> &str {
@@ -791,6 +805,37 @@ mod test {
         // Explicitly test the Display trait implementation
         let expected_display = format!("{}.{}", package_name, type_name_name);
         assert_eq!(format!("{}", type_name), expected_display);
+    }
+
+    #[test]
+    fn test_type_name_from_fqn() {
+        let fqn = "sdv.sample.Pressure";
+        let result = TypeName::from_fqn(fqn);
+        assert!(result.is_ok());
+        let type_name = result.unwrap();
+        assert_eq!(type_name.get_package_name(), "sdv.sample");
+        assert_eq!(type_name.get_type_name(), "Pressure");
+
+        let fqn_no_dot = "Pressure";
+        let result = TypeName::from_fqn(fqn_no_dot);
+        assert!(result.is_ok());
+        let type_name = result.unwrap();
+        assert_eq!(type_name.get_package_name(), "");
+        assert_eq!(type_name.get_type_name(), "Pressure");
+
+        let fqn_multiple_dots = "a.b.c.D";
+        let result = TypeName::from_fqn(fqn_multiple_dots);
+        assert!(result.is_ok());
+        let type_name = result.unwrap();
+        assert_eq!(type_name.get_package_name(), "a.b.c");
+        assert_eq!(type_name.get_type_name(), "D");
+
+        // Test TryFrom
+        let try_result: SdvResult<TypeName> = fqn.try_into();
+        assert!(try_result.is_ok());
+        let type_name = try_result.unwrap();
+        assert_eq!(type_name.get_package_name(), "sdv.sample");
+        assert_eq!(type_name.get_type_name(), "Pressure");
     }
 
     #[test]

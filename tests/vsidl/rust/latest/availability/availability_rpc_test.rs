@@ -27,7 +27,7 @@ mod test {
     use sdv::mw::{Availability, ClientOptions, SdvComms};
     use sdv::status::{SdvResult, SdvStatus, SdvStatusCode};
     // test catalog
-    use sdv_mw_rs_sdv_vsidl_rpc_test_tire_status_consumer::client;
+    use sdv_mw_rs_sdv_vsidl_rpc_test_tire_status_consumer::ClientDescriptors;
     use sdv_mw_rs_sdv_vsidl_rpc_test_tire_status_producer::TireStatusProducer;
     use sdv_vsidl_rpc_test_tire_status_rpc::Interface;
     use vsidl_rpc_test_proto::tire_rpc::{
@@ -85,7 +85,7 @@ mod test {
         let mut registration_event_stream_before =
             clientlib::create_server_registration_event_stream(
                 sdv_comms.as_ref(),
-                client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
+                ClientDescriptors::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
             )
             .await
             .unwrap();
@@ -104,7 +104,7 @@ mod test {
         let mut registration_event_stream_after =
             clientlib::create_server_registration_event_stream(
                 sdv_comms.as_ref(),
-                client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
+                ClientDescriptors::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
             )
             .await
             .unwrap();
@@ -124,7 +124,7 @@ mod test {
         // AND THEN the client can make a successful request
         let client = clientlib::create_rpc_client(
             sdv_comms.as_ref(),
-            client::Descriptor::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
+            ClientDescriptors::<sdv_vsidl_rpc_test_tire_status_rpc::Client>::TIRE_STATUS_UNARY,
             ClientOptions::default(),
         )
         .await

@@ -51,3 +51,16 @@ rust_library {
     defaults: ["sdv_mw_clientlib_defaults"],
     min_sdk_version: "35",
 }
+
+rust_test {
+    name: "libsdv_mw_clientlib_test",
+    crate_name: "sdv_mw_clientlib_test",
+    defaults: ["sdv_mw_clientlib_defaults"],
+    test_suites: ["general-tests"],
+    auto_gen_config: true,
+    rustlibs: [
+        "libsdv_mw_commstests_protos",
+        "libsdv_mw_local_comms",
+        "libtokio",
+    ],
+}
