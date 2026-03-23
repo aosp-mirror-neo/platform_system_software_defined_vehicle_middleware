@@ -67,9 +67,17 @@ cc_defaults {
 }
 
 cc_library {
-    name: "dt_agent_lib",
+    name: "dt_agent_lib_vendor",
+    stem: "dt_agent_lib",
     defaults: ["dt_agent_defaults"],
     vendor: true,
+    min_sdk_version: "35",
+}
+
+cc_library {
+    name: "dt_agent_lib",
+    defaults: ["dt_agent_defaults"],
+    system_ext_specific: true,
     min_sdk_version: "35",
 }
 

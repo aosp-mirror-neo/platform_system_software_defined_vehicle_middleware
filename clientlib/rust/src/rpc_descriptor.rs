@@ -57,3 +57,59 @@ impl<T: RpcClient> IntoRpcClientAttributes for ClientDescriptor<T> {
         Ok((type_name_obj, self.channel.to_string()))
     }
 }
+
+#[cfg(test)]
+#[allow(dead_code)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use futures::Stream;
+    use sdv_mw_rs_comms::ClientTransport;
+    use sdv_status_rs::SdvResult;
+    use std::pin::Pin;
+
+    struct ClientTransportStub;
+
+    #[async_trait]
+    impl ClientTransport for ClientTransportStub {
+        async fn call_method(&self, _method: &str, _request: &[u8]) -> SdvResult<Vec<u8>> {
+            Ok(vec![])
+        }
+        async fn call_client_streaming_method(
+            &self,
+            _method_name: &str,
+            _request_stream: Pin<Box<dyn Stream<Item = Vec<u8>> + Send>>,
+        ) -> SdvResult<Vec<u8>> {
+            Ok(vec![])
+        }
+        async fn call_server_streaming_method(
+            &self,
+            _method_name: &str,
+            _request: &[u8],
+        ) -> SdvResult<Pin<Box<dyn Stream<Item = SdvResult<Vec<u8>>> + Send>>> {
+            unimplemented!()
+        }
+    }
+
+    struct RpcClientStub {
+        _transport: Box<dyn ClientTransport>,
+    }
+
+    impl RpcClient for RpcClientStub {
+        const DEFAULT_UNIT_NAME: &'static str = "mock-rpc-stub";
+        fn new(transport: Box<dyn ClientTransport>) -> Self {
+            Self { _transport: transport }
+        }
+    }
+
+    #[test]
+    fn test_client_descriptor_to_attributes() {
+        let desc = ClientDescriptor::<RpcClientStub>::new("main-channel")
+            .with_service("sdv.sample.TireService");
+
+        let (type_name, channel) = desc.to_attributes().expect("Failed to convert to attributes");
+        assert_eq!(channel, "main-channel");
+        assert_eq!(type_name.get_package_name(), "sdv.sample");
+        assert_eq!(type_name.get_type_name(), "TireService");
+    }
+}
