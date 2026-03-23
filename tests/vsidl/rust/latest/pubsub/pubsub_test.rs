@@ -153,7 +153,7 @@ mod test {
         sdv::mw::History<TirePressure>,
         sdv::mw::InstantReader<TirePressure>,
     ) {
-        // Channels depends on a SD listener that needs a running binder thread.
+        // SdvComms requires a running binder thread.
         binder::ProcessState::start_thread_pool();
 
         let sdv_comms = create_sdv_comms(instance_name);

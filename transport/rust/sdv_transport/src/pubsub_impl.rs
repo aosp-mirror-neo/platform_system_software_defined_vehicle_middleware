@@ -41,7 +41,7 @@ fn allocate_buffer(buffer_size: usize) -> SdvResult<Vec<u8>> {
 }
 
 static_assertions::assert_impl_all!(SdvPublisher: Send);
-/// SdvComms-specific implementation of a producer-side endpoint to a publication (message channel).
+/// SdvComms-specific implementation of a producer-side endpoint to a publication (message queue).
 ///
 /// Intended to be used within the MW library code. Is not exposed to the user.
 pub struct SdvPublisher {
@@ -103,7 +103,7 @@ impl Publish for SdvPublisher {
 
 static_assertions::assert_impl_all!(SdvPublication: Send);
 static_assertions::assert_impl_all!(SdvPublication: Sync);
-/// SdvComms-specific representation of a message channel, which offers different methods for consuming messages.
+/// SdvComms-specific representation of a message queue, which offers different methods for consuming messages.
 ///
 /// Intended to be used within the MW library code. Is not exposed to the user.
 pub struct SdvPublication {

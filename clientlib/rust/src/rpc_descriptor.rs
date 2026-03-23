@@ -21,28 +21,33 @@ use sdv_mw_rs_comms::{RpcClient, TypeName};
 use sdv_status_rs::SdvResult;
 use std::marker::PhantomData;
 
-/// A descriptor that binds a specific RPC client type to a communication channel
-/// (Code-gen use case)
+/// A descriptor that binds an RPC client type to a specific communication channel.
 ///
-/// This struct carries the identity and configuration required to create an RPC client.
+/// This descriptor carries the service (interface type) and channel (logical identity)
+/// required to instantiate an RPC client stub.
+///
+/// This variant uses static strings and is typically employed by generated code.
+///
+/// # Type Parameters
+/// * `T`: The RPC client stub type (must implement [`RpcClient`]).
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ClientDescriptor<T> {
-    /// The name of the channel.
+    /// The identifier of the communication channel to use.
     pub channel: &'static str,
-    /// The fully qualified service name (e.g., "sdv.sample.TireService").
+    /// The fully qualified name of the RPC service (e.g., "sdv.sample.TireService").
     pub service: &'static str,
     /// Marker for the client stub type.
     pub(crate) _marker: PhantomData<T>,
 }
 
 impl<T> ClientDescriptor<T> {
-    /// Creates a new RPC descriptor with mandatory fields.
+    /// Creates a new RPC client descriptor with the specified channel name.
     pub const fn new(channel: &'static str) -> Self {
         Self { channel, service: "", _marker: PhantomData }
     }
 
-    /// Sets the fully qualified service name.
+    /// Sets the fully qualified service name for this RPC client.
     pub const fn with_service(mut self, name: &'static str) -> Self {
         self.service = name;
         self

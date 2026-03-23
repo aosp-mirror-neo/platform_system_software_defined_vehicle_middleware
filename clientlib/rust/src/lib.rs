@@ -40,10 +40,10 @@ pub use rpc_server::*;
 pub mod availability;
 pub use availability::*;
 
-/// A trait for vsidlc-generated types (channels and services) to provide their logical type
+/// A trait for vsidlc-generated services to provide their logical type
 /// identifier.
 ///
-/// vsidlc generates an implementation for each channel and service interface.
+/// vsidlc generates an implementation for each service interface.
 /// # Stability
 /// The implementation details of this trait (methods and associated constants) are not part of the public API and are unstable.
 /// They are subject to breaking changes or removal in any future version. Service bundle authors must not rely on these internal details.
