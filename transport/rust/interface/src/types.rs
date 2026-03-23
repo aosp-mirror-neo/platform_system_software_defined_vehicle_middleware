@@ -301,12 +301,19 @@ impl PublisherAttributesBuilder {
         };
         // LINT.ThenChange(software_defined_vehicle/vsidl/language/src/visitors/convert_channel_to_topic.rs:set_multipub_topic)
 
-        Ok(PublisherAttributes {
-            publication_name: self.publication_name,
-            type_name,
-            topic_name,
-            metadata: self.metadata,
-        })
+        let publication_name = if self.publication_name.is_empty() {
+            // To remain backward-compatible with previous versions, where publication name was used for discovery,
+            // set publication name to the expected format.
+            crate::format_to_kebab_case(
+                type_name.get_package_name(),
+                type_name.get_type_name(),
+                &topic_name,
+            )
+        } else {
+            self.publication_name
+        };
+
+        Ok(PublisherAttributes { publication_name, type_name, topic_name, metadata: self.metadata })
     }
 }
 /// PublisherMetadata
@@ -898,6 +905,35 @@ mod test {
         // com.android.test -> com-android-test, TestMessage -> test-message, suffix -> unique
         // combined: com-android-test-test-message-unique
         assert_eq!(publisher_attributes.get_topic_name(), "com-android-test-test-message-unique");
+    }
+
+    #[test]
+    fn test_publisher_attributes_builder_empty_publication_name() {
+        let package_name = "com.android.test";
+        let type_name_str = "TestMessage";
+        let type_name = TypeName::builder()
+            .package_name(package_name)
+            .type_name(type_name_str)
+            .build()
+            .unwrap();
+        let topic_name = "test-topic";
+        let metadata = PublisherMetadata::builder().build().unwrap();
+
+        // Publication name is empty, so it should be generated
+        let result = PublisherAttributes::builder()
+            .type_name(type_name)
+            .topic_name(topic_name)
+            .metadata(metadata)
+            .build();
+
+        assert!(result.is_ok());
+        let publisher_attributes = result.unwrap();
+        // com.android.test -> com-android-test, TestMessage -> test-message, topic_name -> test-topic
+        // combined: com-android-test-test-message-test-topic
+        assert_eq!(
+            publisher_attributes.get_publication_name(),
+            "com-android-test-test-message-test-topic"
+        );
     }
 
     #[test]

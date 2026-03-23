@@ -28,8 +28,6 @@ pub use pubsub_descriptor::{
     PublisherDescriptor, PublisherDescriptorFull, SubscriberDescriptor, SubscriberDescriptorFull,
 };
 
-pub(crate) mod topic_utils;
-
 /// RPC
 pub mod rpc_client;
 pub use rpc_client::*;
@@ -41,9 +39,6 @@ pub use rpc_server::*;
 /// Availability
 pub mod availability;
 pub use availability::*;
-
-#[cfg(test)]
-mod tests;
 
 /// A trait for vsidlc-generated types (channels and services) to provide their logical type
 /// identifier.

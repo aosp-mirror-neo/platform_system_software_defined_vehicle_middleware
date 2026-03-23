@@ -33,6 +33,7 @@ rust_defaults {
         "libsdv_comms_rs",
         "libsdv_proto_reflection_rs",
         "libmockall",
+        "libsdv_proto_utils",
     ],
     proc_macros: [
         "libasync_trait",
