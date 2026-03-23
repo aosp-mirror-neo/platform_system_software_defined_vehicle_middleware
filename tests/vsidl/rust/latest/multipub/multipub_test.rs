@@ -18,6 +18,7 @@
 mod test {
     // rust
     use futures::StreamExt;
+    use rand::Rng;
     use std::str::FromStr;
     use std::sync::Arc;
     use std::thread;
@@ -37,9 +38,11 @@ mod test {
         const MULTIPUB_PROCESSING_DURATION: Duration = Duration::from_millis(200);
         const OBSERVER_TIMEOUT_DURATION: Duration = Duration::from_millis(500);
 
-        let context = ContextRef::create(
-            ServiceFqin::from_str("vm:sdv.vsidl.multipub.test.MultipubTest/sample").unwrap(),
-        );
+        let mut rng = rand::thread_rng();
+        let random_instance: String = (0..40).map(|_| rng.gen_range(b'a'..=b'z') as char).collect();
+        let randomized_fqin = format!("vm:sdv.vsidl.multipub.test.MultipubTest/{random_instance}");
+        let context = ContextRef::create(ServiceFqin::from_str(&randomized_fqin).unwrap());
+
         let sdv_comms = Arc::new(SdvComms { context });
 
         // GIVEN a 'multipub' publisher (see VSIDL declaration).
