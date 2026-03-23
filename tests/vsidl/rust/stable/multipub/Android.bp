@@ -28,6 +28,7 @@ rust_defaults {
         "libvsidl_test_stable_multipub_protos",
         "libprotobuf",
         "liblog_rust",
+        "librand",
         "libsdv_rs",
         "libtokio",
         "libfutures",
