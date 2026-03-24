@@ -39,7 +39,7 @@ pub trait IntoSubscriberAttributes {
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
 /// * `descriptor` - The subscriber descriptor for the publication.
-/// * `options` - Subscription options, which can specify details like the target VM or instance.
+/// * `options` - Subscription options, which can specify details like `read_on_subscribe`.
 ///
 /// # Returns
 /// A `SdvResult` containing a `Subscriber` for the topic's `Proto` type.
@@ -64,7 +64,7 @@ where
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
 /// * `descriptor` - The subscriber descriptor for the publication.
-/// * `options` - Subscription options, which can specify details like the target VM or instance.
+/// * `options` - Subscription options, which can specify details like minimum callback interval.
 ///
 /// # Returns
 /// A `SdvResult` containing a pinned, boxed, dynamic `Stream` that yields vectors of the topic's `Proto` type.
@@ -114,7 +114,7 @@ where
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
 /// * `descriptor` - The subscriber descriptor for the publication.
-/// * `options` - Subscription options, which can specify details like the target VM or instance.
+/// * `options` - Subscription options.
 ///
 /// # Returns
 /// A `SdvResult` containing an `InstantReader` for the topic's `Proto` type.
