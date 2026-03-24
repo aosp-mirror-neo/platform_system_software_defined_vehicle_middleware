@@ -37,6 +37,24 @@ pub fn encode<M: Message>(message: &M) -> SdvResult<Box<[u8]>> {
     }
 }
 
+/// Serializes a proto message and appends it to a vector, prepended with the message length.
+///
+/// Appends the encoded message to the end of the vector.
+/// Will resize the vector if the capacity isn't sufficient for the encoded message.
+///
+/// # Arguments
+/// * `message` - The protobuf message to encode.
+/// * `buffer` - The vector to which the encoded message will be appended.
+///
+/// # Errors
+/// Returns `SdvStatusCode::Internal` if proto encoding fails.
+#[tracing::instrument(name = "MW::Codec<M>::encode_to_vec", skip(message, buffer))]
+pub fn encode_to_vec<M: Message>(message: &M, buffer: &mut Vec<u8>) -> SdvResult<()> {
+    message
+        .write_length_delimited_to_vec(buffer)
+        .map_err(|_| SdvStatus::with_message(SdvStatusCode::Internal, "Proto encoding failed."))
+}
+
 /// Decodes a proto message from a byte buffer with encoded message length, which is read from the pub/sub comms implementation.
 #[tracing::instrument(name = "MW::Codec<M>::decode", skip(bytes))]
 pub fn decode<M: Message>(bytes: &[u8]) -> SdvResult<M> {
@@ -184,5 +202,32 @@ mod tests {
         // THEN encode bytes are identical to expected bytes
         assert_eq!(encoded_bytes[0], expected_length_delimiter);
         assert_eq!(&encoded_bytes[1..], expected_protobuf_bytes.as_slice());
+    }
+
+    #[test]
+    fn test_encode_to_vec_behavior() {
+        // GIVEN a non-empty vector with some initial data
+        let mut buffer = vec![0xAA, 0xBB];
+        let initial_len = buffer.len();
+
+        // AND a message to encode
+        let message = create_test_message(100);
+        let encoded_msg = encode(&message).expect("encode failed");
+
+        // WHEN encode_to_vec is called
+        encode_to_vec(&message, &mut buffer).expect("encode_to_vec failed");
+
+        // THEN the message is appended to the vector
+        assert_eq!(buffer.len(), initial_len + encoded_msg.len());
+        assert_eq!(&buffer[..initial_len], &[0xAA, 0xBB]);
+        assert_eq!(&buffer[initial_len..], encoded_msg.as_ref());
+
+        // AND WHEN we encode another message
+        let message2 = create_test_message(200);
+        let encoded_msg2 = encode(&message2).expect("encode failed");
+        encode_to_vec(&message2, &mut buffer).expect("encode_to_vec failed");
+
+        // THEN it is also appended
+        assert_eq!(buffer.len(), initial_len + encoded_msg.len() + encoded_msg2.len());
     }
 }

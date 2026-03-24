@@ -20,27 +20,54 @@ use crate::codec;
 use crate::{ByteBuffersStream, InstantRead, Publish, ReadHistory, Subscribe};
 use futures::stream::Stream;
 use futures::StreamExt;
+use log::warn;
 use protobuf::Message;
-use sdv_status_rs::SdvResult;
+use sdv_status_rs::{SdvResult, SdvStatus, SdvStatusCode};
+use std::cmp::min;
 use std::marker::PhantomData;
 use std::pin::Pin;
 
 /// Publisher represents the user-facing, typed producer for a message queue.
 pub struct Publisher<M: Message> {
     publish_handle: Box<dyn Publish>,
+    write_buffer: Vec<u8>,
+    max_msg_size: Option<usize>,
+    queue_capacity: Option<usize>,
     ptd: PhantomData<M>,
 }
 
 impl<M: Message> Publisher<M> {
     /// Create an instance of a typed Publisher
     pub fn new(publish_handle: Box<dyn Publish>) -> Self {
-        Self { publish_handle, ptd: PhantomData }
+        Self {
+            publish_handle,
+            write_buffer: Vec::new(),
+            max_msg_size: None,
+            queue_capacity: None,
+            ptd: PhantomData,
+        }
     }
 
     /// Serializes and publishes a proto message.
     #[tracing::instrument(name = "MW::Publisher<M>::publish", skip(self, message))]
     pub fn publish(&self, message: &M) -> SdvResult<()> {
         self.publish_batch([message])
+    }
+
+    /// Serializes and publishes a single proto message using an internal, resizable buffer.
+    ///
+    /// This is a more efficient alternative to the standard `publish` method. While `publish`
+    /// is immutable and performs a new allocation per call, this method reuses a pre-allocated
+    /// internal buffer to minimize heap overhead during frequent publishing.
+    ///
+    /// Unlike `publish`, this method requires a **mutable reference** (`&mut self`) because
+    /// it must modify the state of the internal serialization buffer. Use this version when
+    /// your workflow allows for exclusive access to the `Publisher` to gain better performance.
+    ///
+    /// This is a convenience wrapper around `publish_batch_buffered`.
+    #[tracing::instrument(name = "MW::Publisher<M>::publish_buffered", skip(self, message))]
+    pub fn publish_buffered(&mut self, message: &M) -> SdvResult<()> {
+        self.publish_batch_buffered(std::slice::from_ref(message))
     }
 
     /// Serializes and publishes a batch of proto messages.
@@ -55,18 +82,121 @@ impl<M: Message> Publisher<M> {
             Ok(_byte_buffers) => self.publish_handle.publish_messages(&_byte_buffers),
         }
     }
+
+    /// Serializes and publishes a batch of proto messages using an internal, resizable buffer.
+    ///
+    /// This is a more efficient alternative to `publish_batch`. While `publish_batch` (and `publish`)
+    /// are immutable and perform allocations per call, this method reuses an internal buffer
+    /// to minimize heap allocations during frequent publishing.
+    ///
+    /// Unlike the legacy `publish_batch`, this method requires a **mutable reference** (`&mut self`)
+    /// to manage and grow the underlying serialization buffer. Use this when your workflow allows
+    /// for exclusive access to the `Publisher` and you prioritize throughput.
+    ///
+    /// Each message is serialized and padded with zeros to `max_msg_size`.
+    #[tracing::instrument(name = "MW::Publisher<M>::publish_batch_buffered", skip(self, messages))]
+    pub fn publish_batch_buffered(&mut self, messages: &[M]) -> SdvResult<()> {
+        let max_msg_size = self.get_max_message_size()?;
+        let queue_capacity = self.get_queue_capacity()?;
+
+        if messages.len() > queue_capacity {
+            return Err(SdvStatus::with_message(
+                SdvStatusCode::Internal,
+                format!(
+                    "Publishing {} messages, but queue capacity is only {}.",
+                    messages.len(),
+                    queue_capacity
+                ),
+            ));
+        }
+
+        let message_count = messages.len();
+        if message_count == 0 {
+            return Ok(());
+        }
+
+        // Vec::clear() is expected O(1) for vector of primitives
+        // Capacity is retained.
+        self.write_buffer.clear();
+
+        // We know ahead of time the buffer size.
+        // Reserve (i.e. potentially reallocate) more memory once.
+        // Does nothing if the capacity is already sufficient.
+        self.write_buffer.reserve(max_msg_size * message_count);
+
+        // Serialize, pad, and publish.
+        Self::encode_fixed_size_messages_into_vec(
+            messages.iter(),
+            &mut self.write_buffer,
+            max_msg_size,
+        )?;
+        self.publish_handle.publish_flat_batch(&self.write_buffer)
+    }
+
+    fn get_max_message_size(&mut self) -> SdvResult<usize> {
+        if let Some(size) = self.max_msg_size {
+            return Ok(size);
+        }
+        let size = self.publish_handle.get_max_message_size()?;
+        self.max_msg_size = Some(size);
+        Ok(size)
+    }
+
+    fn get_queue_capacity(&mut self) -> SdvResult<usize> {
+        if let Some(capacity) = self.queue_capacity {
+            return Ok(capacity);
+        }
+        let capacity = self.publish_handle.get_queue_capacity()?;
+        self.queue_capacity = Some(capacity);
+        Ok(capacity)
+    }
+
+    /// Encodes an iterator of messages into a buffer, where each message is padded to a fixed size.
+    ///
+    /// This helper function serializes each message and then resizes the buffer to ensure each
+    /// message occupies a `fixed_msg_size` block of memory, padding with zeros if necessary.
+    /// This is required by underlying communication layers that expect fixed-size message chunks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `InvalidArgument` error if any single message, after serialization, is larger
+    /// than `fixed_msg_size`.
+    fn encode_fixed_size_messages_into_vec<'a>(
+        messages: impl IntoIterator<Item = &'a M>,
+        buffer: &mut Vec<u8>,
+        fixed_msg_size: usize,
+    ) -> SdvResult<()> {
+        for message in messages {
+            let current_len = buffer.len();
+            codec::encode_to_vec(message, buffer)?;
+            let encoded_len = buffer.len() - current_len;
+            if encoded_len > fixed_msg_size {
+                return Err(SdvStatus::with_message(
+                    SdvStatusCode::InvalidArgument,
+                    format!(
+                        "Message is too long: {} bytes (max: {} bytes)",
+                        encoded_len, fixed_msg_size
+                    ),
+                ));
+            }
+            buffer.resize(current_len + fixed_msg_size, 0);
+        }
+        Ok(())
+    }
 }
 
 /// Subscriber represents the user-facing, polling, typed consumer for a named queue.
 pub struct Subscriber<M: Message> {
     handle: Box<dyn Subscribe>,
+    read_buffer: Vec<u8>,
+    max_msg_size: Option<usize>,
     ptd: PhantomData<M>,
 }
 
 impl<M: Message> Subscriber<M> {
     /// Create an instance of a typed Subscriber.
     pub fn new(handle: Box<dyn Subscribe>) -> Self {
-        Self { handle, ptd: PhantomData }
+        Self { handle, read_buffer: Vec::new(), max_msg_size: None, ptd: PhantomData }
     }
 
     /// Returns an SdvResult containing a vector of messages from the publication queue.
@@ -78,6 +208,58 @@ impl<M: Message> Subscriber<M> {
             .iter()
             .map(|bytes| codec::decode(bytes))
             .collect()
+    }
+
+    /// Returns an SdvResult containing a vector of next messages from the publication queue.
+    /// The returned message count is min(message_count, available_to_read).
+    ///
+    /// This method reuses an internal buffer to minimize allocations, offering better performance
+    /// for frequent reads. It requires a mutable reference to the `Subscriber`.
+    #[tracing::instrument(name = "MW::Subscriber<M>::read_next_messages_buffered", skip(self))]
+    pub fn read_next_messages_buffered(&mut self, message_count: u32) -> SdvResult<Vec<M>> {
+        let max_msg_size = self.get_max_message_size()?;
+
+        let buffer_size = self.get_buffer_size(message_count)?;
+        if buffer_size == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Resize instead of reservere.
+        // The buffer needs a min length (not capacity).
+        // Optimized for allocations, i.e. to only ever grow, not truncate and re-allocate upon repeat calls.
+        if self.read_buffer.len() < buffer_size {
+            self.read_buffer.resize(buffer_size, 0);
+        }
+
+        // Pass the exact buffer size, required by the underlying implementation.
+        let count = self.handle.read_flat_batch(&mut self.read_buffer[..buffer_size])?;
+        self.read_buffer
+            .chunks_exact(max_msg_size)
+            .take(count)
+            .map(|chunk| codec::decode(chunk))
+            .collect()
+    }
+
+    #[tracing::instrument(name = "get_buffer_size", skip(self))]
+    fn get_buffer_size(&mut self, requested_count: u32) -> SdvResult<usize> {
+        let message_count =
+            min(self.handle.get_available_to_read_count()?, requested_count as usize);
+
+        // Emit an info event with the updated value
+        tracing::info!(message_count, "Actually read message count");
+        self.get_max_message_size()?.checked_mul(message_count).ok_or_else(|| {
+            SdvStatus::with_message(SdvStatusCode::Internal, "Buffer size calculation overflowed.")
+        })
+    }
+
+    fn get_max_message_size(&mut self) -> SdvResult<usize> {
+        if let Some(size) = self.max_msg_size {
+            return Ok(size);
+        }
+
+        let size = self.handle.get_max_message_size()?;
+        self.max_msg_size = Some(size);
+        Ok(size)
     }
 }
 
@@ -174,6 +356,8 @@ mod tests {
     fn test_publisher_new() {
         // GIVEN a mock publish handle
         let mut mock_publish = MockPublish::new();
+        mock_publish.expect_get_max_message_size().returning(|| Ok(1024));
+        mock_publish.expect_get_queue_capacity().returning(|| Ok(10));
         mock_publish.expect_publish_messages().returning(|_| Ok(()));
 
         // WHEN create new publisher
@@ -181,6 +365,25 @@ mod tests {
         let test_message = create_string_value_message("test_message");
         // AND publish a message
         let result = publisher.publish(&test_message);
+
+        // THEN result is ok
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_publisher_publish_buffered() {
+        // GIVEN a mock publish handle
+        let mut mock_publish = MockPublish::new();
+        mock_publish.expect_get_max_message_size().returning(|| Ok(1024));
+        mock_publish.expect_get_queue_capacity().returning(|| Ok(10));
+        mock_publish.expect_publish_flat_batch().returning(|_| Ok(()));
+
+        // WHEN create new publisher
+        let mut publisher: Publisher<StringValue> = Publisher::new(Box::new(mock_publish));
+        let test_message = create_string_value_message("test_message_buffered");
+
+        // AND publish a message buffered
+        let result = publisher.publish_buffered(&test_message);
 
         // THEN result is ok
         assert!(result.is_ok());
@@ -198,6 +401,7 @@ mod tests {
 
         // GIVEN a mock subscribe handle that expects to be called once and return two messages
         let mut mock_subscribe = MockSubscribe::new();
+        mock_subscribe.expect_get_max_message_size().returning(|| Ok(1024));
         mock_subscribe
             .expect_read_next_messages()
             .returning(move |_| Ok(vec![encoded_msg1.clone(), encoded_msg2.clone()]));
@@ -210,6 +414,31 @@ mod tests {
         assert_eq!(decoded_messages.len(), 2);
         assert_eq!(decoded_messages[0].value, test_msg1_str);
         assert_eq!(decoded_messages[1].value, test_msg2_str);
+    }
+
+    #[test]
+    fn test_subscriber_read_next_messages_buffered() {
+        let test_msg1_str = "hello subscriber buffered";
+        let msg1 = create_string_value_message(test_msg1_str);
+        let encoded_msg1 = codec::encode(&msg1).unwrap();
+
+        // GIVEN a mock subscribe handle
+        let mut mock_subscribe = MockSubscribe::new();
+        mock_subscribe.expect_get_max_message_size().returning(|| Ok(1024));
+        mock_subscribe.expect_get_available_to_read_count().returning(|| Ok(1));
+        mock_subscribe.expect_read_flat_batch().returning(move |buffer| {
+            buffer[..encoded_msg1.len()].copy_from_slice(&encoded_msg1);
+            Ok(1)
+        });
+
+        let mut subscriber: Subscriber<StringValue> = Subscriber::new(Box::new(mock_subscribe));
+
+        // WHEN read message from Subscriber buffered
+        let decoded_messages = subscriber.read_next_messages_buffered(1).unwrap();
+
+        // THEN there is 1 message with correct value
+        assert_eq!(decoded_messages.len(), 1);
+        assert_eq!(decoded_messages[0].value, test_msg1_str);
     }
 
     #[test]

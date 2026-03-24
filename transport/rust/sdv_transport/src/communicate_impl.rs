@@ -722,6 +722,177 @@ mod test {
     }
 
     #[tokio::test]
+    async fn test_sdv_pub_sub_buffered() {
+        let bundle_name: &str = "PubsubBuffered";
+        let service_unit_name: &str = "pressure-publication-buffered";
+        let publication_unit_name = UnitName::builder()
+            .package_name(PACKAGE)
+            .bundle_name(bundle_name)
+            .service_unit_name(service_unit_name)
+            .build()
+            .unwrap();
+
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{VM}:{PACKAGE}.{bundle_name}/sample"))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = Arc::new(SdvComms { context });
+
+        // WHEN creating a publisher using SdvComms.
+        let mut publisher = create_pressure_publisher(comms.clone(), service_unit_name, None).await;
+
+        // WHEN finding a publication.
+        let publication =
+            comms.find_publication(&UnitQuery::Name(publication_unit_name.clone())).await.unwrap();
+
+        // WHEN creating a subscriber using SdvComms.
+        let mut subscriber = Subscriber::<Pressure>::new(
+            publication.subscribe(&SubscribeOptions::default()).await.unwrap(),
+        );
+
+        // AND WHEN a batch of two messages is published using buffered method.
+        let pressure1 = 1234;
+        let pressure2 = 5678;
+        let pressure_msg1 = Pressure { pressure: pressure1, ..Default::default() };
+        let pressure_msg2 = Pressure { pressure: pressure2, ..Default::default() };
+        publisher.publish_batch_buffered(&[pressure_msg1, pressure_msg2]).unwrap();
+
+        // THEN subscriber can read messages using buffered method.
+        let read_batch = subscriber.read_next_messages_buffered(2).unwrap();
+        assert_eq!(read_batch.len(), 2);
+        assert_eq!(read_batch[0].pressure, pressure1);
+        assert_eq!(read_batch[1].pressure, pressure2);
+    }
+
+    #[tokio::test]
+    async fn test_sdv_publisher_publish_buffered() {
+        let bundle_name: &str = "PublisherPublishBuffered";
+        let service_unit_name: &str = "pressure-publication-single-buffered";
+        let publication_unit_name = UnitName::builder()
+            .package_name(PACKAGE)
+            .bundle_name(bundle_name)
+            .service_unit_name(service_unit_name)
+            .build()
+            .unwrap();
+
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{VM}:{PACKAGE}.{bundle_name}/sample"))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = Arc::new(SdvComms { context });
+
+        // WHEN creating a publisher using SdvComms.
+        let mut publisher = create_pressure_publisher(comms.clone(), service_unit_name, None).await;
+
+        // WHEN finding a publication.
+        let publication =
+            comms.find_publication(&UnitQuery::Name(publication_unit_name.clone())).await.unwrap();
+
+        // WHEN creating a subscriber using SdvComms.
+        let mut subscriber = Subscriber::<Pressure>::new(
+            publication.subscribe(&SubscribeOptions::default()).await.unwrap(),
+        );
+
+        // AND WHEN a single message is published using buffered method.
+        let pressure = 94278;
+        let pressure_msg = Pressure { pressure, ..Default::default() };
+        publisher.publish_buffered(&pressure_msg).unwrap();
+
+        // THEN subscriber can read message using buffered method.
+        let read_batch = subscriber.read_next_messages_buffered(1).unwrap();
+        assert_eq!(read_batch.len(), 1);
+        assert_eq!(read_batch[0].pressure, pressure);
+    }
+
+    #[tokio::test]
+    async fn test_sdv_pub_sub_buffered_interop() {
+        let bundle_name: &str = "PubsubBufferedInterop";
+        let service_unit_name: &str = "pressure-publication-interop";
+        let publication_unit_name = UnitName::builder()
+            .package_name(PACKAGE)
+            .bundle_name(bundle_name)
+            .service_unit_name(service_unit_name)
+            .build()
+            .unwrap();
+
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{VM}:{PACKAGE}.{bundle_name}/sample"))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = Arc::new(SdvComms { context });
+
+        // WHEN creating a publisher using SdvComms.
+        let mut publisher = create_pressure_publisher(comms.clone(), service_unit_name, None).await;
+
+        // WHEN finding a publication.
+        let publication =
+            comms.find_publication(&UnitQuery::Name(publication_unit_name.clone())).await.unwrap();
+
+        // WHEN creating a subscriber using SdvComms.
+        let mut subscriber = Subscriber::<Pressure>::new(
+            publication.subscribe(&SubscribeOptions::default()).await.unwrap(),
+        );
+
+        // 1. publish_batch_buffered() -> read_next_messages()
+        let pressure1 = 1111;
+        let pressure2 = 2222;
+        let pressure_msg1 = Pressure { pressure: pressure1, ..Default::default() };
+        let pressure_msg2 = Pressure { pressure: pressure2, ..Default::default() };
+        publisher.publish_batch_buffered(&[pressure_msg1, pressure_msg2]).unwrap();
+
+        let read_batch = subscriber.read_next_messages(2).unwrap();
+        assert_eq!(read_batch.len(), 2);
+        assert_eq!(read_batch[0].pressure, pressure1);
+        assert_eq!(read_batch[1].pressure, pressure2);
+
+        // 2. publish_batch() -> read_next_messages_buffered()
+        let pressure3 = 3333;
+        let pressure4 = 4444;
+        let pressure_msg3 = Pressure { pressure: pressure3, ..Default::default() };
+        let pressure_msg4 = Pressure { pressure: pressure4, ..Default::default() };
+        publisher.publish_batch(&[pressure_msg3, pressure_msg4]).unwrap();
+
+        let read_batch_buffered = subscriber.read_next_messages_buffered(2).unwrap();
+        assert_eq!(read_batch_buffered.len(), 2);
+        assert_eq!(read_batch_buffered[0].pressure, pressure3);
+        assert_eq!(read_batch_buffered[1].pressure, pressure4);
+    }
+
+    #[tokio::test]
+    async fn test_sdv_subscriber_read_buffered_empty() {
+        let bundle_name: &str = "SubscriberReadEmpty";
+        let service_unit_name: &str = "pressure-publication-empty";
+        let publication_unit_name = UnitName::builder()
+            .package_name(PACKAGE)
+            .bundle_name(bundle_name)
+            .service_unit_name(service_unit_name)
+            .build()
+            .unwrap();
+
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{VM}:{PACKAGE}.{bundle_name}/sample"))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = Arc::new(SdvComms { context });
+
+        // GIVEN a publisher is created but no messages are published yet.
+        let _publisher = create_pressure_publisher(comms.clone(), service_unit_name, None).await;
+
+        let publication =
+            comms.find_publication(&UnitQuery::Name(publication_unit_name.clone())).await.unwrap();
+
+        let mut subscriber = Subscriber::<Pressure>::new(
+            publication.subscribe(&SubscribeOptions::default()).await.unwrap(),
+        );
+
+        // WHEN reading messages when none were published.
+        let read_batch = subscriber.read_next_messages_buffered(10).unwrap();
+
+        // THEN it should return an empty vector.
+        assert!(read_batch.is_empty());
+    }
+
+    #[tokio::test]
     async fn test_sdv_pub_sub_find_per_instance_name() {
         let instance_name: &str = "sample";
         let bundle_name: &str = "PubSubInstance";
@@ -2698,5 +2869,73 @@ mod test {
         // THEN result is data loss error.
         assert!(read_result.is_err());
         assert_eq!(read_result.err().unwrap().status_code(), SdvStatusCode::DataLoss);
+    }
+
+    #[tokio::test]
+    async fn test_publish_batch_exceeds_capacity() {
+        let bundle_name = "PublishBatchExceedsCapacity";
+        let service_unit_name = "pressure-publication-overflow";
+        let publication_unit_name = UnitName::builder()
+            .package_name(PACKAGE)
+            .bundle_name(bundle_name)
+            .service_unit_name(service_unit_name)
+            .build()
+            .unwrap();
+
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{VM}:{PACKAGE}.{bundle_name}/sample"))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = Arc::new(SdvComms { context });
+
+        let publisher = create_pressure_publisher(comms.clone(), service_unit_name, None).await;
+        let publication =
+            comms.find_publication(&UnitQuery::Name(publication_unit_name.clone())).await.unwrap();
+        let _subscriber = Subscriber::<Pressure>::new(
+            publication.subscribe(&SubscribeOptions::default()).await.unwrap(),
+        );
+
+        // Queue capacity is 10. Publish 15 messages.
+        let messages: Vec<Pressure> =
+            (0..15).map(|i| Pressure { pressure: i, ..Default::default() }).collect();
+
+        // publish_batch does NOT truncate in the interface, and underlying transport fails if exceeded in a single batch.
+        let result = publisher.publish_batch(&messages);
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap().status_code(), SdvStatusCode::Internal);
+    }
+
+    #[tokio::test]
+    async fn test_publish_batch_buffered_exceeds_capacity() {
+        let bundle_name = "PublishBatchBufferedExceedsCapacity";
+        let service_unit_name = "pressure-publication-buffered-overflow";
+        let publication_unit_name = UnitName::builder()
+            .package_name(PACKAGE)
+            .bundle_name(bundle_name)
+            .service_unit_name(service_unit_name)
+            .build()
+            .unwrap();
+
+        let context = ContextRef::create(
+            ServiceFqin::from_str(&format!("{VM}:{PACKAGE}.{bundle_name}/sample"))
+                .expect("ServiceFqin should not be malformed"),
+        );
+        let comms = Arc::new(SdvComms { context });
+
+        let mut publisher = create_pressure_publisher(comms.clone(), service_unit_name, None).await;
+        let publication =
+            comms.find_publication(&UnitQuery::Name(publication_unit_name.clone())).await.unwrap();
+        let _subscriber = Subscriber::<Pressure>::new(
+            publication.subscribe(&SubscribeOptions::default()).await.unwrap(),
+        );
+
+        // Queue capacity is 10. Publish 15 messages.
+        let messages: Vec<Pressure> =
+            (0..15).map(|i| Pressure { pressure: i, ..Default::default() }).collect();
+
+        // publish_batch_buffered does NOT truncate in the interface, and underlying transport fails if exceeded in a single batch.
+        let result = publisher.publish_batch_buffered(&messages);
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap().status_code(), SdvStatusCode::Internal);
     }
 }
