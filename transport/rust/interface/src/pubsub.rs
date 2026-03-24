@@ -24,7 +24,8 @@ use protobuf::Message;
 use sdv_status_rs::SdvResult;
 use std::marker::PhantomData;
 use std::pin::Pin;
-/// Publisher represents the user-facing, typed producer for a message channel.
+
+/// Publisher represents the user-facing, typed producer for a message queue.
 pub struct Publisher<M: Message> {
     publish_handle: Box<dyn Publish>,
     ptd: PhantomData<M>,
@@ -56,7 +57,7 @@ impl<M: Message> Publisher<M> {
     }
 }
 
-/// Subscriber represents the user-facing, polling, typed consumer for a named channel.
+/// Subscriber represents the user-facing, polling, typed consumer for a named queue.
 pub struct Subscriber<M: Message> {
     handle: Box<dyn Subscribe>,
     ptd: PhantomData<M>,
