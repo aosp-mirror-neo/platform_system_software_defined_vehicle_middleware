@@ -37,7 +37,7 @@ pub trait IntoRpcClientAttributes {
 /// # Arguments
 /// * `comms` - A reference to the `Communicate` trait object for middleware communication.
 /// * `descriptor` - The RPC descriptor for the service.
-/// * `options` - Client options, which can specify details like the target VM or instance.
+/// * `options` - Client options.
 ///
 /// # Returns
 /// An `SdvResult` containing the RPC client stub of type `Descriptor::Client` on success.

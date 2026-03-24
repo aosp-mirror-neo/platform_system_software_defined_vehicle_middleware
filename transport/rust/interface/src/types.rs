@@ -423,8 +423,16 @@ pub struct SubscribeOptions {
     /// size of message queue (history-only)
     message_count: u32,
     /// optional VM name to look for, applies to observer, subscriber, history, instant reader
+    #[deprecated(
+        since = "2.0.0",
+        note = "`vm_name` has no effect in SOA architectures. Use `topic` instead."
+    )]
     vm_name: String,
     /// optional service bundle instance name to look for, applies to observer, subscriber, history, instant reader
+    #[deprecated(
+        since = "2.0.0",
+        note = "`instance_name` has no effect in SOA architectures. Use `topic` instead."
+    )]
     instance_name: String,
 }
 
@@ -445,11 +453,21 @@ impl SubscribeOptions {
     pub fn get_message_count(&self) -> u32 {
         self.message_count
     }
+
     /// name of the virtual machine
+    #[deprecated(
+        since = "2.0.0",
+        note = "`vm_name` has no effect in SOA architectures. Use `topic` instead."
+    )]
     pub fn get_vm_name(&self) -> &str {
         &self.vm_name
     }
+
     /// name of the specific service bundle instance
+    #[deprecated(
+        since = "2.0.0",
+        note = "`instance_name` has no effect in SOA architectures. Use `topic` instead."
+    )]
     pub fn get_instance_name(&self) -> &str {
         &self.instance_name
     }
@@ -460,7 +478,15 @@ pub struct SubscribeOptionsBuilder {
     read_on_subscribe: bool,
     min_interval: Duration,
     message_count: u32,
+    #[deprecated(
+        since = "2.0.0",
+        note = "`vm_name` has no effect in SOA architectures. Use `topic` instead."
+    )]
     vm_name: String,
+    #[deprecated(
+        since = "2.0.0",
+        note = "`instance_name` has no effect in SOA architectures. Use `topic` instead."
+    )]
     instance_name: String,
 }
 
@@ -481,11 +507,19 @@ impl SubscribeOptionsBuilder {
         self
     }
     /// set vm name
+    #[deprecated(
+        since = "2.0.0",
+        note = "`vm_name` has no effect in SOA architectures. Use `topic` instead."
+    )]
     pub fn vm_name(mut self, vm_name: impl Into<String>) -> Self {
         self.vm_name = vm_name.into();
         self
     }
     /// set instance name
+    #[deprecated(
+        since = "2.0.0",
+        note = "`instance_name` has no effect in SOA architectures. Use `topic` instead."
+    )]
     pub fn instance_name(mut self, instance_name: impl Into<String>) -> Self {
         self.instance_name = instance_name.into();
         self
