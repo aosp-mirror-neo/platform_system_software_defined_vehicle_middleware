@@ -129,7 +129,6 @@ impl TryFrom<AclPolicyProto> for AclPolicyModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::feature_flags;
 
     use std::str::FromStr;
 
@@ -227,10 +226,6 @@ mod tests {
 
     #[test]
     fn test_permissions_logic() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         let proto: AclPolicyProto = text_format::parse_from_str(
             r#"
             publisher {
@@ -296,10 +291,6 @@ mod tests {
 
     #[test]
     fn test_blanket_read_permission_logic() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         let proto: AclPolicyProto = text_format::parse_from_str(
             r#"
             publisher {
@@ -339,10 +330,6 @@ mod tests {
 
     #[test]
     fn test_mixed_acls_and_permissions() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         // This test ensures that the presence of permission fields does not interfere
         // with ACL parsing, and vice versa.
         let proto: AclPolicyProto = text_format::parse_from_str(
