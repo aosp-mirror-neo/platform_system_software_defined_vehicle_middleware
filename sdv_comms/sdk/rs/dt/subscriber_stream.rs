@@ -96,6 +96,9 @@ impl SubscriberStream {
     /// Return value:
     ///   Returns a Future of SdvResult that contains SdvStatus of the
     ///   method call and, if method succeeded, a new Subscriber instance.
+    #[allow(useless_deprecated)]
+    #[allow(unused_attributes)]
+    #[deprecated(since = "2.0.0", note = "Use SubscriberStream.create_for_topic instead")]
     pub async fn create(
         context: ContextRef,
         unit_identifier: &UnitIdentifier,
@@ -148,6 +151,9 @@ impl SubscriberStream {
     /// Return value:
     ///   Returns a Future of SdvResult that contains SdvStatus of the
     ///   method call and, if method succeeded, a new Subscriber instance.
+    #[allow(useless_deprecated)]
+    #[allow(unused_attributes)]
+    #[deprecated(since = "2.0.0", note = "Use SubscriberStream.create_for_topic instead")]
     pub async fn create_for_multipub(
         context: ContextRef,
         unit_type: &UnitType,
