@@ -390,7 +390,6 @@ mod tests {
     use super::*;
     use crate::AclPolicyModel;
     use crate::TestAclPolicyProvider;
-    use crate::feature_flags;
     use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::UnitType::UnitType as AidlUnitType;
     use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::metadata::
     {PublisherUnitMetadata::PublisherUnitMetadata, ServerUnitMetadata::ServerUnitMetadata};
@@ -419,10 +418,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_success() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         // 1. Setup Policy: Allow calls to 'TargetType' on specific unit 'correct-unit'
         let mut test_provider = TestAclPolicyProvider::new();
         test_provider.set_authz_policy(
@@ -483,9 +478,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_no_policy_found() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
         let test_provider = TestAclPolicyProvider::new();
         let fake_definition = ServiceUnitDefinition {
             unitType: AidlUnitType {
@@ -519,9 +511,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_registry_miss() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
         struct EmptyRegistry;
         impl ServiceUnitRegistry for EmptyRegistry {
             fn get_service_unit(
@@ -555,9 +544,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_invalid_sud_unit_name() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
         let fake_definition = ServiceUnitDefinition {
             unitType: AidlUnitType {
                 sdvPackageName: "com.server".to_string(),
@@ -590,9 +576,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_explicit_denial() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
         // 1. Setup Policy that allows "OtherType" but NOT "TargetType"
         let mut test_provider = TestAclPolicyProvider::new();
         test_provider.set_authz_policy(
@@ -647,10 +630,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_unit_type_server_success() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         let mut test_provider = TestAclPolicyProvider::new();
         test_provider.set_authz_policy(
             VmName::from_str("local-vm").unwrap(),
@@ -689,10 +668,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_unit_type_publisher_success() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         let mut test_provider = TestAclPolicyProvider::new();
         test_provider.set_authz_policy(
             VmName::from_str("local-vm").unwrap(),
@@ -738,10 +713,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_unit_type_server_denied_by_vm_permissions() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         let mut test_provider = TestAclPolicyProvider::new();
         test_provider.set_authz_policy(
             VmName::from_str("vm").unwrap(),
@@ -794,10 +765,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_unit_type_publisher_denied_by_vm_permissions() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         let mut test_provider = TestAclPolicyProvider::new();
         test_provider.set_authz_policy(
             VmName::from_str("vm").unwrap(),
@@ -853,10 +820,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_unit_type_server_denied_wrong_unit() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         let mut test_provider = TestAclPolicyProvider::new();
         // Policy allows 'server' on 'correct-unit'
         test_provider.set_authz_policy(
@@ -903,10 +866,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_unit_type_publisher_denied_wrong_topic() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         let mut test_provider = TestAclPolicyProvider::new();
         // Policy allows publishing to 'telemetry'
         test_provider.set_authz_policy(
@@ -956,10 +915,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_unit_type_server_denied_wrong_type() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         let mut test_provider = TestAclPolicyProvider::new();
         // Policy allows serving 'com.obj.AllowedType'
         test_provider.set_authz_policy(
@@ -1006,10 +961,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_subscribe_success() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         // 1. Setup Policy: Allow subject to subscribe to 'com.sensor.Temp' on topic 'ambient'
         let mut test_provider = TestAclPolicyProvider::new();
         test_provider.set_authz_policy(
@@ -1074,10 +1025,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_subscribe_denied_by_vm_permissions() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         // 1a. Setup Policy: Allow subject to subscribe to 'com.sensor.Temp' on topic 'ambient'
         let mut test_provider = TestAclPolicyProvider::new();
         test_provider.set_authz_policy(
@@ -1151,10 +1098,6 @@ mod tests {
 
     #[test]
     fn test_check_authorization_subscribe_denied_wrong_topic() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         // 1. Setup Policy: Allow subscribing to 'ambient', but object is 'internal'
         let mut test_provider = TestAclPolicyProvider::new();
         test_provider.set_authz_policy(

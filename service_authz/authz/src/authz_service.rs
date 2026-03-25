@@ -16,7 +16,6 @@
 
 use crate::authz_via_acls::AuthzViaAcls;
 use crate::authz_via_permissions::AuthzViaPermissions;
-use crate::feature_flags;
 use crate::{AclPolicyProvider, AuthzEnforcementFlag, AuthzResult, AuthzStrategy};
 
 use sdv_comms_id::names::{PackageName, ServiceUnitName, UnitTypeName, VmName};
@@ -74,25 +73,17 @@ impl AuthzService {
     ) -> bool {
         let object_log_identifier = format!("{object_fqin}#{object_service_unit_name}");
 
-        let acl_result = if !feature_flags::disable_acls() {
-            self.authz_via_acls.check_authorization_for_service_unit(
-                subject_fqin,
-                object_fqin,
-                object_service_unit_name,
-            )
-        } else {
-            AuthzResult::ImplicitlyDenied("ACLs are disabled".to_string())
-        };
+        let acl_result = self.authz_via_acls.check_authorization_for_service_unit(
+            subject_fqin,
+            object_fqin,
+            object_service_unit_name,
+        );
 
-        let permission_result = if feature_flags::enable_permissions() {
-            self.authz_via_permissions.check_authorization_for_service_unit(
-                subject_fqin,
-                object_fqin,
-                object_service_unit_name,
-            )
-        } else {
-            AuthzResult::ImplicitlyDenied("Permissions are disabled".to_string())
-        };
+        let permission_result = self.authz_via_permissions.check_authorization_for_service_unit(
+            subject_fqin,
+            object_fqin,
+            object_service_unit_name,
+        );
 
         // Use both results to make final decision and log denial if needed.
         self.handle_authz_result(subject_fqin, object_log_identifier, acl_result, permission_result)
@@ -115,21 +106,14 @@ impl AuthzService {
 
         let object_log_identifier = format!("{object_fqin}#{object_service_unit_name}");
 
-        let acl_result = if !feature_flags::disable_acls() {
-            self.authz_via_acls.check_authorization_for_service_unit(
-                subject_fqin,
-                &object_fqin,
-                &object_service_unit_name,
-            )
-        } else {
-            AuthzResult::ImplicitlyDenied("ACLs are disabled".to_string())
-        };
+        let acl_result = self.authz_via_acls.check_authorization_for_service_unit(
+            subject_fqin,
+            &object_fqin,
+            &object_service_unit_name,
+        );
 
-        let permission_result = if feature_flags::enable_permissions() {
-            self.authz_via_permissions.check_authorization_for_sud(subject_fqin, object_sud)
-        } else {
-            AuthzResult::ImplicitlyDenied("Permissions are disabled".to_string())
-        };
+        let permission_result =
+            self.authz_via_permissions.check_authorization_for_sud(subject_fqin, object_sud);
 
         // Use both results to make final decision and log denial if needed.
         self.handle_authz_result(subject_fqin, object_log_identifier, acl_result, permission_result)
@@ -147,27 +131,19 @@ impl AuthzService {
     ) -> bool {
         let object_log_identifier = format!("{object_package_name}.{object_unit_type_name}");
 
-        let acl_result = if !feature_flags::disable_acls() {
-            self.authz_via_acls.check_authorization_for_unit_type(
-                subject_fqin,
-                object_package_name,
-                object_unit_type_name,
-            )
-        } else {
-            AuthzResult::ImplicitlyDenied("ACLs are disabled".to_string())
-        };
+        let acl_result = self.authz_via_acls.check_authorization_for_unit_type(
+            subject_fqin,
+            object_package_name,
+            object_unit_type_name,
+        );
 
-        let permission_result = if feature_flags::enable_permissions() {
-            self.authz_via_permissions.check_authorization_for_unit_type(
-                subject_fqin,
-                object_package_name,
-                object_unit_type_name,
-                app_metadata,
-                service_unit_name,
-            )
-        } else {
-            AuthzResult::ImplicitlyDenied("Permissions are disabled".to_string())
-        };
+        let permission_result = self.authz_via_permissions.check_authorization_for_unit_type(
+            subject_fqin,
+            object_package_name,
+            object_unit_type_name,
+            app_metadata,
+            service_unit_name,
+        );
 
         // Use both results to make final decision and log denial if needed.
         self.handle_authz_result(subject_fqin, object_log_identifier, acl_result, permission_result)
