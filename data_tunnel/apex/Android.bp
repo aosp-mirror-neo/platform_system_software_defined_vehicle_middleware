@@ -78,7 +78,7 @@ prebuilt_etc {
     system_ext_specific: true,
     // Reduce prebuilt visibility to avoid adding it in another APEX.
     visibility: [
-        "//system/software_defined_vehicle/sdv_gateway/sdv_comms_for_ivi",
+        "//vendor:__subpackages__",
         "//device/google/sdv",
     ],
 }
