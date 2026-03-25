@@ -23,29 +23,35 @@ use sdv_proto_reflection_rs::message_metadata::MessageMetadata;
 use sdv_status_rs::{SdvResult, SdvStatus, SdvStatusCode};
 use std::marker::PhantomData;
 
-/// A descriptor that binds a specific topic to a publication (Code-gen use case).
+/// A descriptor that defines attributes for a publisher using static metadata.
+///
+/// This variant is primarily intended for use by generated code where all publisher
+/// and message metadata is known at compile time and can be provided as static strings.
+///
+/// # Type Parameters
+/// * `Proto`: The protobuf message type that this publisher will emit.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct PublisherDescriptor<Proto> {
-    /// The name of the topic.
+    /// The name of the topic to publish to.
     pub(crate) topic: &'static str,
     /// The fully qualified name of the message type (e.g., "com.android.sdv.sample.Pressure").
     pub(crate) message: &'static str,
-    /// The capacity of the publication queue.
+    /// The capacity of the internal publisher queue (number of messages).
     pub(crate) capacity: u32,
-    /// The maximum size of a message on this topic.
+    /// The maximum size of a single message on this topic, in bytes.
     pub(crate) max_message_size: u32,
-    /// The name of the service unit.
+    /// [OPTIONAL] The name of the service unit providing this publisher.
     pub(crate) service_unit_name: &'static str,
-    /// Whether message metadata is required.
+    /// [OPTIONAL] Indicates whether reflection metadata is required.
     pub(crate) is_message_metadata_required: bool,
-    /// A function pointer to generate the metadata at runtime
+    /// [OPTIONAL] A function pointer to retrieve or generate reflection metadata at runtime.
     pub(crate) message_metadata_getter: fn() -> MessageMetadata,
     pub(crate) _marker: PhantomData<Proto>,
 }
 
 impl<Proto> PublisherDescriptor<Proto> {
-    /// Creates a new publisher descriptor with mandatory fields.
+    /// Creates a new publisher descriptor with the specified topic name.
     pub const fn new(topic: &'static str) -> Self {
         Self {
             topic,
@@ -59,37 +65,37 @@ impl<Proto> PublisherDescriptor<Proto> {
         }
     }
 
-    /// Sets the fully qualified message name.
+    /// Sets the fully qualified message name for this publisher.
     pub const fn with_message(mut self, name: &'static str) -> Self {
         self.message = name;
         self
     }
 
-    /// Sets the capacity of the publication.
+    /// Sets the capacity (maximum number of queued messages) for this publisher.
     pub const fn with_capacity(mut self, capacity: u32) -> Self {
         self.capacity = capacity;
         self
     }
 
-    /// Sets the maximum message size.
+    /// Sets the maximum message size in bytes for this publisher.
     pub const fn with_max_message_size(mut self, size: u32) -> Self {
         self.max_message_size = size;
         self
     }
 
-    /// Sets the service unit name.
+    /// Sets the service unit name associated with this publisher.
     pub const fn with_service_unit_name(mut self, name: &'static str) -> Self {
         self.service_unit_name = name;
         self
     }
 
-    /// Sets whether message metadata is required.
+    /// Configures whether reflection metadata is mandatory for this publisher.
     pub const fn with_message_metadata_required(mut self, required: bool) -> Self {
         self.is_message_metadata_required = required;
         self
     }
 
-    /// Sets the message metadata for this topic.
+    /// Sets a custom getter function for generating message metadata at runtime.
     pub const fn with_message_metadata(mut self, getter: fn() -> MessageMetadata) -> Self {
         self.message_metadata_getter = getter;
         self
@@ -125,22 +131,30 @@ impl<Proto: protobuf::Message> IntoPublisherAttributes for PublisherDescriptor<P
     }
 }
 
-/// A descriptor that binds a specific topic to a publication (Manual use case).
+/// A descriptor that defines attributes for a publisher using runtime reflection.
+///
+/// This variant is intended for manual (non-codegen) use cases. It leverages the
+/// `protobuf::MessageFull` trait to automatically discover message metadata such as
+/// the fully qualified name and estimated message size.
+///
+/// # Type Parameters
+/// * `Proto`: The protobuf message type that this publisher will emit. Must implement `MessageFull`.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct PublisherDescriptorFull<Proto> {
-    /// The name of the topic.
+    /// The name of the topic to publish to.
     pub(crate) topic: String,
-    /// The capacity of the publication.
+    /// [OPTIONAL] The capacity of the internal publisher queue (number of messages).
+    /// Defaults to 8.
     pub(crate) capacity: u32,
-    /// The name of the service unit.
+    /// [OPTIONAL] The name of the service unit.
     pub(crate) service_unit_name: String,
 
     pub(crate) _marker: PhantomData<Proto>,
 }
 
 impl<Proto: protobuf::MessageFull> PublisherDescriptorFull<Proto> {
-    /// Creates a new publisher descriptor with the topic name.
+    /// Creates a new publisher descriptor with the specified topic name and default capacity.
     pub fn new(topic: impl Into<String>) -> Self {
         Self {
             topic: topic.into(),
@@ -150,13 +164,13 @@ impl<Proto: protobuf::MessageFull> PublisherDescriptorFull<Proto> {
         }
     }
 
-    /// Sets the capacity of the publication.
+    /// Sets the capacity (maximum number of queued messages) for this publication.
     pub fn with_capacity(mut self, capacity: u32) -> Self {
         self.capacity = capacity;
         self
     }
 
-    /// Sets the service unit name.
+    /// Sets the service unit name associated with this publication.
     pub fn with_service_unit_name(mut self, name: impl Into<String>) -> Self {
         self.service_unit_name = name.into();
         self
@@ -193,11 +207,17 @@ impl<Proto: protobuf::MessageFull> IntoPublisherAttributes for PublisherDescript
     }
 }
 
-/// A descriptor that binds a specific topic to a subscription (Code-gen use case).
+/// A descriptor that binds a specific topic to a subscription using static metadata.
+///
+/// This variant is primarily used by generated code where the message type name
+/// is known at compile time.
+///
+/// # Type Parameters
+/// * `Proto`: The protobuf message type that this subscriber will receive.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct SubscriberDescriptor<Proto> {
-    /// The name of the topic.
+    /// The name of the topic to subscribe to.
     pub(crate) topic: &'static str,
     /// The fully qualified name of the message type (e.g., "sdv.sample.Pressure").
     pub(crate) message: &'static str,
@@ -206,12 +226,12 @@ pub struct SubscriberDescriptor<Proto> {
 }
 
 impl<Proto> SubscriberDescriptor<Proto> {
-    /// Creates a new subscriber descriptor with mandatory fields.
+    /// Creates a new subscriber descriptor with the specified topic name.
     pub const fn new(topic: &'static str) -> Self {
         Self { topic, message: "", _marker: PhantomData }
     }
 
-    /// Sets the fully qualified message name.
+    /// Sets the fully qualified message name for this subscription.
     pub const fn with_message(mut self, name: &'static str) -> Self {
         self.message = name;
         self
@@ -227,17 +247,23 @@ impl<Proto: protobuf::Message> IntoSubscriberAttributes for SubscriberDescriptor
     }
 }
 
-/// A descriptor that binds a specific topic to a subscription (Manual use case).
+/// A descriptor that binds a specific topic to a subscription using runtime reflection.
+///
+/// This variant is intended for manual (non-codegen) use cases where the message type
+/// implements `protobuf::MessageFull`.
+///
+/// # Type Parameters
+/// * `Proto`: The protobuf message type that this subscriber will receive. Must implement `MessageFull`.
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct SubscriberDescriptorFull<Proto> {
-    /// The name of the topic.
+    /// The name of the topic to subscribe to.
     pub topic: String,
     pub(crate) _marker: PhantomData<Proto>,
 }
 
 impl<Proto: protobuf::MessageFull> SubscriberDescriptorFull<Proto> {
-    /// Creates a new subscriber descriptor with the topic name.
+    /// Creates a new subscriber descriptor with the specified topic name.
     pub fn new(topic: impl Into<String>) -> Self {
         Self { topic: topic.into(), _marker: PhantomData }
     }

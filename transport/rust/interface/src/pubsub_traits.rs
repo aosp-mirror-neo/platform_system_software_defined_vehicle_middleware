@@ -26,7 +26,7 @@ use std::pin::Pin;
 /// A pinned Stream of Item = SdvResult(message_count, multi_message_byte_buffer).
 pub type ByteBuffersStream = Pin<Box<dyn Stream<Item = SdvResult<(u32, Vec<u8>)>> + Send>>;
 
-/// A Publish trait object is a producer-side endpoint to a publication (message channel).
+/// A Publish trait object is a producer-side endpoint to a publication (message queue).
 ///
 /// Intented to be implemented as part of the MW library code. Is not exposed to the user.
 #[automock]
@@ -39,7 +39,7 @@ pub trait Publish: Send {
     fn publish_messages(&self, messages: &[Box<[u8]>]) -> SdvResult<()>;
 }
 
-/// A Publication trait object represents a message channel, which offers different methods for consuming messages.
+/// A Publication trait object represents a message queue, which offers different methods for consuming messages.
 ///
 /// Intented to be implemented as part of the MW library code. Is not exposed to the user.
 #[async_trait]
