@@ -37,7 +37,6 @@ rust_defaults {
         "libsdv_authz_policy_proto_rust",
         "libsdv_comms_id",
         "libsdv_comms_sd",
-        "libsdv_middleware_flags",
         // keep-sorted end
     ],
 }

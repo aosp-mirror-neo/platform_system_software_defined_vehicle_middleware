@@ -22,7 +22,6 @@ mod authz_result;
 mod authz_service;
 mod authz_via_acls;
 mod authz_via_permissions;
-mod feature_flags;
 mod local_vm_authz_policy_provider;
 mod multi_vm_authz_guard;
 mod parse_acl_policy_proto;

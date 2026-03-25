@@ -14,7 +14,6 @@
 
 //! ACL Policy type parser from proto.
 
-use crate::feature_flags;
 use crate::AclPolicyModel;
 
 use std::collections::HashMap;
@@ -67,10 +66,6 @@ pub(crate) fn parse_acl_policy_from_proto(
 fn parse_publish_permissions(
     proto_perms: &[PublishPermissionProto],
 ) -> anyhow::Result<HashSet<(UnitType, Option<TopicName>)>> {
-    if !feature_flags::enable_permissions() {
-        return Ok(HashSet::new());
-    }
-
     let mut set = HashSet::new();
     for perm in proto_perms {
         let type_name = UnitType::from_str(&perm.message)
@@ -100,10 +95,6 @@ fn parse_publish_permissions(
 fn parse_subscribe_permissions(
     proto_perms: &[SubscribePermissionProto],
 ) -> anyhow::Result<HashSet<(UnitType, Option<TopicName>)>> {
-    if !feature_flags::enable_permissions() {
-        return Ok(HashSet::new());
-    }
-
     let mut set = HashSet::new();
     for perm in proto_perms {
         let type_name = UnitType::from_str(&perm.message)
@@ -131,10 +122,6 @@ fn parse_subscribe_permissions(
 fn parse_serve_permissions(
     proto_perms: &[ServePermissionProto],
 ) -> Result<HashSet<(UnitType, Option<ServiceUnitName>)>, anyhow::Error> {
-    if !feature_flags::enable_permissions() {
-        return Ok(HashSet::new());
-    }
-
     let mut set = HashSet::new();
     for perm in proto_perms {
         let type_name = UnitType::from_str(&perm.service)
@@ -162,10 +149,6 @@ fn parse_serve_permissions(
 fn parse_call_permissions(
     proto_perms: &[CallPermissionProto],
 ) -> anyhow::Result<HashSet<(UnitType, Option<ServiceUnitName>)>> {
-    if !feature_flags::enable_permissions() {
-        return Ok(HashSet::new());
-    }
-
     let mut set = HashSet::new();
     for perm in proto_perms {
         let type_name = UnitType::from_str(&perm.service)
@@ -358,10 +341,6 @@ mod tests {
 
     #[test]
     fn test_parse_permissions_population() {
-        if !feature_flags::enable_permissions() {
-            return;
-        }
-
         let proto: AclPolicyProto = text_format::parse_from_str(
             r#"
             publisher {
