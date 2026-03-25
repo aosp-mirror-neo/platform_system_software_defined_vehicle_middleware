@@ -43,6 +43,7 @@ pub trait Publish: Send {
 ///
 /// Intented to be implemented as part of the MW library code. Is not exposed to the user.
 #[async_trait]
+#[deprecated(since = "2.0.0", note = "Please use Communicate trait instead")]
 pub trait Publication: Send + Sync {
     /// Creates a polling message reader. Returns a Subscribe trait object.
     async fn subscribe(&self, options: &SubscribeOptions) -> SdvResult<Box<dyn Subscribe>>;

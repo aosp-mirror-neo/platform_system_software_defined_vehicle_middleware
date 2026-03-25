@@ -106,6 +106,7 @@ static_assertions::assert_impl_all!(SdvPublication: Sync);
 /// SdvComms-specific representation of a message queue, which offers different methods for consuming messages.
 ///
 /// Intended to be used within the MW library code. Is not exposed to the user.
+#[deprecated(since = "2.0.0", note = "Please use SdvComms instead")]
 pub struct SdvPublication {
     context: ContextRef,
     service_unit: ServiceUnitDefinition,

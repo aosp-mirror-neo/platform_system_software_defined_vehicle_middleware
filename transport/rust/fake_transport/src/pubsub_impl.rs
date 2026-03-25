@@ -63,6 +63,7 @@ impl Publish for LocalPublisher {
     }
 }
 
+#[deprecated(since = "2.0.0", note = "Please use LocalComms instead")]
 pub struct LocalPublication {
     msg_q: Arc<Mutex<LocalMessageQueue>>,
 }
