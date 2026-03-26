@@ -196,11 +196,7 @@ mod tests {
     use crate::AclPolicyModel;
     use crate::TestAclPolicyProvider;
 
-    use std::{
-        collections::{HashMap, HashSet},
-        str::FromStr,
-        sync::Arc,
-    };
+    use std::{str::FromStr, sync::Arc};
 
     use protobuf::text_format;
     use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
@@ -330,15 +326,7 @@ mod tests {
             VmName::from_str("vm").unwrap(),
             PackageName::from_str("com.google.sdv").unwrap(),
             None,
-            AclPolicyModel::new(
-                HashMap::new(),
-                HashMap::new(),
-                HashSet::new(),
-                HashSet::new(),
-                HashSet::new(),
-                HashSet::new(),
-                false,
-            ),
+            AclPolicyModel::default(),
         );
 
         let authz_via_acls = AuthzViaAcls::new(Arc::new(test_provider));
@@ -362,15 +350,7 @@ mod tests {
             VmName::from_str("vm").unwrap(),
             PackageName::from_str("com.google.sdv").unwrap(),
             None,
-            AclPolicyModel::new(
-                HashMap::new(),
-                HashMap::new(),
-                HashSet::new(),
-                HashSet::new(),
-                HashSet::new(),
-                HashSet::new(),
-                false,
-            ),
+            AclPolicyModel::default(),
         );
 
         let authz_via_acls = AuthzViaAcls::new(Arc::new(test_provider));
