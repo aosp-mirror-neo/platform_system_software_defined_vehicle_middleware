@@ -20,11 +20,14 @@ use crate::mesh::proto_to_aidl::TryToAidl;
 use anyhow::{bail, Context};
 use futures::StreamExt;
 use log::{debug, info, warn};
+use sdv_authz::AuthzService;
+use sdv_comms_id::{names::PackageName, names::ServiceUnitName, names::UnitTypeName, ServiceFqin};
 use sdv_sd_mesh_api::sdv_sd_mesh::{
     peer_local_service_units_event::Event, AddServiceUnitEvent, RemoveByIdentityEvent,
     RemoveServiceUnitEvent,
 };
 use std::borrow::Borrow;
+use std::str::FromStr;
 use std::sync::Arc;
 
 /// Represents the client side of a connection to an sdv_sd_agent in a peer VM.
@@ -44,11 +47,13 @@ impl PeerConnection {
         vm_name: &str,
         rpc_client: Box<dyn MeshManagerAsyncClient>,
         service_registry: Arc<ServiceRegistry>,
+        authz_service: Arc<AuthzService>,
         tokio_runtime: Arc<tokio::runtime::Runtime>,
     ) -> anyhow::Result<Self> {
         let service_units_stream_reader = subscribe_peer_service_unit_updates(
             vm_name,
             service_registry,
+            authz_service,
             rpc_client.borrow(),
             tokio_runtime.borrow(),
         )?;
@@ -112,6 +117,7 @@ fn format_ping_error(vm_name: &str) -> String {
 fn subscribe_peer_service_unit_updates(
     vm_name: &str,
     service_registry: Arc<ServiceRegistry>,
+    authz_service: Arc<AuthzService>,
     rpc_client: &dyn MeshManagerAsyncClient,
     tokio_runtime: &tokio::runtime::Runtime,
 ) -> anyhow::Result<tokio::task::JoinHandle<()>> {
@@ -126,6 +132,7 @@ fn subscribe_peer_service_unit_updates(
     let join_handle = tokio_runtime.spawn(read_service_units_stream(
         service_units_stream,
         service_registry,
+        authz_service,
         vm_name.to_owned(),
     ));
 
@@ -135,6 +142,7 @@ fn subscribe_peer_service_unit_updates(
 async fn read_service_units_stream(
     mut peer_unit_stream: PeerUnitStream,
     service_registry: Arc<ServiceRegistry>,
+    authz_service: Arc<AuthzService>,
     vm_name: String,
 ) {
     debug!("Started task for reading service units stream from VM {vm_name}");
@@ -142,7 +150,12 @@ async fn read_service_units_stream(
         match result {
             Ok(event_proto) => match event_proto.event {
                 Some(event) => {
-                    process_service_unit_event(event, &service_registry, vm_name.as_ref());
+                    process_service_unit_event(
+                        event,
+                        &service_registry,
+                        &authz_service,
+                        vm_name.as_ref(),
+                    );
                 }
                 None => {
                     warn!(
@@ -161,24 +174,79 @@ async fn read_service_units_stream(
     info!("Service units stream from VM {vm_name} has ended.");
 }
 
+fn process_add_service_unit_event(
+    event: AddServiceUnitEvent,
+    service_registry: &ServiceRegistry,
+    authz_service: &AuthzService,
+    vm_name: &str,
+) {
+    let AddServiceUnitEvent { unit_definition, transport_metadata, .. } = event;
+    let (Ok(definition), Ok(metadata)) =
+        (unit_definition.try_to_aidl(), transport_metadata.try_to_aidl())
+    else {
+        warn!("Failed to convert remote definition or metadata from proto to aidl");
+        return;
+    };
+
+    let subject_fqin = match ServiceFqin::try_from(definition.identity.name.clone()) {
+        Ok(fqin) => fqin,
+        Err(err) => {
+            warn!(
+                "Failed to get valid subject FQIN from remote definition from VM {vm_name}: {err}"
+            );
+            return;
+        }
+    };
+
+    let object_package_name = match PackageName::from_str(&definition.unitType.sdvPackageName) {
+        Ok(name) => name,
+        Err(err) => {
+            warn!("Failed to validate Unit Type package name from VM {vm_name}: {err}");
+            return;
+        }
+    };
+
+    let object_unit_type_name = match UnitTypeName::from_str(&definition.unitType.typeName) {
+        Ok(name) => name,
+        Err(err) => {
+            warn!("Failed to validate Unit Type Name from VM {vm_name}: {err}");
+            return;
+        }
+    };
+
+    let service_unit_name = match ServiceUnitName::from_str(&definition.serviceUnitName) {
+        Ok(name) => name,
+        Err(err) => {
+            warn!("Failed to validate Service Unit Name from VM {vm_name}: {err}");
+            return;
+        }
+    };
+
+    if !authz_service.is_authorized_for_unit_type(
+        &subject_fqin,
+        &object_package_name,
+        &object_unit_type_name,
+        &definition.appMetadata,
+        &service_unit_name,
+    ) {
+        warn!("Authz violation: Subject FQIN {subject_fqin} from VM {vm_name} is not authorized for Service Unit {service_unit_name}");
+        return;
+    }
+
+    if let Err(err) = service_registry.add_remote_service_unit(definition, metadata) {
+        warn!("Unable to populate units from VM {vm_name}: {err}");
+    }
+}
+
 fn process_service_unit_event(
     peer_local_service_units_event: Event,
     service_registry: &ServiceRegistry,
+    authz_service: &AuthzService,
     vm_name: &str,
 ) {
     match peer_local_service_units_event {
-        Event::AddServiceUnit(AddServiceUnitEvent {
-            unit_definition, transport_metadata, ..
-        }) => {
-            let (Ok(definition), Ok(metadata)) =
-                (unit_definition.try_to_aidl(), transport_metadata.try_to_aidl())
-            else {
-                warn!("Failed to convert remote definition or metadata from proto to aidl");
-                return;
-            };
-            if let Err(err) = service_registry.add_remote_service_unit(definition, metadata) {
-                warn!("Unable to populate units from VM {vm_name}: {err}");
-            }
+        Event::AddServiceUnit(add_event) => {
+            process_add_service_unit_event(add_event, service_registry, authz_service, vm_name);
         }
 
         Event::RemoveServiceUnit(RemoveServiceUnitEvent { service_unit_identifier, .. }) => {
@@ -259,7 +327,9 @@ pub(crate) mod test_support {
         vm_name: &str,
     ) -> Vec<crate::Result<PeerLocalServiceUnitsEvent, grpcio::Error>> {
         use protobuf::MessageField;
-        use sdv_sd_mesh_api::discovery::ServiceUnitDefinition as ServiceUnitDefinitionProto;
+        use sdv_sd_mesh_api::discovery::{
+            ServiceUnitDefinition as ServiceUnitDefinitionProto, UnitType as UnitTypeProto,
+        };
         use sdv_sd_mesh_api::identity::{
             service_identity::EcPublicKey as EcPublicKeyProto, ServiceFqin as ServiceFqinProto,
             ServiceIdentity as ServiceIdentityProto,
@@ -293,8 +363,14 @@ pub(crate) mod test_support {
         };
 
         let mut identity = ServiceIdentityProto {
-            name: Some(ServiceFqinProto { sdv_vm_name: vm_name.to_string(), ..Default::default() })
-                .into(),
+            name: Some(ServiceFqinProto {
+                sdv_vm_name: vm_name.to_string(),
+                sdv_package_name: "com.google.sdv".to_string(),
+                service_bundle_name: "WindowManager".to_string(),
+                service_instance_name: "default".to_string(),
+                ..Default::default()
+            })
+            .into(),
             sid,
             public_key: Some(EcPublicKeyProto { key_value: vec![0; 32], ..Default::default() })
                 .into(),
@@ -303,6 +379,13 @@ pub(crate) mod test_support {
 
         let service_sud = ServiceUnitDefinitionProto {
             identity: Some(identity.clone()).into(),
+            service_unit_name: "server-unit-name".to_string(),
+            unit_type: Some(UnitTypeProto {
+                sdv_package_name: "com.google.sdv".to_string(),
+                type_name: "UnitTypeName".to_string(),
+                ..Default::default()
+            })
+            .into(),
             app_metadata: Some(ApplicationMetadataProto {
                 typed_metadata: Some(TypedMetadataProto {
                     metadata: Some(MetadataProto::ServerUnit(ServerUnitMetadataProto::default())),
@@ -327,6 +410,13 @@ pub(crate) mod test_support {
         };
         let topic_sud = ServiceUnitDefinitionProto {
             identity: Some(identity).into(),
+            service_unit_name: "publisher-unit-name".to_string(),
+            unit_type: Some(UnitTypeProto {
+                sdv_package_name: "com.google.sdv".to_string(),
+                type_name: "TopicTypeName".to_string(),
+                ..Default::default()
+            })
+            .into(),
             app_metadata: Some(ApplicationMetadataProto {
                 typed_metadata: Some(TypedMetadataProto {
                     metadata: Some(MetadataProto::PublisherUnit(
@@ -433,10 +523,13 @@ mod tests {
         let tokio_runtime =
             Arc::new(tokio::runtime::Builder::new_current_thread().enable_all().build()?);
 
+        let authz_service = crate::mesh::manager::test_support::create_test_authz_service();
+
         let _peer_connection = PeerConnection::try_new(
             VM_INSTANCE_2_NAME,
             mock_client,
             service_registry.clone(),
+            Arc::new(authz_service),
             tokio_runtime.clone(),
         )?;
 
@@ -464,10 +557,13 @@ mod tests {
         let tokio_runtime =
             Arc::new(tokio::runtime::Builder::new_current_thread().enable_all().build()?);
 
+        let authz_service = crate::mesh::manager::test_support::create_test_authz_service();
+
         let mut peer_connection = PeerConnection::try_new(
             VM_INSTANCE_2_NAME,
             mock_client,
             service_registry.clone(),
+            Arc::new(authz_service),
             tokio_runtime.clone(),
         )?;
 
@@ -500,10 +596,13 @@ mod tests {
         let tokio_runtime =
             Arc::new(tokio::runtime::Builder::new_current_thread().enable_all().build()?);
 
+        let authz_service = crate::mesh::manager::test_support::create_test_authz_service();
+
         let mut peer_connection = PeerConnection::try_new(
             VM_INSTANCE_2_NAME,
             mock_client,
             service_registry.clone(),
+            Arc::new(authz_service),
             tokio_runtime.clone(),
         )?;
 
@@ -535,10 +634,13 @@ mod tests {
         let tokio_runtime =
             Arc::new(tokio::runtime::Builder::new_current_thread().enable_all().build()?);
 
+        let authz_service = crate::mesh::manager::test_support::create_test_authz_service();
+
         let mut peer_connection = PeerConnection::try_new(
             VM_INSTANCE_2_NAME,
             mock_client,
             service_registry.clone(),
+            Arc::new(authz_service),
             tokio_runtime.clone(),
         )?;
 
