@@ -15,14 +15,6 @@
 # //system/software_defined_vehicle/middleware/service_authz/proto/sdv/authz/policy/acl_policy.proto
 # proto-message: AclPolicy
 
-# ACL policies for Data Tunnel agent.
-
-acls { name: "Acl" include: "com.android.sdv.dt.IDataTunnelAgent" }
-
-unit_types { name: "DataTunnelAgentUnitType" acl_names: "Acl" }
-
-service_units { name: "data-tunnel-agent-service-unit-name" acl_names: "Acl" }
-
 # Permissions
 
 server {

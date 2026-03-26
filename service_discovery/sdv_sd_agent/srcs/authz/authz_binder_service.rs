@@ -16,7 +16,6 @@
 
 use google_sdv_authz::aidl::google::sdv::authz::IAuthzService::IAuthzService;
 use google_sdv_identity::aidl::google::sdv::identity::ServiceFqin::ServiceFqin as ServiceFqinAidl;
-use google_sdv_service_discovery_common::aidl::google::sdv::service_discovery::common::UnitType::UnitType as UnitTypeAidl;
 
 use sdv_authz::AuthzService;
 use sdv_comms_id::{names::ServiceUnitName, ServiceFqin};
@@ -69,15 +68,6 @@ impl IAuthzService for AuthzBinderService {
             };
 
         Ok(self.authz_service.is_authorized(&subject_fqin, &object_fqin, &object_service_unit_name))
-    }
-
-    fn isAuthorizedForTopic(
-        &self,
-        _subject_fqin: &ServiceFqinAidl,
-        _topic_name: &str,
-        _object_unit_type: &UnitTypeAidl,
-    ) -> binder::Result<bool> {
-        unimplemented!()
     }
 }
 
