@@ -38,7 +38,10 @@ use crate::mesh::manager::{self, MeshManager, MeshManagerParams};
 use crate::mesh::VvmConfig;
 use crate::mesh::{get_sdv_boot_mode, SdvBootMode};
 use crate::mesh::{sd_certificate, service::MeshServiceController};
-use crate::mesh::{MeshStatusService, UdsPubsProvisioner, UdsPubsProvisioningService};
+use crate::mesh::{
+    DisabledUdsPubsProvisioningService, MeshStatusService, UdsPubsProvisioner,
+    UdsPubsProvisioningService,
+};
 use crate::power_state::{run_power_state_reporter, SimplePowerState};
 use crate::service_discovery_agent::service::ServiceDiscoveryAgentService;
 use crate::service_registration_agent::service::ServiceRegistrationAgent;
@@ -260,6 +263,12 @@ fn run_binder_servers(
             info!("Disabled ICertificateAuthority service running...");
         }
         BootModeParams::Locked(ca_commands_receiver, root_key, root_cert) => {
+            DisabledUdsPubsProvisioningService::create_and_register(
+                binder_rt(),
+                binder_features(),
+            )?;
+            info!("Disabled uds_pubs provisioning service running...");
+
             CAService::create_and_register(
                 tokio_runtime,
                 binder_features(),

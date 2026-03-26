@@ -42,7 +42,9 @@ mod uds_pubs_provisioner;
 pub(crate) use uds_pubs_provisioner::UdsPubsProvisioner;
 
 mod uds_pubs_provisioning_service;
-pub(crate) use uds_pubs_provisioning_service::UdsPubsProvisioningService;
+pub(crate) use uds_pubs_provisioning_service::{
+    DisabledUdsPubsProvisioningService, UdsPubsProvisioningService,
+};
 mod mesh_status_service;
 pub(crate) use mesh_status_service::MeshStatusService;
 

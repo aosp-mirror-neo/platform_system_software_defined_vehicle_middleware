@@ -16,11 +16,9 @@ use super::uds_pubs_provisioner::UdsPubsProvisioner;
 use google_sdv_mesh_provisioning::aidl::google::sdv::mesh::provisioning::IUdsPubsProvisioner::{
     BnUdsPubsProvisioner, BpUdsPubsProvisioner, IUdsPubsProvisioner, IUdsPubsProvisionerAsyncServer,
 };
-use google_sdv_mesh_provisioning::aidl::google::sdv::mesh::provisioning::IWriteCallback::{
-    IWriteCallback,
-    //
-};
+use google_sdv_mesh_provisioning::aidl::google::sdv::mesh::provisioning::IWriteCallback::IWriteCallback;
 use google_sdv_mesh_provisioning::binder;
+use google_sdv_mesh_provisioning::binder::Status;
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -30,7 +28,11 @@ pub(crate) struct UdsPubsProvisioningService {
     provisioner: Arc<Mutex<UdsPubsProvisioner>>,
 }
 
+// An empty service to register the AIDL interface to pass VTS.
+pub(crate) struct DisabledUdsPubsProvisioningService {}
+
 impl binder::Interface for UdsPubsProvisioningService {}
+impl binder::Interface for DisabledUdsPubsProvisioningService {}
 
 #[async_trait]
 impl IUdsPubsProvisionerAsyncServer for UdsPubsProvisioningService {
@@ -56,6 +58,39 @@ impl UdsPubsProvisioningService {
         R: binder::binder_impl::BinderAsyncRuntime + Send + Sync + 'static,
     {
         let service_impl = UdsPubsProvisioningService { provisioner };
+
+        let descriptor =
+            <BpUdsPubsProvisioner as IUdsPubsProvisioner>::get_descriptor().to_owned() + "/default";
+
+        let service =
+            BnUdsPubsProvisioner::new_async_binder(service_impl, binder_runtime, features);
+
+        binder::add_service(&descriptor, service.as_binder())
+            .with_context(|| format!("Failed to register {descriptor}"))?;
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl IUdsPubsProvisionerAsyncServer for DisabledUdsPubsProvisioningService {
+    async fn writeUdsPubs(
+        &self,
+        _listener: &binder::Strong<dyn IWriteCallback>,
+    ) -> binder::Result<()> {
+        Err(Status::new_service_specific_error_str(-1, Some("Service is disabled")))
+    }
+}
+
+impl DisabledUdsPubsProvisioningService {
+    pub(crate) fn create_and_register<R>(
+        binder_runtime: R,
+        features: binder::BinderFeatures,
+    ) -> anyhow::Result<()>
+    where
+        R: binder::binder_impl::BinderAsyncRuntime + Send + Sync + 'static,
+    {
+        let service_impl = DisabledUdsPubsProvisioningService {};
 
         let descriptor =
             <BpUdsPubsProvisioner as IUdsPubsProvisioner>::get_descriptor().to_owned() + "/default";
