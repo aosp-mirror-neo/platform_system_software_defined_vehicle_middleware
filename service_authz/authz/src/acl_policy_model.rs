@@ -25,30 +25,71 @@ use sdv_comms_id::names::TopicName;
 use sdv_comms_id::names::{ServiceUnitName, UnitTypeName};
 use sdv_comms_sd::discovery::UnitType;
 
+use std::hash::Hash;
+
 /// ACL Policy represents Access Control Policy for a Service Bundle.
 ///
 /// ACL Policy contains required information to guard access to Unit Types
 /// and Service Units implemented by that Service Bundle.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct AclPolicyModel {
     service_units_acls: HashMap<ServiceUnitName, Vec<Acl>>,
     unit_types_acls: HashMap<UnitTypeName, Vec<Acl>>,
 
-    pub(crate) publish_permissions: HashSet<(UnitType, Option<TopicName>)>,
-    pub(crate) subscribe_permissions: HashSet<(UnitType, Option<TopicName>)>,
-    pub(crate) serve_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
-    pub(crate) call_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
+    pub(crate) publish_permissions: Permissions<TopicName>,
+    pub(crate) subscribe_permissions: Permissions<TopicName>,
+    pub(crate) serve_permissions: Permissions<ServiceUnitName>,
+    pub(crate) call_permissions: Permissions<ServiceUnitName>,
     pub(crate) allow_read_all: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Permissions<T: Hash + Eq> {
+    pub(crate) allowed_types: HashSet<String>,
+    pub(crate) allowed_instances: HashMap<String, HashSet<T>>,
+}
+
+impl<T: Hash + Eq> Default for Permissions<T> {
+    fn default() -> Self {
+        Self { allowed_types: HashSet::new(), allowed_instances: HashMap::new() }
+    }
+}
+
+impl<T: Hash + Eq> Permissions<T> {
+    pub(crate) fn check(&self, unit_type: &UnitType, value: &T) -> bool {
+        // Use UnitType::to_string() as a representation of UnitType to simplify handling of "subpackages".
+        let unit_type_str = unit_type.to_string();
+
+        self.allowed_types.contains(&unit_type_str)
+            || self.allowed_instances.get(&unit_type_str).is_some_and(|set| set.contains(value))
+    }
+
+    pub(crate) fn add_permission(&mut self, model: PermissionModel<T>) {
+        match model {
+            PermissionModel::Type(unit_type) => {
+                self.allowed_types.insert(unit_type.to_string());
+            }
+            PermissionModel::Instance(unit_type, instances) => {
+                self.allowed_instances.entry(unit_type.to_string()).or_default().extend(instances);
+            }
+        }
+    }
+}
+
+/// Validated model of declared permission.
+pub(crate) enum PermissionModel<T: Hash + Eq> {
+    Type(UnitType),
+    Instance(UnitType, HashSet<T>),
 }
 
 impl AclPolicyModel {
     pub(crate) fn new(
         service_units_acls: HashMap<ServiceUnitName, Vec<Acl>>,
         unit_types_acls: HashMap<UnitTypeName, Vec<Acl>>,
-        publish_permissions: HashSet<(UnitType, Option<TopicName>)>,
-        subscribe_permissions: HashSet<(UnitType, Option<TopicName>)>,
-        serve_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
-        call_permissions: HashSet<(UnitType, Option<ServiceUnitName>)>,
+        publish_permissions: Permissions<TopicName>,
+        subscribe_permissions: Permissions<TopicName>,
+        serve_permissions: Permissions<ServiceUnitName>,
+        call_permissions: Permissions<ServiceUnitName>,
         allow_read_all: bool,
     ) -> AclPolicyModel {
         AclPolicyModel {
@@ -87,8 +128,7 @@ impl AclPolicyModel {
 
     /// Returns whether there is permission to publishto the given topic.
     pub fn can_publish(&self, publication_type: &UnitType, topic: &TopicName) -> bool {
-        self.publish_permissions.contains(&(publication_type.clone(), Some(topic.clone())))
-            || self.publish_permissions.contains(&(publication_type.clone(), None))
+        self.publish_permissions.check(publication_type, topic)
     }
 
     /// Returns whether there is permission to subscribe to the given topic.
@@ -97,14 +137,12 @@ impl AclPolicyModel {
             return true;
         }
 
-        self.subscribe_permissions.contains(&(publication_type.clone(), Some(topic.clone())))
-            || self.subscribe_permissions.contains(&(publication_type.clone(), None))
+        self.subscribe_permissions.check(publication_type, topic)
     }
 
     /// Returns whether there is permission to serve the given service unit.
     pub fn can_serve(&self, service: &UnitType, service_unit: &ServiceUnitName) -> bool {
-        self.serve_permissions.contains(&(service.clone(), Some(service_unit.clone())))
-            || self.serve_permissions.contains(&(service.clone(), None))
+        self.serve_permissions.check(service, service_unit)
     }
 
     /// Returns whether there is permission to call the given service unit.
@@ -113,8 +151,7 @@ impl AclPolicyModel {
             return true;
         }
 
-        self.call_permissions.contains(&(service.clone(), Some(service_unit.clone())))
-            || self.call_permissions.contains(&(service.clone(), None))
+        self.call_permissions.check(service, service_unit)
     }
 }
 
