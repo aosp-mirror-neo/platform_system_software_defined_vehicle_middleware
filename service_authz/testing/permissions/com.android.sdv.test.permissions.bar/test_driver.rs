@@ -129,14 +129,21 @@ fn spawn_execution_thread(
 async fn service_main(context: ContextRef) -> SdvResult<()> {
     let non_connectable_server_fqin = fetch_non_connectable_server_fqin(context).await?;
 
+    check_vm_denied_server_not_discoverable(context).await?;
+
     test_request_to_non_connectable_server(context, non_connectable_server_fqin).await?;
 
     let non_connectable_publisher_sid = fetch_non_connectable_publisher_sid(context).await?;
+
+    check_vm_denied_publisher_not_discoverable(context).await?;
 
     test_subscribe_to_non_connectable_publisher(context, non_connectable_publisher_sid).await?;
 
     Ok(())
 }
+
+static TESTED_SERVICE_PACKAGE_NAME: &str = "com.android.sdv.test.permissions.foo";
+static TESTED_SERVICE_BUNDLE_NAME: &str = "AuthzTestedService";
 
 static TESTED_SERVER_UNIT_TYPE_STR: &str =
     "com.android.sdv.test.permissions.foo.AuthzTestedService#EchoRpcServerUnitType";
@@ -249,6 +256,32 @@ async fn test_request_to_non_connectable_server(
             }
         }
     }
+}
+
+static VM_DENIED_SERVER_SERVICE_UNIT_NAME: &str = "echo-rpc-server-vm-denied";
+
+async fn check_vm_denied_server_not_discoverable(context: ContextRef) -> SdvResult<()> {
+    use sdv::comms::sd::UnitNameDiscoveryArgs;
+
+    let name_args = UnitNameDiscoveryArgs::new_builder()
+        .set_sdv_package_name(TESTED_SERVICE_PACKAGE_NAME)
+        .set_service_bundle_name(TESTED_SERVICE_BUNDLE_NAME)
+        .set_service_unit_name(VM_DENIED_SERVER_SERVICE_UNIT_NAME.to_string())
+        .build()
+        .expect("UnitNameDiscoveryArgs build() failed");
+
+    let discovery_result: Vec<ServiceUnitDefinition> =
+        ServiceDiscoveryManager::new(context).list_units_by_name(&name_args).collect().await;
+
+    if !discovery_result.is_empty() {
+        let err_str =
+            format!("VM denied RPC server was unexpectedly discovered: {:?}", discovery_result);
+        error!("{err_str}");
+        return Err(SdvStatus::with_message(SdvStatusCode::Internal, err_str));
+    }
+
+    info!("VM-denied RPC server was not discovered due to VM permissions configuration as it was expected.");
+    Ok(())
 }
 
 static TESTED_SERVER_NON_CONNECTABLE_SERVICE_UNIT: &str = "echo-rpc-server-non-connectable";
@@ -369,6 +402,32 @@ fn parse_u64_from_utf8_with_trailing_zeros(s: &[u8]) -> SdvResult<u64> {
 
     // Parse the u64.
     number_str.parse::<u64>().map_err(|err| SdvStatus::with_cause(SdvStatusCode::Internal, err))
+}
+
+static VM_DENIED_PUBLISHER_SERVICE_UNIT_NAME: &str = "ping-dt-publisher-vm-denied";
+
+async fn check_vm_denied_publisher_not_discoverable(context: ContextRef) -> SdvResult<()> {
+    use sdv::comms::sd::UnitNameDiscoveryArgs;
+
+    let name_args = UnitNameDiscoveryArgs::new_builder()
+        .set_sdv_package_name(TESTED_SERVICE_PACKAGE_NAME)
+        .set_service_bundle_name(TESTED_SERVICE_BUNDLE_NAME)
+        .set_service_unit_name(VM_DENIED_PUBLISHER_SERVICE_UNIT_NAME.to_string())
+        .build()
+        .expect("UnitNameDiscoveryArgs build() failed");
+
+    let discovery_result: Vec<ServiceUnitDefinition> =
+        ServiceDiscoveryManager::new(context).list_units_by_name(&name_args).collect().await;
+
+    if !discovery_result.is_empty() {
+        let err_str =
+            format!("VM denied DT publisher was unexpectedly discovered: {:?}", discovery_result);
+        error!("{err_str}");
+        return Err(SdvStatus::with_message(SdvStatusCode::Internal, err_str));
+    }
+
+    info!("VM-denied DT publisher was not discovered due to VM permissions configuration as it was expected.");
+    Ok(())
 }
 
 static NON_CONNECTABLE_PUBLISHER_SERVICE_UNIT_NAME: &str = "ping-dt-publisher-non-connectable";
