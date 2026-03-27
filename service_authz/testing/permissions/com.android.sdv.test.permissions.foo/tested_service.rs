@@ -27,6 +27,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
 use sdv::comms::dt::Publisher;
+use sdv::comms::rpc::{Client, ClientOptions};
 use sdv::comms::rpc::{Server, ServerOptions, UnaryRpcMethod};
 use sdv::comms::sd::PublisherUnitMetadata;
 use sdv::comms::sd::ServerUnitMetadata;
@@ -137,6 +138,8 @@ async fn service_main(context: ContextRef) -> SdvResult<()> {
     let non_connectable_server_sid = discover_non_connectable_server(context).await?;
     info!("Non-connectable RPC server identifiers: SID {non_connectable_server_sid}");
 
+    let _vm_denied_server = create_vm_denied_server(context).await?;
+
     let _server = create_server(context).await?;
 
     // DT publishers.
@@ -146,7 +149,26 @@ async fn service_main(context: ContextRef) -> SdvResult<()> {
     let non_connectable_publisher_sid = discover_non_connectable_publisher(context).await?;
     info!("Non-connectable DT publisher identifiers: SID {non_connectable_publisher_sid}");
 
+    let vm_denied_publisher = create_vm_denied_publisher(context).await?;
+
+    // Test local connection to VM denied server
+    test_local_request_to_vm_denied_server(context).await?;
+
+    // Test local subscription to VM denied publisher
+    let mut local_subscriber = test_local_subscribe_to_vm_denied_publisher(context).await?;
+
     let publisher = create_publisher(context).await?;
+    publish_message(&vm_denied_publisher, "local_test_message")?;
+
+    // Check that we locally received the message from the VM denied publisher
+    if let Some(msg_result) = local_subscriber.next().await {
+        let (messages_read, _data) = msg_result?;
+        assert_eq!(messages_read, 1);
+        info!("Successfully received message locally from VM denied publisher");
+    } else {
+        panic!("Failed to receive message locally from VM denied publisher");
+    }
+
     publish_message(&publisher, &non_connectable_publisher_sid.to_string())?;
     publish_message(&non_connectable_publisher, "This message should not be received")?;
 
@@ -200,9 +222,60 @@ async fn create_server(context: ContextRef) -> SdvResult<Server> {
     Ok(server)
 }
 
-static NON_CONNECTABLE_SERVER_PACKAGE_NAME: &str = "com.android.sdv.test.permissions.foo";
-static NON_CONNECTABLE_SERVER_SERVICE_BUNDLE_NAME: &str = "AuthzTestedService";
+static TESTED_SERVICE_PACKAGE_NAME: &str = "com.android.sdv.test.permissions.foo";
+static TESTED_SERVICE_BUNDLE_NAME: &str = "AuthzTestedService";
+
 static NON_CONNECTABLE_SERVER_SERVICE_UNIT_NAME: &str = "echo-rpc-server-non-connectable";
+
+static VM_DENIED_SERVER_SERVICE_UNIT_NAME: &str = "echo-rpc-server-vm-denied";
+
+async fn create_vm_denied_server(context: ContextRef) -> SdvResult<Server> {
+    let mut unit_registration_args = UnitRegistrationArgs::new();
+    {
+        let mut server_unit_metadata = ServerUnitMetadata::new();
+        server_unit_metadata.set_version(1);
+
+        unit_registration_args.set_unit_name(VM_DENIED_SERVER_SERVICE_UNIT_NAME);
+        unit_registration_args.set_unit_type(&SERVER_UNIT_TYPE);
+        unit_registration_args.set_unit_metadata(&UnitMetadata::Server(server_unit_metadata));
+    }
+    let method: UnaryRpcMethod = Arc::new(|_, request: &[u8]| {
+        info!("Processing request");
+        let response = request.to_vec();
+        Box::pin(async move { Ok(response) })
+    });
+
+    let methods_map: HashMap<String, UnaryRpcMethod> =
+        HashMap::from([("echo".to_string(), method)]);
+    let server =
+        Server::create(context, unit_registration_args, methods_map, &ServerOptions::default())
+            .await?;
+    Ok(server)
+}
+
+async fn test_local_request_to_vm_denied_server(context: ContextRef) -> SdvResult<()> {
+    let name_args = UnitNameDiscoveryArgs::new_builder()
+        .set_sdv_package_name(TESTED_SERVICE_PACKAGE_NAME)
+        .set_service_bundle_name(TESTED_SERVICE_BUNDLE_NAME)
+        .set_service_unit_name(VM_DENIED_SERVER_SERVICE_UNIT_NAME.to_string())
+        .build()
+        .expect("UnitNameDiscoveryArgs build() failed");
+
+    let discovery_result: Vec<ServiceUnitDefinition> =
+        ServiceDiscoveryManager::new(context).list_units_by_name(&name_args).collect().await;
+
+    assert_eq!(discovery_result.len(), 1);
+    let server_identifier = discovery_result[0].get_unit_identifier();
+
+    let client = Client::create(context, server_identifier, &ClientOptions::default()).await?;
+
+    // Call should succeed since it's local
+    let response = client.unary_call("echo", b"hello_world").await?;
+    let response_str = std::str::from_utf8(&response).unwrap();
+    assert_eq!(response_str, "hello_world");
+    info!("Successfully performed local request to VM denied server, response: {response_str}");
+    Ok(())
+}
 
 // Creates an RPC server that does not authorize access to any RPC clients
 // except the current service bundle.
@@ -236,8 +309,8 @@ async fn create_non_connectable_server(context: ContextRef) -> SdvResult<Server>
 // Returns SID of that RPC server.
 async fn discover_non_connectable_server(context: ContextRef) -> SdvResult<u64> {
     let name_args = UnitNameDiscoveryArgs::new_builder()
-        .set_sdv_package_name(NON_CONNECTABLE_SERVER_PACKAGE_NAME)
-        .set_service_bundle_name(NON_CONNECTABLE_SERVER_SERVICE_BUNDLE_NAME)
+        .set_sdv_package_name(TESTED_SERVICE_PACKAGE_NAME)
+        .set_service_bundle_name(TESTED_SERVICE_BUNDLE_NAME)
         .set_service_unit_name(NON_CONNECTABLE_SERVER_SERVICE_UNIT_NAME.to_string())
         .build()
         .expect("UnitNameDiscoveryArgs build() failed");
@@ -304,9 +377,49 @@ fn resize_to_size(data: &[u8], size: u32) -> Vec<u8> {
     resized_data
 }
 
-static NON_CONNECTABLE_PUBLISHER_PACKAGE_NAME: &str = "com.android.sdv.test.permissions.foo";
-static NON_CONNECTABLE_PUBLISHER_SERVICE_BUNDLE_NAME: &str = "AuthzTestedService";
 static NON_CONNECTABLE_PUBLISHER_SERVICE_UNIT_NAME: &str = "ping-dt-publisher-non-connectable";
+
+static VM_DENIED_PUBLISHER_SERVICE_UNIT_NAME: &str = "ping-dt-publisher-vm-denied";
+
+async fn create_vm_denied_publisher(context: ContextRef) -> SdvResult<Publisher> {
+    let mut unit_registration_args = UnitRegistrationArgs::new();
+    let mut publisher_metadata = PublisherUnitMetadata::new();
+    publisher_metadata.set_message_size(PUBLISHER_MESSAGE_SIZE);
+    publisher_metadata.set_message_count(PUBLISHER_MESSAGE_COUNT);
+
+    unit_registration_args.set_unit_type(&PUBLISHER_UNIT_TYPE);
+    unit_registration_args.set_unit_metadata(&UnitMetadata::Publisher(publisher_metadata));
+    unit_registration_args.set_unit_name(VM_DENIED_PUBLISHER_SERVICE_UNIT_NAME);
+
+    Publisher::create(context, unit_registration_args).await
+}
+
+use sdv::comms::dt::{SubscriberOptions, SubscriberStream};
+
+async fn test_local_subscribe_to_vm_denied_publisher(
+    context: ContextRef,
+) -> SdvResult<SubscriberStream> {
+    let name_args = UnitNameDiscoveryArgs::new_builder()
+        .set_sdv_package_name(TESTED_SERVICE_PACKAGE_NAME)
+        .set_service_bundle_name(TESTED_SERVICE_BUNDLE_NAME)
+        .set_service_unit_name(VM_DENIED_PUBLISHER_SERVICE_UNIT_NAME.to_string())
+        .build()
+        .expect("UnitNameDiscoveryArgs build() failed");
+
+    let discovery_result: Vec<ServiceUnitDefinition> =
+        ServiceDiscoveryManager::new(context).list_units_by_name(&name_args).collect().await;
+
+    assert_eq!(discovery_result.len(), 1);
+    let publisher_identifier = discovery_result[0].get_unit_identifier();
+
+    SubscriberStream::create(
+        context,
+        &publisher_identifier,
+        Duration::ZERO,
+        SubscriberOptions { fetch_last_message: false },
+    )
+    .await
+}
 
 // Creates a DT publisher that does not authorize access to any DT subscriber
 // except the current service bundle.
@@ -331,8 +444,8 @@ async fn create_non_connectable_publisher(context: ContextRef) -> SdvResult<Publ
 // Returns SID of that DT publisher.
 async fn discover_non_connectable_publisher(context: ContextRef) -> SdvResult<u64> {
     let name_args = UnitNameDiscoveryArgs::new_builder()
-        .set_sdv_package_name(NON_CONNECTABLE_PUBLISHER_PACKAGE_NAME)
-        .set_service_bundle_name(NON_CONNECTABLE_PUBLISHER_SERVICE_BUNDLE_NAME)
+        .set_sdv_package_name(TESTED_SERVICE_PACKAGE_NAME)
+        .set_service_bundle_name(TESTED_SERVICE_BUNDLE_NAME)
         .set_service_unit_name(NON_CONNECTABLE_PUBLISHER_SERVICE_UNIT_NAME.to_string())
         .build()
         .expect("UnitNameDiscoveryArgs build() failed");

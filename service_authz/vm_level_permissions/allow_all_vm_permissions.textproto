@@ -7,3 +7,15 @@ allow_publisher { message: "*" topic: "*" }
 allow_subscriber { message: "*" topic: "*" }
 allow_server { service: "*" channel: "*" }
 allow_client { service: "*" channel: "*" }
+
+# The following rules are used for end-to-end testing only.
+# See system/software_defined_vehicle/middleware/service_authz/testing/permissions/README.md
+# for the test scenarios.
+deny_publisher {
+  message: "com.android.sdv.test.permissions.foo.PingDtPublisherUnitType"
+  topic: "ping-dt-publisher-vm-denied"
+}
+deny_server {
+  service: "com.android.sdv.test.permissions.foo.EchoRpcServerUnitType"
+  channel: "echo-rpc-server-vm-denied"
+}

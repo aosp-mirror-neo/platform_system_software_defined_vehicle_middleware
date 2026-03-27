@@ -21,6 +21,9 @@
 subscriber {
   message: "com.android.sdv.test.permissions.foo.PingDtPublisherUnitType"
   topic: "ping-dt-publisher"
+  # Bundle declares permission to access the VM denied publisher.
+  # Discovery should still fail, due to VM-level denial.
+  topic: "ping-dt-publisher-vm-denied"
 }
 
 # ------------------------------ RPC ------------------------------
@@ -28,4 +31,7 @@ subscriber {
 client {
   service: "com.android.sdv.test.permissions.foo.EchoRpcServerUnitType"
   channel: "echo-rpc-server"
+  # Bundle declares permission to access the VM denied server.
+  # Discovery should still fail, due to VM-level denial.
+  channel: "echo-rpc-server-vm-denied"
 }
