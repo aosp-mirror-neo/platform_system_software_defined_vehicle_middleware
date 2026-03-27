@@ -247,6 +247,7 @@ impl IIdentityAgentV2AsyncServer for IdentityAgentV2 {
     }
 }
 
+// TODO: b/496533927 - call SD directly from Apps on IVI as well and remove this interface.
 #[allow(non_snake_case)] // generated AIDL interface
 #[async_trait]
 impl IPrivilegedIdentityAgentAsyncServer for IdentityAgentV2 {
@@ -261,8 +262,12 @@ impl IPrivilegedIdentityAgentAsyncServer for IdentityAgentV2 {
         client_binder: &SpIBinder,
         process_identifier: &ProcessIdentifierAidl,
     ) -> GatewayBinderResult<ServiceIdentityV2Aidl> {
-        // Not calling verify_fqin_for_process(), because, on the
-        // IPrivilegedIdentityAgentAsyncServer, the caller is trusted to provide correct FQIN.
+        // On IVI, the SDV Gateway calls this interface on behalf of an Android App using the
+        // process identifier of that app.
+        self.verify_fqin_for_process(process_identifier, provided_fqin).map_err(|err| {
+            error!("Rejecting registration of FQIN {provided_fqin:?} for {process_identifier:?} ({err})");
+            Status::new_exception_str(ExceptionCode::SECURITY, Some(err.to_string()))
+        })?;
 
         let new_identity = self.create_identity(pub_key, provided_fqin)?;
 
