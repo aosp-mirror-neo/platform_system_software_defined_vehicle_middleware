@@ -262,6 +262,51 @@ mod tests {
     }
 
     #[test]
+    fn test_with_subpackage() {
+        let acl_policy_proto: AclPolicyProto = text_format::parse_from_str(
+            r#"
+            publisher {
+                message: "test.package.subpackage.Message"
+                topic: "topic"
+            }
+            subscriber {
+                message: "test.package.subpackage.Message"
+                topic: "topic"
+            }
+            server {
+                service: "test.package.subpackage.Service"
+                channel: "channel"
+            }
+            client {
+                service: "test.package.subpackage.Service"
+                channel: "channel"
+            }
+        "#,
+        )
+        .expect("Failed to parse policy");
+        let policy = AclPolicyModel::try_from(acl_policy_proto).unwrap();
+
+        let non_normalized_message = UnitType::builder()
+            .package_name("test.package")
+            .unit_type_name("subpackage.Message")
+            .build()
+            .unwrap();
+        let non_normalized_service = UnitType::builder()
+            .package_name("test.package")
+            .unit_type_name("subpackage.Service")
+            .build()
+            .unwrap();
+
+        let topic = TopicName::from_str("topic").unwrap();
+        let channel = ServiceUnitName::from_str("channel").unwrap();
+
+        assert!(policy.can_publish(&non_normalized_message, &topic));
+        assert!(policy.can_subscribe(&non_normalized_message, &topic));
+        assert!(policy.can_serve(&non_normalized_service, &channel));
+        assert!(policy.can_call(&non_normalized_service, &channel));
+    }
+
+    #[test]
     fn test_permissions_logic() {
         let proto: AclPolicyProto = text_format::parse_from_str(
             r#"
