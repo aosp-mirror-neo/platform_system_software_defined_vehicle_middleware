@@ -37,6 +37,16 @@ pub trait Publish: Send {
     /// because the trait implementations may or may not use fixed sizes for the messages,
     /// and may or may not encode the message size in the message.
     fn publish_messages(&self, messages: &[Box<[u8]>]) -> SdvResult<()>;
+
+    /// Publishes a byte buffer containing one or more equally-sized messages.
+    /// The implementation is responsible for correctly handling the buffer.
+    fn publish_flat_batch(&self, buffer: &[u8]) -> SdvResult<()>;
+
+    /// Returns the maximum size of a single message in bytes.
+    fn get_max_message_size(&self) -> SdvResult<usize>;
+
+    /// Returns the maximum number of messages that the publication queue can hold.
+    fn get_queue_capacity(&self) -> SdvResult<usize>;
 }
 
 /// A Publication trait object represents a message queue, which offers different methods for consuming messages.
@@ -73,6 +83,25 @@ pub trait Subscribe: Send {
     /// are parseable: trait implementations may or may not use fixed sizes for the messages,
     /// and may or may not encode the message size in the message.
     fn read_next_messages(&self, message_count: u32) -> SdvResult<Vec<Box<[u8]>>>;
+
+    /// Returns the maximum size of a single message in bytes, including any transport-level
+    /// padding or headers.
+    ///
+    /// This value is essential for consumers that need to pre-allocate buffers, especially
+    /// when using `read_next_buffer`, as the underlying transport may expect fixed-size message slots.
+    fn get_max_message_size(&self) -> SdvResult<usize>;
+
+    /// Returns the number of messages currently available to be read from the subscription queue.
+    ///
+    /// This can be used to determine how many messages to request in a subsequent call to
+    /// `read_next_messages` or `read_flat_batch` to avoid reading more than is available.
+    fn get_available_to_read_count(&self) -> SdvResult<usize>;
+
+    /// Reads one or more messages into the provided buffer.
+    ///
+    /// The underlying implementation expects the buffer to be large enough to hold one or more
+    /// fixed-size messages. It returns the number of messages read.
+    fn read_flat_batch(&self, buffer: &mut [u8]) -> SdvResult<usize>;
 }
 
 /// Represents a consumer-side message cache for a publication.
