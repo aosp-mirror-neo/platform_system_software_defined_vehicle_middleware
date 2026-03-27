@@ -397,6 +397,7 @@ fn run() -> Result<()> {
             Arc::clone(&vvm_config),
             mesh_acl_policy_provider,
             Arc::clone(&service_registry),
+            Arc::clone(&authz_service),
             Arc::clone(&env),
             tokio_runtime.clone(),
             power_state_tx.clone(),
@@ -406,6 +407,7 @@ fn run() -> Result<()> {
             Arc::clone(&vvm_config),
             mesh_acl_policy_provider,
             Arc::clone(&service_registry),
+            Arc::clone(&authz_service),
             Arc::clone(&env),
             tokio_runtime.clone(),
             power_state_tx.clone(),
@@ -449,10 +451,12 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn setup_locked_mode(
     vvm_config: Arc<VvmConfig>,
     mesh_acl_policy_provider: Arc<MeshAclPolicyProvider>,
     service_registry: Arc<ServiceRegistry>,
+    authz_service: Arc<AuthzService>,
     env: Arc<Environment>,
     tokio_runtime: Arc<tokio::runtime::Runtime>,
     power_state_tx: broadcast::Sender<SimplePowerState>,
@@ -471,6 +475,7 @@ fn setup_locked_mode(
     let mesh_manager_params = MeshManagerParams {
         mesh_acl_policy_provider,
         service_registry: service_registry.clone(),
+        authz_service: authz_service.clone(),
         vvm_config: vvm_config.clone(),
         connector,
         mesh_mode: manager::MeshMode::Locked(manager::LockedMesh {
@@ -510,10 +515,12 @@ fn setup_locked_mode(
 }
 
 /// Mode used in a factory settings and development.
+#[allow(clippy::too_many_arguments)]
 fn setup_unlocked_mode(
     vvm_config: Arc<VvmConfig>,
     mesh_acl_policy_provider: Arc<MeshAclPolicyProvider>,
     service_registry: Arc<ServiceRegistry>,
+    authz_service: Arc<AuthzService>,
     env: Arc<Environment>,
     tokio_runtime: Arc<tokio::runtime::Runtime>,
     power_state_tx: broadcast::Sender<SimplePowerState>,
@@ -530,6 +537,7 @@ fn setup_unlocked_mode(
     let mesh_manager_params = MeshManagerParams {
         mesh_acl_policy_provider,
         service_registry: service_registry.clone(),
+        authz_service: authz_service.clone(),
         vvm_config: vvm_config.clone(),
         connector: Box::new(UnsecureMeshConnector {}),
         mesh_mode: manager::MeshMode::Unlocked(manager::UnlockedMesh {

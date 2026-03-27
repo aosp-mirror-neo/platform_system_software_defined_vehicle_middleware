@@ -23,6 +23,7 @@ use crate::kv::ServiceRegistry;
 use crate::mesh::async_client::{MeshConnector, MeshManagerAsyncClient};
 use crate::mesh::UdsPubsProvisioner;
 use crate::power_state::SimplePowerState;
+use sdv_authz::AuthzService;
 
 use anyhow::{bail, Context};
 use crypto_rpc::cert::base32_x509_common_name_to_string;
@@ -291,6 +292,7 @@ async fn do_exponential_delay_internal(
 pub(crate) struct MeshManager {
     mesh_acl_policy_provider: Arc<MeshAclPolicyProvider>,
     service_registry: Arc<ServiceRegistry>,
+    authz_service: Arc<AuthzService>,
     peers: MeshGroup,
     vvm_config: Arc<VvmConfig>,
     connector: Arc<dyn MeshConnector>,
@@ -305,6 +307,7 @@ pub(crate) struct MeshManager {
 pub(crate) struct MeshManagerParams {
     pub mesh_acl_policy_provider: Arc<MeshAclPolicyProvider>,
     pub service_registry: Arc<ServiceRegistry>,
+    pub authz_service: Arc<AuthzService>,
     pub vvm_config: Arc<VvmConfig>,
     pub connector: Box<dyn MeshConnector>,
     pub mesh_mode: MeshMode,
@@ -318,6 +321,7 @@ impl MeshManager {
         MeshManager {
             mesh_acl_policy_provider: params.mesh_acl_policy_provider,
             service_registry: params.service_registry,
+            authz_service: params.authz_service,
             peers: Default::default(),
             vvm_config: params.vvm_config,
             connector: Arc::from(params.connector),
@@ -420,6 +424,7 @@ impl MeshManager {
             vm_cfg.name.as_ref(),
             rpc_client,
             self.service_registry.clone(),
+            self.authz_service.clone(),
             tokio_runtime,
         )?;
 
@@ -584,6 +589,7 @@ pub(crate) mod test_support {
     use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName};
     use std::collections::HashMap;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::Arc;
 
     pub struct TestSingleVmAclPolicyProvider {
         mapping: HashMap<(PackageName, Option<ServiceBundleName>), AclPolicyProto>,
@@ -640,6 +646,47 @@ pub(crate) mod test_support {
         let root_key = PKey::from_ec_key(build_ec_private_key()?)?;
         let root_cert = build_root_certificate(&root_key, vm_name)?;
         Ok(root_cert.to_pem()?)
+    }
+
+    /// Creates a disabled authz service for test.
+    ///
+    /// We use a disabled AuthzService because the tests in this module focus on mesh connection
+    /// establishment, peer discovery, service unit registration, and ACL exchange. Enabling
+    /// authorization would require populating the AuthzService with all necessary policies for
+    /// every test, which is unnecessary since authorization itself is tested elsewhere.
+    pub fn create_test_authz_service() -> sdv_authz::AuthzService {
+        use sdv_authz::{AuthzEnforcementFlag, AuthzStrategy};
+        use std::str::FromStr;
+
+        struct TestAuthzEnforcementFlag {}
+        impl AuthzEnforcementFlag for TestAuthzEnforcementFlag {
+            fn get_enforcement_strategy(&self) -> AuthzStrategy {
+                AuthzStrategy::Disabled
+            }
+        }
+
+        struct TestRegistry {}
+        impl sdv_authz::ServiceUnitRegistry for TestRegistry {
+            fn get_service_unit(
+                &self,
+                _fqin: &google_sdv_identity::aidl::google::sdv::identity::ServiceFqin::ServiceFqin,
+                _unit_name: &str,
+            ) -> Option<google_sdv_service_discovery_discovery::aidl::google::sdv::service_discovery::discovery::ServiceUnitDefinition::ServiceUnitDefinition>{
+                None
+            }
+        }
+
+        let vm_name = VmName::from_str("local-vm").unwrap();
+
+        sdv_authz::AuthzService::new(
+            vm_name.clone(),
+            Arc::new(MeshAclPolicyProvider::new(
+                vm_name.clone(),
+                Arc::new(TestSingleVmAclPolicyProvider::new()),
+            )),
+            Arc::new(TestAuthzEnforcementFlag {}),
+            Arc::new(TestRegistry {}),
+        )
     }
 
     /// Creates a VvmConfig with a local VM named VM_INSTANCE_1_NAME and
@@ -789,6 +836,7 @@ mod tests {
         mesh_mode: Option<MeshMode>,
         power_state_tx: Option<broadcast::Sender<SimplePowerState>>,
         vvm_config: Option<Arc<VvmConfig>>,
+        authz_service: Option<Arc<AuthzService>>,
     }
 
     impl MeshManagerBuilder {
@@ -818,6 +866,11 @@ mod tests {
             self
         }
 
+        pub fn with_authz_service(mut self, authz_service: Arc<AuthzService>) -> Self {
+            self.authz_service = Some(authz_service);
+            self
+        }
+
         pub fn build(self) -> MeshManager {
             let vvm_config =
                 self.vvm_config.unwrap_or_else(|| Arc::new(create_test_vvm_config().unwrap()));
@@ -831,9 +884,14 @@ mod tests {
 
             let power_state_tx = self.power_state_tx.unwrap_or_else(|| broadcast::Sender::new(16));
 
+            let authz_service = self.authz_service.unwrap_or_else(|| {
+                Arc::new(crate::mesh::manager::test_support::create_test_authz_service())
+            });
+
             MeshManager::new(MeshManagerParams {
                 mesh_acl_policy_provider,
                 service_registry,
+                authz_service,
                 vvm_config,
                 connector: self.connector.expect("connector must be set"),
                 mesh_mode: self.mesh_mode.expect("mesh_mode must be set"),
