@@ -22,11 +22,13 @@ publisher {
   message: "com.android.sdv.test.permissions.foo.PingDtPublisherUnitType"
   topic: "ping-dt-publisher"
   topic: "ping-dt-publisher-non-connectable"
+  topic: "ping-dt-publisher-vm-denied"
 }
 
 subscriber {
   message: "com.android.sdv.test.permissions.foo.PingDtPublisherUnitType"
   topic: "ping-dt-publisher-non-connectable"
+  topic: "ping-dt-publisher-vm-denied"
 }
 
 # ------------------------------ RPC ------------------------------
@@ -35,6 +37,7 @@ server {
   service: "com.android.sdv.test.permissions.foo.EchoRpcServerUnitType"
   channel: "echo-rpc-server"
   channel: "echo-rpc-server-non-connectable"
+  channel: "echo-rpc-server-vm-denied"
 }
 
 # Authorize only AuthzTestedService service bundle to get SID of
@@ -45,4 +48,5 @@ server {
 client {
   service: "com.android.sdv.test.permissions.foo.EchoRpcServerUnitType"
   channel: "echo-rpc-server-non-connectable"
+  channel: "echo-rpc-server-vm-denied"
 }
