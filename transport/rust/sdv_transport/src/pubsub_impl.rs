@@ -67,10 +67,7 @@ impl Publish for SdvPublisher {
         let buffer_size = size_for_one_msg * messages.len();
         let mut buffer = allocate_buffer(buffer_size)?;
         span.exit();
-        let span = tracing::info_span!("Create Cursor").entered();
         let mut cursor = std::io::Cursor::new(&mut *buffer);
-        span.exit();
-        let span = tracing::info_span!("Pad Msgs").entered();
         for (i, message) in messages.iter().enumerate() {
             if message.len() > size_for_one_msg {
                 return Err(SdvStatus::with_message(
@@ -93,11 +90,24 @@ impl Publish for SdvPublisher {
                 )
             })?;
         }
-        span.exit();
-        let span = tracing::info_span!("DT::Publisher::write_messages").entered();
         self.publish_handle.write_messages(&buffer)?;
-        span.exit();
         Ok(())
+    }
+
+    #[tracing::instrument(name = "MW::SdvPublisher::publish_flat_batch",
+        skip(self, buffer),
+        fields(buffer_size = buffer.len(), ))]
+    fn publish_flat_batch(&self, buffer: &[u8]) -> SdvResult<()> {
+        let _ = self.publish_handle.write_messages(buffer)?;
+        Ok(())
+    }
+
+    fn get_max_message_size(&self) -> SdvResult<usize> {
+        Ok(self.publish_handle.get_publisher_unit_metadata().get_message_size() as usize)
+    }
+
+    fn get_queue_capacity(&self) -> SdvResult<usize> {
+        Ok(self.publish_handle.get_publisher_unit_metadata().get_message_count() as usize)
     }
 }
 
@@ -173,28 +183,16 @@ impl SdvSubscriber {
 impl Subscribe for SdvSubscriber {
     #[tracing::instrument(name = "MW::SdvSubscriber::read_next_messages", skip(self))]
     fn read_next_messages(&self, message_count: u32) -> SdvResult<Vec<Box<[u8]>>> {
-        // Ensure we do not attempt to read more messages than the DT agent has otherwise
-        // no messages will be read at all
-        let mut message_count = min(self.dt_handle.available_to_read()?, message_count);
+        let message_count = min(self.get_available_to_read_count()?, message_count as usize);
         if message_count == 0 {
             return Ok(Vec::new());
         }
 
-        let metadata = self.dt_handle.get_publisher_unit_metadata();
-
-        // If message_count is greater than the publisher capacity, then available_to_read() must
-        // have returned a value greater than publisher capacity, meaning that this subscriber is
-        // in an overflow state and the read_messages() call below will fail with a DataLoss error.
-        // Given that, revise the message count to 1 to minimize the size the allocation that won't
-        // actually be used, and avoid a possible out-of-memory error.
-        if message_count > metadata.get_message_count() {
-            message_count = 1;
-        }
-
         // Dt uses the (maximum) message size specified in publication registration for all messages
+        let metadata = self.dt_handle.get_publisher_unit_metadata();
         let size_for_one_msg = metadata.get_message_size() as usize;
         let buffer_size = size_for_one_msg
-            .checked_mul(message_count as usize)
+            .checked_mul(message_count)
             .unwrap_or(usize::MAX - usize::MAX % size_for_one_msg);
         let mut bytes = allocate_buffer(buffer_size)?;
         self.dt_handle.read_messages(&mut bytes)?;
@@ -202,6 +200,31 @@ impl Subscribe for SdvSubscriber {
             .chunks(size_for_one_msg)
             .map(|chunk| chunk.to_owned().into_boxed_slice())
             .collect())
+    }
+
+    fn get_max_message_size(&self) -> SdvResult<usize> {
+        Ok(self.dt_handle.get_publisher_unit_metadata().get_message_size() as usize)
+    }
+
+    fn get_available_to_read_count(&self) -> SdvResult<usize> {
+        let count = self.dt_handle.available_to_read()?;
+        let queue_capacity = self.dt_handle.get_publisher_unit_metadata().get_message_count();
+
+        // If count is greater than the publisher capacity, then available_to_read() must
+        // have returned a value greater than publisher capacity, meaning that this subscriber is
+        // in an overflow state and the read_messages() call will fail with a DataLoss error.
+        // Given that, revise the message count to 1 to minimize the size the allocation that won't
+        // actually be used, and avoid a possible out-of-memory error.
+        if count > queue_capacity {
+            Ok(1)
+        } else {
+            Ok(count as usize)
+        }
+    }
+
+    #[tracing::instrument(name = "MW::SdvSubscriber::read_flat_batch", skip(self, buffer))]
+    fn read_flat_batch(&self, buffer: &mut [u8]) -> SdvResult<usize> {
+        self.dt_handle.read_messages(buffer).map(|count| count as usize)
     }
 }
 

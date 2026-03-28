@@ -42,6 +42,7 @@ rust_library {
         "liblog_rust",
         "libsdv_rs",
         "libfutures",
+        "libvsidl_rpc_test_proto",
         "libsdv_vsidl_rpc_test_tire_status_rpc_rs",
     ],
     apex_available: [

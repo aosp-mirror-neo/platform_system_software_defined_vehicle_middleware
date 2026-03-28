@@ -37,6 +37,8 @@ use sdv_comms_id::names::{ServiceUnitName, UnitTypeName};
 use sdv_comms_sd::discovery::UnitType;
 use tracing::instrument;
 
+use crate::acl_policy_model::{PermissionModel, Permissions};
+
 /// Parses AclPolicyProto into an AclPolicyModel struct.
 #[instrument(name = "authz_perf::service::parse_acl_policy_from_proto", skip_all, fields(size_bytes=acl_policy_proto.compute_size_dyn()))]
 pub(crate) fn parse_acl_policy_from_proto(
@@ -64,113 +66,127 @@ pub(crate) fn parse_acl_policy_from_proto(
 }
 
 fn parse_publish_permissions(
-    proto_perms: &[PublishPermissionProto],
-) -> anyhow::Result<HashSet<(UnitType, Option<TopicName>)>> {
-    let mut set = HashSet::new();
-    for perm in proto_perms {
-        let type_name = UnitType::from_str(&perm.message)
+    proto_permissions: &[PublishPermissionProto],
+) -> anyhow::Result<Permissions<TopicName>> {
+    let mut parsed_permissions = Permissions::default();
+    for proto_permission in proto_permissions {
+        let type_name = UnitType::from_str(&proto_permission.message)
             .context("Failed to parse message in PublishPermission")?;
 
-        for topic in &perm.topic {
+        let mut topics = HashSet::new();
+        for topic in &proto_permission.topic {
             let topic =
                 TopicName::from_str(topic).context("Failed to parse topic in PublishPermission")?;
-            set.insert((type_name.clone(), Some(topic)));
+            topics.insert(topic);
+        }
+        if !topics.is_empty() {
+            parsed_permissions.add_permission(PermissionModel::Instance(type_name.clone(), topics));
         }
 
-        if perm.allow_all_topics {
-            if perm.topic.is_empty() {
-                set.insert((type_name, None));
-            } else {
+        if proto_permission.allow_all_topics {
+            if !proto_permission.topic.is_empty() {
                 bail!("'allow_all_topics' == true, with non-empty 'topic' in PublishPermission");
             }
-        } else if perm.topic.is_empty() {
+            parsed_permissions.add_permission(PermissionModel::Type(type_name.clone()));
+        } else if proto_permission.topic.is_empty() {
             bail!(
                 "'allow_all_topics' == false, with empty 'topic' in PublishPermission has no effect"
             );
         }
     }
-    Ok(set)
+    Ok(parsed_permissions)
 }
 
 fn parse_subscribe_permissions(
-    proto_perms: &[SubscribePermissionProto],
-) -> anyhow::Result<HashSet<(UnitType, Option<TopicName>)>> {
-    let mut set = HashSet::new();
-    for perm in proto_perms {
-        let type_name = UnitType::from_str(&perm.message)
+    proto_permissions: &[SubscribePermissionProto],
+) -> anyhow::Result<Permissions<TopicName>> {
+    let mut parsed_permissions = Permissions::default();
+    for proto_permission in proto_permissions {
+        let type_name = UnitType::from_str(&proto_permission.message)
             .context("Failed to parse message in SubscribePermission")?;
 
-        for topic in &perm.topic {
+        let mut topics = HashSet::new();
+        for topic in &proto_permission.topic {
             let topic = TopicName::from_str(topic)
                 .context("Failed to parse topic in SubscribePermission")?;
-            set.insert((type_name.clone(), Some(topic)));
+            topics.insert(topic);
+        }
+        if !topics.is_empty() {
+            parsed_permissions.add_permission(PermissionModel::Instance(type_name.clone(), topics));
         }
 
-        if perm.allow_all_topics {
-            if perm.topic.is_empty() {
-                set.insert((type_name, None));
-            } else {
+        if proto_permission.allow_all_topics {
+            if !proto_permission.topic.is_empty() {
                 bail!("'allow_all_topics' == true, with non-empty 'topic' in SubscribePermission");
             }
-        } else if perm.topic.is_empty() {
+            parsed_permissions.add_permission(PermissionModel::Type(type_name.clone()));
+        } else if proto_permission.topic.is_empty() {
             bail!("'allow_all_topics' == false, with empty 'topic' in SubscribePermission has no effect");
         }
     }
-    Ok(set)
+    Ok(parsed_permissions)
 }
 
 fn parse_serve_permissions(
-    proto_perms: &[ServePermissionProto],
-) -> Result<HashSet<(UnitType, Option<ServiceUnitName>)>, anyhow::Error> {
-    let mut set = HashSet::new();
-    for perm in proto_perms {
-        let type_name = UnitType::from_str(&perm.service)
+    proto_permissions: &[ServePermissionProto],
+) -> anyhow::Result<Permissions<ServiceUnitName>> {
+    let mut parsed_permissions = Permissions::default();
+    for proto_permission in proto_permissions {
+        let type_name = UnitType::from_str(&proto_permission.service)
             .context("Failed to parse service in ServePermission")?;
 
-        for channel in &perm.channel {
+        let mut channels = HashSet::new();
+        for channel in &proto_permission.channel {
             let channel = ServiceUnitName::from_str(channel)
                 .context("Failed to parse channel in ServePermission")?;
-            set.insert((type_name.clone(), Some(channel)));
+            channels.insert(channel);
+        }
+        if !channels.is_empty() {
+            parsed_permissions
+                .add_permission(PermissionModel::Instance(type_name.clone(), channels));
         }
 
-        if perm.allow_all_channels {
-            if perm.channel.is_empty() {
-                set.insert((type_name, None));
-            } else {
+        if proto_permission.allow_all_channels {
+            if !proto_permission.channel.is_empty() {
                 bail!("'allow_all_channels' == true, with non-empty 'channel' in ServePermission");
             }
-        } else if perm.channel.is_empty() {
+            parsed_permissions.add_permission(PermissionModel::Type(type_name.clone()));
+        } else if proto_permission.channel.is_empty() {
             bail!("'allow_all_channels' == false, with empty 'channel' in ServePermission has no effect");
         }
     }
-    Ok(set)
+    Ok(parsed_permissions)
 }
 
 fn parse_call_permissions(
-    proto_perms: &[CallPermissionProto],
-) -> anyhow::Result<HashSet<(UnitType, Option<ServiceUnitName>)>> {
-    let mut set = HashSet::new();
-    for perm in proto_perms {
-        let type_name = UnitType::from_str(&perm.service)
+    proto_permissions: &[CallPermissionProto],
+) -> anyhow::Result<Permissions<ServiceUnitName>> {
+    let mut parsed_permissions = Permissions::default();
+    for proto_permission in proto_permissions {
+        let type_name = UnitType::from_str(&proto_permission.service)
             .context("Failed to parse service in CallPermission")?;
 
-        for channel in &perm.channel {
+        let mut channels = HashSet::new();
+        for channel in &proto_permission.channel {
             let channel = ServiceUnitName::from_str(channel)
                 .context("Failed to parse channel in CallPermission")?;
-            set.insert((type_name.clone(), Some(channel)));
+            channels.insert(channel);
+        }
+        if !channels.is_empty() {
+            parsed_permissions
+                .add_permission(PermissionModel::Instance(type_name.clone(), channels));
         }
 
-        if perm.allow_all_channels {
-            if perm.channel.is_empty() {
-                set.insert((type_name, None));
-            } else {
+        if proto_permission.allow_all_channels {
+            if !proto_permission.channel.is_empty() {
                 bail!("'allow_all_channels' == true, with non-empty 'channel' in CallPermission");
             }
-        } else if perm.channel.is_empty() {
+            parsed_permissions.add_permission(PermissionModel::Type(type_name.clone()));
+        } else if proto_permission.channel.is_empty() {
             bail!("'allow_all_channels' == false, with empty 'channel' in CallPermission has no effect");
         }
     }
-    Ok(set)
+    Ok(parsed_permissions)
 }
 
 /// Parses a list of Service Unit entries from AclPolicyProto and returns a map
@@ -387,18 +403,17 @@ mod tests {
         let ch1 = TopicName::from_str("ch1").unwrap();
         let sun1 = ServiceUnitName::from_str("sun1").unwrap();
 
-        assert_eq!(acl_policy.publish_permissions.len(), 2);
-        assert!(acl_policy.publish_permissions.contains(&(topic_a.clone(), Some(ch1.clone()))));
-        assert!(acl_policy.publish_permissions.contains(&(topic_a, None)));
-        assert_eq!(acl_policy.subscribe_permissions.len(), 2);
-        assert!(acl_policy.subscribe_permissions.contains(&(topic_b.clone(), Some(ch1))));
-        assert!(acl_policy.subscribe_permissions.contains(&(topic_c.clone(), None)));
-        assert_eq!(acl_policy.serve_permissions.len(), 2);
-        assert!(acl_policy.serve_permissions.contains(&(topic_b.clone(), Some(sun1.clone()))));
-        assert!(acl_policy.serve_permissions.contains(&(topic_c.clone(), None)));
-        assert_eq!(acl_policy.call_permissions.len(), 2);
-        assert!(acl_policy.call_permissions.contains(&(topic_b, Some(sun1))));
-        assert!(acl_policy.call_permissions.contains(&(topic_c, None)));
+        assert!(acl_policy.publish_permissions.check(&topic_a, &ch1));
+        assert!(acl_policy.publish_permissions.allowed_types.contains(&topic_a.to_string()));
+
+        assert!(acl_policy.subscribe_permissions.check(&topic_b, &ch1));
+        assert!(acl_policy.subscribe_permissions.allowed_types.contains(&topic_c.to_string()));
+
+        assert!(acl_policy.serve_permissions.check(&topic_b, &sun1));
+        assert!(acl_policy.serve_permissions.allowed_types.contains(&topic_c.to_string()));
+
+        assert!(acl_policy.call_permissions.check(&topic_b, &sun1));
+        assert!(acl_policy.call_permissions.allowed_types.contains(&topic_c.to_string()));
         assert!(!acl_policy.allow_read_all);
     }
 

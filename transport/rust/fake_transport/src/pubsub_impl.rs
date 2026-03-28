@@ -61,6 +61,15 @@ impl Publish for LocalPublisher {
     fn publish_messages(&self, messages: &[Box<[u8]>]) -> SdvResult<()> {
         self.msg_q.lock().unwrap().publish_messages(messages)
     }
+    fn publish_flat_batch(&self, _buffer: &[u8]) -> SdvResult<()> {
+        Err(SdvStatus::new(SdvStatusCode::Unimplemented))
+    }
+    fn get_max_message_size(&self) -> SdvResult<usize> {
+        Err(SdvStatus::new(SdvStatusCode::Unimplemented))
+    }
+    fn get_queue_capacity(&self) -> SdvResult<usize> {
+        Err(SdvStatus::new(SdvStatusCode::Unimplemented))
+    }
 }
 
 #[deprecated(since = "2.0.0", note = "Please use LocalComms instead")]
@@ -128,6 +137,15 @@ impl Subscribe for LocalSubscriber {
     // Returns OutOfRange if Overflow occurred.
     fn read_next_messages(&self, message_count: u32) -> SdvResult<Vec<Box<[u8]>>> {
         self.msg_q.lock().unwrap().read_next_messages(self.id, message_count)
+    }
+    fn get_max_message_size(&self) -> SdvResult<usize> {
+        Err(SdvStatus::new(SdvStatusCode::Unimplemented))
+    }
+    fn get_available_to_read_count(&self) -> SdvResult<usize> {
+        Err(SdvStatus::new(SdvStatusCode::Unimplemented))
+    }
+    fn read_flat_batch(&self, _buffer: &mut [u8]) -> SdvResult<usize> {
+        Err(SdvStatus::new(SdvStatusCode::Unimplemented))
     }
 }
 

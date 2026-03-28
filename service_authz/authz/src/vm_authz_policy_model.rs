@@ -99,11 +99,11 @@ impl TryFrom<VmAuthzPolicyProto> for VmAuthzPolicyModel {
 #[derive(Debug, Clone, PartialEq)]
 struct Permissions<T: Hash + Eq> {
     allow_all: bool,
-    allowed_types: HashSet<UnitType>,
-    allowed_instances: HashMap<UnitType, HashSet<T>>,
+    allowed_types: HashSet<String>,
+    allowed_instances: HashMap<String, HashSet<T>>,
     deny_all: bool,
-    denied_types: HashSet<UnitType>,
-    denied_instances: HashMap<UnitType, HashSet<T>>,
+    denied_types: HashSet<String>,
+    denied_instances: HashMap<String, HashSet<T>>,
 }
 
 impl<T: Hash + Eq> Default for Permissions<T> {
@@ -121,23 +121,25 @@ impl<T: Hash + Eq> Default for Permissions<T> {
 
 impl<T: Hash + Eq> Permissions<T> {
     fn check(&self, unit_type: &UnitType, value: &T) -> bool {
+        let unit_type_str = unit_type.to_string();
+
         // 1. Specific Deny: (Message, Topic)
-        if self.denied_instances.get(unit_type).is_some_and(|set| set.contains(value)) {
+        if self.denied_instances.get(&unit_type_str).is_some_and(|set| set.contains(value)) {
             return false;
         }
 
         // 2. Specific Allow
-        if self.allowed_instances.get(unit_type).is_some_and(|set| set.contains(value)) {
+        if self.allowed_instances.get(&unit_type_str).is_some_and(|set| set.contains(value)) {
             return true;
         }
 
         // 3. Message-wide Deny
-        if self.denied_types.contains(unit_type) {
+        if self.denied_types.contains(&unit_type_str) {
             return false;
         }
 
         // 4. Message-wide Allow
-        if self.allowed_types.contains(unit_type) {
+        if self.allowed_types.contains(&unit_type_str) {
             return true;
         }
 
@@ -158,10 +160,10 @@ impl<T: Hash + Eq> Permissions<T> {
         match model {
             PermissionModel::All => self.allow_all = true,
             PermissionModel::Type(unit_type) => {
-                self.allowed_types.insert(unit_type);
+                self.allowed_types.insert(unit_type.to_string());
             }
             PermissionModel::Instance(unit_type, instances) => {
-                self.allowed_instances.entry(unit_type).or_default().extend(instances);
+                self.allowed_instances.entry(unit_type.to_string()).or_default().extend(instances);
             }
         }
     }
@@ -170,10 +172,10 @@ impl<T: Hash + Eq> Permissions<T> {
         match model {
             PermissionModel::All => self.deny_all = true,
             PermissionModel::Type(unit_type) => {
-                self.denied_types.insert(unit_type);
+                self.denied_types.insert(unit_type.to_string());
             }
             PermissionModel::Instance(unit_type, instances) => {
-                self.denied_instances.entry(unit_type).or_default().extend(instances);
+                self.denied_instances.entry(unit_type.to_string()).or_default().extend(instances);
             }
         }
     }
@@ -452,8 +454,49 @@ mod tests {
     "#;
 
     #[test]
-    fn test_deny_by_default() {
+    fn test_with_subpackage() {
         // GIVEN an empty policy
+        let policy = parse_policy(
+            r#"
+            allow_publisher {
+                message: "test.package.subpackage.Message"
+                topic: "topic"
+            }
+            allow_subscriber {
+                message: "test.package.subpackage.Message"
+                topic: "topic"
+            }
+            allow_server {
+                service: "test.package.subpackage.Service"
+                channel: "channel"
+            }
+            allow_client {
+                service: "test.package.subpackage.Service"
+                channel: "channel"
+            }
+        "#,
+        )
+        .expect("Failed to parse policy");
+
+        let non_normalized_message = UnitType::builder()
+            .package_name("test.package")
+            .unit_type_name("subpackage.Message")
+            .build()
+            .unwrap();
+        let non_normalized_service = UnitType::builder()
+            .package_name("test.package")
+            .unit_type_name("subpackage.Service")
+            .build()
+            .unwrap();
+
+        assert!(policy.can_publish(&non_normalized_message, &topic()));
+        assert!(policy.can_subscribe(&non_normalized_message, &topic()));
+        assert!(policy.can_serve(&non_normalized_service, &channel()));
+        assert!(policy.can_call(&non_normalized_service, &channel()));
+    }
+
+    #[test]
+    fn test_deny_by_default() {
         let policy = parse_policy(
             r#"
         "#,

@@ -54,6 +54,7 @@ rust_library {
     // Made available to vendor for OEM and Telemetry to call `wait_for_agents`
     // (to prevent crashes on context creation).
     vendor_available: true,
+    product_available: true,
 }
 
 rust_ffi {
