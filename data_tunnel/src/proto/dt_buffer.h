@@ -17,9 +17,21 @@
 #pragma once
 
 #include <algorithm>
+#include <iomanip>
 #include <span>
+#include <sstream>
 #include <string>
 #include <vector>
+
+inline std::string BufferDebugString(std::span<const uint8_t> buffer, size_t max_to_print) {
+    std::stringstream printed_bytes;
+    printed_bytes << std::hex << std::setfill('0');
+    size_t bytes_to_print = std::min(max_to_print, buffer.size());
+    for (size_t i = 0; i < bytes_to_print; i++) {
+        printed_bytes << std::setw(2) << static_cast<unsigned int>(buffer[i]) << " ";
+    }
+    return printed_bytes.str();
+}
 
 class RawBuffer {
 public:

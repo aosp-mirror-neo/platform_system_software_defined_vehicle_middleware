@@ -121,62 +121,64 @@ public:
 
     virtual ReceivedData ReceiveData() override {
         // Prepare buffer and start read.
-        grpc::ByteBuffer grpc_buffer;
+        if (read_data_) {
+            ALOGE("%s.ReceiveData() called before result of previous ReceiveData() was released!",
+                  ToString().c_str());
+            return ReceivedData();
+        }
+        read_data_.emplace();
 
         auto guard = read_state_.Lock();
         // Start GRPC read operation and wait for callback indicating completion.
-        auto grpc_result =
-                read_state_.RunOperation(guard, [&]() { ReactorType::StartRead(&grpc_buffer); });
+        auto grpc_result = read_state_.RunOperation(guard, [&]() {
+            ReactorType::StartRead(&read_data_->buffer);
+        });
 
         if (!grpc_result.has_value()) {
             ALOGE("%s.ReceiveData(): In terminating state.  Returning failure.",
                   ToString().c_str());
+            read_data_.reset();
             return ReceivedData();
         }
 
         if (!*grpc_result) {
             ALOGE("%s.OnReadDone() got failure.  Terminating.", ToString().c_str());
             read_state_.Terminate(guard);
+            read_data_.reset();
             return ReceivedData();
         }
-
-        grpc::Slice read_slice;
 
         // We need to return data to the application in a single contiguous block.  A grpc::Slice
         // references a contiguous region, but the grpc::ByteBuffer into which GRPC reads data
         // may contain multiple non-contiguous slices.
         //
-        // If grpc_buffer consists of a single slice, TrySingleSlice can populate read_slice with
-        // a new reference to that slice (which can persist after grpc_buffer is destroyed since
-        // slices are refcounted).
+        // If the read buffer consists of a single slice, TrySingleSlice can populate the slice
+        // with a new reference to that slice, without copying.
         //
-        // If grpc_buffer has multiple slices, TrySingleSlice can't work, so we fall back to
+        // If the buffer has multiple slices, TrySingleSlice can't work, so we fall back to
         // DumpToSingleSlice, which creates a new slice and copies all the data into it.
         //
         // TODO(b/491392921): Try collecting some stats on how often we're having to copy here and
         // consider changing ReceiveData() to be able to return multiple spans.
-        if (!grpc_buffer.TrySingleSlice(&read_slice).ok() &&
-            !grpc_buffer.DumpToSingleSlice(&read_slice).ok()) {
+        if (!read_data_->buffer.TrySingleSlice(&read_data_->slice).ok() &&
+            !read_data_->buffer.DumpToSingleSlice(&read_data_->slice).ok()) {
             ALOGE("ReceiveData() unable to dump buffer to single slice.  Forcing terminate.");
             // Move immediately to terminated state since we got unusable data.
             read_state_.Terminate(guard);
+            read_data_.reset();
             return ReceivedData();
-        } else if (read_slice.size() == 0) {
+        } else if (read_data_->slice.size() == 0) {
             ALOGE("ReceiveData() got GRPC success but zero bytes.  Forcing terminate.");
             // Move immediately to terminated state since we got unusable data.
             read_state_.Terminate(guard);
+            read_data_.reset();
             return ReceivedData();
         }
 
-        bytes_read_ += read_slice.size();
+        bytes_read_ += read_data_->slice.size();
 
-        // grpc::Slice objects are refcounted, so the captured read_slice will remain valid even
-        // after the grpc_buffer from which it was created is destroyed.
-        return ReceivedData({read_slice.begin(), read_slice.size()}, [read_slice](auto) {
-            // Don't actually need to do anything here; the captured read_slice will be destroyed
-            // (with the rest of the std::function) right after this call, which is enough to
-            // free the storage.
-        });
+        return ReceivedData({read_data_->slice.begin(), read_data_->slice.size()},
+                            [this](auto) { read_data_.reset(); });
     }
 
     virtual size_t BytesReceived() const { return bytes_read_.load(); }
@@ -202,6 +204,13 @@ private:
 
     GrpcOperationStateMachine read_state_;
     std::atomic<size_t> bytes_read_;
+
+    // Manages ownership for received
+    struct ReadData {
+        grpc::ByteBuffer buffer;
+        grpc::Slice slice;
+    };
+    std::optional<ReadData> read_data_;
 };
 
 }  // namespace android::sdv::dt::agent

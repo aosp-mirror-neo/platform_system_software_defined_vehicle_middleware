@@ -357,9 +357,12 @@ inline std::unique_ptr<Payload> DeserializePayloadFromBuffer(BufferReader& br) {
 
     if (payload) {
         if (!payload->Deserialize(br)) {
+            ALOGE("DeserializePayloadFromBuffer: Error deserializing payload of type %d", type);
             delete payload;
             payload = nullptr;
         }
+    } else {
+        ALOGE("DeserializePayloadFromBuffer: Unknown payload type %d", type);
     }
 
     return std::unique_ptr<Payload>(payload);
@@ -393,10 +396,15 @@ struct Parcel {
     }
 
     static std::pair<ParseResult, std::unique_ptr<Payload>> Deserialize(BufferReader& br) {
+        const auto* data = br.CurPtr();
+        auto available = br.AvailableToRead();
+
         uint32_t payload_size;
         // Ensure the parcel isn't corrupted and it's enough data to deserialize
         auto res = CanReadParcel(br);
         if (res != ParseResult::Success) {
+            ALOGE("Parcel::Deserialize got invalid parcel.  First of %zu bytes: %s", available,
+                  BufferDebugString({data, available}, 24).c_str());
             return {res, std::unique_ptr<Payload>(nullptr)};
         }
 
@@ -405,11 +413,17 @@ struct Parcel {
         }
 
         auto payload = DeserializePayloadFromBuffer(br);
-        // Returning UnknownPayload instead of Failure because the parcel isn't corrupted, but the
-        // payload is unknown and can't be parsed, probably, because the counteragent has a newer
-        // protocol version.
-        return {((payload != nullptr) ? ParseResult::Success : ParseResult::UnknownPayload),
-                std::move(payload)};
+        if (!payload) {
+            ALOGE("Parcel::Deserialize failed to deserialize payload.  First of %zu bytes: %s",
+                  available, BufferDebugString({data, available}, 24).c_str());
+
+            // Returning UnknownPayload instead of Failure because the parcel isn't corrupted, but
+            // the payload is unknown and can't be parsed, probably, because the counteragent has a
+            // newer protocol version.
+            return {ParseResult::UnknownPayload, std::unique_ptr<Payload>()};
+        }
+
+        return {ParseResult::Success, std::move(payload)};
     }
 };
 
