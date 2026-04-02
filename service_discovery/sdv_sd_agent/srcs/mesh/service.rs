@@ -29,6 +29,9 @@ use crate::kv::{ServiceRegistry, ServiceUnitEvent};
 use crate::mesh::aidl_to_proto::ToProto;
 use crate::mesh::credentials_checker::CredentialsChecker;
 use crate::mesh::custom_verifier::make_server_credentials;
+use crate::mesh::sd_certificate_claims::SdCertificateClaims;
+use sdv_comms_id::names::VmName;
+use std::str::FromStr;
 
 use crate::power_state::SimplePowerState;
 
@@ -49,8 +52,8 @@ use openssl::{
 };
 
 use grpcio::{
-    ChannelBuilder, Environment, RpcContext, RpcStatus, RpcStatusCode, ServerCredentials,
-    ServerStreamingSink, UnarySink, WriteFlags,
+    AuthContext, ChannelBuilder, Environment, RpcContext, RpcStatus, RpcStatusCode,
+    ServerCredentials, ServerStreamingSink, UnarySink, WriteFlags,
 };
 
 use async_trait::async_trait;
@@ -172,25 +175,46 @@ impl LockedMesh {
 
     pub fn exchange_root_certs(
         &self,
+        ctx: &RpcContext,
         request: ExchangeRootCertsRequest,
     ) -> anyhow::Result<ExchangeRootCertsResponse, RpcStatus> {
         let ExchangeRootCertsRequest { root_cert, special_fields: _ } = request;
 
-        let vm_name = match get_root_cert_vm_name(root_cert.as_slice()) {
-            Ok(vm_name) => vm_name,
-            Err(error) => {
-                error!("Failed to get VM name from the received PEM-econded root cert: {error}");
-                return Err(RpcStatus::new(RpcStatusCode::INVALID_ARGUMENT));
+        let vm_name = extract_vm_name_from_root_cert(root_cert.as_slice())?;
+
+        let auth_ctx = match ctx.auth_context() {
+            Some(auth_ctx) => auth_ctx,
+            None => {
+                error!("No auth context available");
+                return Err(RpcStatus::new(RpcStatusCode::UNAUTHENTICATED));
             }
         };
 
-        // TODO: b/409234160 - Check that vm_name matches the VM name used in the TLS authentication
-        //       Should be able to get this info from grpc_call_auth_context(ctx.call().call)
+        // Extra check, given that it's not possible for a client to connect to the gRPC server in
+        // a locked-mesh configuration without authentication. Connections must be mutually
+        // authenticated TLS in a locked mesh.
+        if !auth_ctx.peer_is_authenticated() {
+            error!("Peer is not authenticated");
+            return Err(RpcStatus::new(RpcStatusCode::UNAUTHENTICATED));
+        }
 
-        if let Err(err) = self
-            .ca_command_sender
-            .send(RootCertCommand::Add { vm_name: vm_name.clone(), root_cert: root_cert.clone() })
-        {
+        // The name of the SDV VM instance where the peer service discovery agent is running,
+        // which is the gRPC client that called this method.
+        // That name is stated in the gRPC client's certificate subject used in the DICE-based
+        // TLS authentication. See crate::mesh::credentials_checker::CredentialsChecker.
+        let peer_vm_name = get_vm_name_from_auth_ctx(&auth_ctx)?;
+        if peer_vm_name != vm_name {
+            error!(
+                "VM name mismatch: root cert is for '{vm_name}', but TLS identity is for \
+                '{peer_vm_name}'"
+            );
+            return Err(RpcStatus::new(RpcStatusCode::INVALID_ARGUMENT));
+        }
+
+        if let Err(err) = self.ca_command_sender.send(RootCertCommand::Add {
+            vm_name: vm_name.to_string(),
+            root_cert: root_cert.clone(),
+        }) {
             error!("Failed to send root cert through channel: {err}");
         }
 
@@ -220,7 +244,7 @@ impl LockedMesh {
         // TODO: b/409967811 - If we had only a single connection to synchronize data between two
         // SD agents (instead of the current two) we wouldn't need to do this.
         self.tokio_runtime.spawn(remove_vm_root_cert(
-            vm_name,
+            vm_name.to_string(),
             root_cert,
             self.grace_period_sleeper.clone(),
             self.ca_command_sender.clone(),
@@ -257,6 +281,7 @@ impl UnlockedMesh {
     }
     fn exchange_root_certs(
         &self,
+        _ctx: &RpcContext,
         _request: ExchangeRootCertsRequest,
     ) -> anyhow::Result<ExchangeRootCertsResponse, RpcStatus> {
         warn!("ExchangeRootCerts called on an unlocked mesh");
@@ -506,8 +531,8 @@ impl MeshManager for MeshManagerService {
         sink: UnarySink<ExchangeRootCertsResponse>,
     ) {
         let result = match &self.mesh_mode {
-            MeshMode::Locked(locked) => locked.exchange_root_certs(req),
-            MeshMode::Unlocked(unlocked) => unlocked.exchange_root_certs(req),
+            MeshMode::Locked(locked) => locked.exchange_root_certs(&ctx, req),
+            MeshMode::Unlocked(unlocked) => unlocked.exchange_root_certs(&ctx, req),
         };
 
         match result {
@@ -532,6 +557,60 @@ impl MeshManager for MeshManagerService {
 fn get_root_cert_vm_name(root_cert_pem: &[u8]) -> anyhow::Result<String> {
     let root_cert = X509::from_pem(root_cert_pem)?;
     base32_x509_common_name_to_string(root_cert.subject_name())
+}
+
+fn extract_vm_name_from_root_cert(root_cert: &[u8]) -> Result<VmName, RpcStatus> {
+    let vm_name_str = match get_root_cert_vm_name(root_cert) {
+        Ok(vm_name) => vm_name,
+        Err(error) => {
+            error!("Failed to get VM name from the received PEM-encoded root cert: {error}");
+            return Err(RpcStatus::new(RpcStatusCode::INVALID_ARGUMENT));
+        }
+    };
+
+    match VmName::from_str(&vm_name_str) {
+        Ok(name) => Ok(name),
+        Err(error) => {
+            error!("Received VM name '{vm_name_str}' is not valid: {error}");
+            Err(RpcStatus::new(RpcStatusCode::INVALID_ARGUMENT))
+        }
+    }
+}
+
+fn get_vm_name_from_x509_pem(pem_cert: &str) -> Result<VmName, RpcStatus> {
+    match X509::from_pem(pem_cert.as_bytes()) {
+        Ok(cert) => match SdCertificateClaims::from_x509(&cert) {
+            Ok(claims) => Ok(claims.vm_name),
+            Err(e) => {
+                error!("Failed to parse SD claims from peer certificate: {e}");
+                Err(RpcStatus::new(RpcStatusCode::UNAUTHENTICATED))
+            }
+        },
+        Err(e) => {
+            error!("Failed to parse peer certificate from PEM: {e}");
+            Err(RpcStatus::new(RpcStatusCode::UNAUTHENTICATED))
+        }
+    }
+}
+
+/// Extracts the VM name from the peer's certificate stored in the gRPC authentication context.
+fn get_vm_name_from_auth_ctx(auth_ctx: &AuthContext) -> Result<VmName, RpcStatus> {
+    // TSI_X509_PEM_CERT_PROPERTY from ssl_transport_security.h
+    const X509_PEM_CERT_PROPERTY: &str = "x509_pem_cert";
+
+    // The underlying grpc_auth_context_property_iterator() function can return multiple properties
+    // with the same name, such as TSI_X509_SUBJECT_ALTERNATIVE_NAME_PEER_PROPERTY.  But
+    // TSI_X509_PEM_CERT_PROPERTY is added only once and it does not make sense to have multiple of
+    // those, given that there's only one leaf certificate.
+    for prop in auth_ctx.into_iter() {
+        if prop.name() == X509_PEM_CERT_PROPERTY {
+            if let Ok(pem_cert) = prop.value_str() {
+                return get_vm_name_from_x509_pem(pem_cert);
+            }
+        }
+    }
+    error!("Could not find valid {X509_PEM_CERT_PROPERTY} property in auth context");
+    Err(RpcStatus::new(RpcStatusCode::UNAUTHENTICATED))
 }
 
 pub struct LockedMeshServiceControllerBuilder {
@@ -787,6 +866,12 @@ mod tests {
     /// locked mesh mode.
     #[test]
     fn locked_service_exchange_root_certs() {
+        use crate::mesh::credentials_checker::tests::{
+            create_custom_credentials_checker, create_vvmconfig, SdClaimsBuilder,
+        };
+        use crypto_rpc::cert::build_ec_private_key;
+        use sample_dice_handover::create_random_uds;
+
         let tokio_runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
         let (ca_command_sender, mut ca_command_receiver) = tokio::sync::mpsc::unbounded_channel();
 
@@ -797,17 +882,17 @@ mod tests {
 
         let locked_mesh = LockedMesh {
             root_cert: vec![1, 2, 3],
-            ca_command_sender,
+            ca_command_sender: ca_command_sender.clone(),
             tokio_runtime: tokio_runtime.clone(),
             grace_period_sleeper,
         };
 
-        let instance2_name = "instance2";
-        let instance2_root_cert_pem = create_root_cert_pem_for_vm(instance2_name).unwrap();
-
         let (new_client_notifier, _) = broadcast::channel(1);
 
-        let vvm_config = Arc::new(prepare_test_vm_config().unwrap());
+        let mut vvm_config = create_vvmconfig().unwrap();
+        // Let the OS pick up a free ephemeral port by passing port number 0.
+        vvm_config.own_cfg.addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+        let vvm_config = Arc::new(vvm_config);
 
         let server_factory = ServerFactoryImpl {
             local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
@@ -818,17 +903,58 @@ mod tests {
         };
 
         let env = Arc::new(EnvBuilder::new().build());
-        let (_server, bound_port) =
-            server_factory.start(env.clone(), ServerCredentials::insecure()).unwrap();
+
+        let uds = create_random_uds();
+        let sd_priv: PKey<Private> = build_ec_private_key().unwrap().try_into().unwrap();
+        let auth_csr = AuthenticatedCsr::create().unwrap();
+        let credentials_checker =
+            create_custom_credentials_checker(&uds, (*vvm_config).clone(), &auth_csr.cbor).unwrap();
+
+        let sd_cert: X509 = SdClaimsBuilder::new(&vvm_config.own_cfg.name, &uds, &auth_csr)
+            .with_sd_private_key(&sd_priv)
+            .build()
+            .unwrap()
+            .to_x509(&sd_priv)
+            .unwrap();
+
+        let (_server, bound_port) = server_factory
+            .start_secure(env.clone(), &credentials_checker, &sd_cert, &sd_priv)
+            .unwrap();
 
         let mut actual_server_addr = vvm_config.own_cfg.addr;
         actual_server_addr.set_port(bound_port);
 
-        let mesh_connector = UnsecureMeshConnector {};
+        // Client's VmConfig, with roles swapped.
+        let client_vvm_config = VvmConfig {
+            own_cfg: vvm_config.remote_cfgs[0].clone(),
+            remote_cfgs: vec![vvm_config.own_cfg.clone()],
+            ..(*vvm_config).clone()
+        };
+        let instance2_name = client_vvm_config.own_cfg.name.to_string();
+        let instance2_root_cert_pem = create_root_cert_pem_for_vm(&instance2_name).unwrap();
+
+        // Client's identity
+        let client_sd_priv: PKey<Private> = build_ec_private_key().unwrap().try_into().unwrap();
+        let client_sd_cert: X509 =
+            SdClaimsBuilder::new(&client_vvm_config.own_cfg.name, &uds, &auth_csr)
+                .with_sd_private_key(&client_sd_priv)
+                .build()
+                .unwrap()
+                .to_x509(&client_sd_priv)
+                .unwrap();
+
+        let client_credentials_checker =
+            create_custom_credentials_checker(&uds, client_vvm_config.clone(), &auth_csr.cbor)
+                .unwrap();
+
+        let client_connector =
+            SecureMeshConnector::new(client_credentials_checker, &client_sd_cert, &client_sd_priv)
+                .unwrap();
+
         let own_vm_name = vvm_config.own_cfg.name.clone();
         let instance2_root_cert_pem_clone = instance2_root_cert_pem.clone();
         tokio_runtime.block_on(async move {
-            let client = mesh_connector
+            let client = client_connector
                 .try_connect(env.clone(), &actual_server_addr, own_vm_name.as_ref())
                 .await
                 .unwrap();
@@ -842,7 +968,7 @@ mod tests {
         // We should forward the peer root cert we received to our CA.
         receive_command_add_root_cert(
             ca_command_receiver.borrow_mut(),
-            instance2_name,
+            &instance2_name,
             &instance2_root_cert_pem,
             &tokio_runtime,
         )
@@ -860,12 +986,118 @@ mod tests {
         // track liveness of the connection between the two SD agents.
         receive_command_remove_root_cert(
             ca_command_receiver.borrow_mut(),
-            instance2_name,
+            &instance2_name,
             &tokio_runtime,
         )
         .unwrap();
         // There should be no further commands.
         assert!(ca_command_receiver.is_empty());
+    }
+
+    /// Tests that MeshManager::ExchangeRootCerts() returns INVALID_ARGUMENT if the VM name in
+    /// the root certificate passed as a parameter does not match the VM name in the certificate
+    /// the client used to establish the TLS connection in which that gRPC call was made.
+    #[test]
+    fn locked_service_exchange_root_certs_vm_name_mismatch_err() {
+        use crate::mesh::credentials_checker::tests::{
+            create_custom_credentials_checker, create_vvmconfig, SdClaimsBuilder,
+        };
+        use crypto_rpc::cert::build_ec_private_key;
+        use sample_dice_handover::create_random_uds;
+
+        let tokio_runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let (ca_command_sender, _ca_command_receiver) = tokio::sync::mpsc::unbounded_channel();
+
+        let grace_period_notifier = Arc::new(Notify::new());
+
+        let grace_period_sleeper =
+            Arc::new(FakeGracePeriodSleeper { notify: grace_period_notifier.clone() });
+
+        let locked_mesh = LockedMesh {
+            root_cert: vec![1, 2, 3],
+            ca_command_sender: ca_command_sender.clone(),
+            tokio_runtime: tokio_runtime.clone(),
+            grace_period_sleeper,
+        };
+
+        let (new_client_notifier, _) = broadcast::channel(1);
+
+        let mut vvm_config = create_vvmconfig().unwrap();
+        // Let the OS pick up a free ephemeral port by passing port number 0.
+        vvm_config.own_cfg.addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+        let vvm_config = Arc::new(vvm_config);
+
+        let server_factory = ServerFactoryImpl {
+            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            service_registry: Arc::new(ServiceRegistry::default()),
+            vvm_config: vvm_config.clone(),
+            mesh_mode: MeshMode::Locked(locked_mesh.clone()),
+            new_client_notifier,
+        };
+
+        let env = Arc::new(EnvBuilder::new().build());
+
+        let uds = create_random_uds();
+        let sd_priv: PKey<Private> = build_ec_private_key().unwrap().try_into().unwrap();
+        let auth_csr = AuthenticatedCsr::create().unwrap();
+        let credentials_checker =
+            create_custom_credentials_checker(&uds, (*vvm_config).clone(), &auth_csr.cbor).unwrap();
+
+        let sd_cert: X509 = SdClaimsBuilder::new(&vvm_config.own_cfg.name, &uds, &auth_csr)
+            .with_sd_private_key(&sd_priv)
+            .build()
+            .unwrap()
+            .to_x509(&sd_priv)
+            .unwrap();
+
+        let (_server, bound_port) = server_factory
+            .start_secure(env.clone(), &credentials_checker, &sd_cert, &sd_priv)
+            .unwrap();
+
+        let mut actual_server_addr = vvm_config.own_cfg.addr;
+        actual_server_addr.set_port(bound_port);
+
+        // Client's VmConfig, with roles swapped.
+        let client_vvm_config = VvmConfig {
+            own_cfg: vvm_config.remote_cfgs[0].clone(),
+            remote_cfgs: vec![vvm_config.own_cfg.clone()],
+            ..(*vvm_config).clone()
+        };
+
+        // ROOT CERT FOR A DIFFERENT VM NAME
+        let other_name = "other";
+        let other_root_cert_pem = create_root_cert_pem_for_vm(other_name).unwrap();
+
+        // Client's identity
+        let client_sd_priv: PKey<Private> = build_ec_private_key().unwrap().try_into().unwrap();
+        let client_sd_cert: X509 =
+            SdClaimsBuilder::new(&client_vvm_config.own_cfg.name, &uds, &auth_csr)
+                .with_sd_private_key(&client_sd_priv)
+                .build()
+                .unwrap()
+                .to_x509(&client_sd_priv)
+                .unwrap();
+
+        let client_credentials_checker =
+            create_custom_credentials_checker(&uds, client_vvm_config.clone(), &auth_csr.cbor)
+                .unwrap();
+
+        let client_connector =
+            SecureMeshConnector::new(client_credentials_checker, &client_sd_cert, &client_sd_priv)
+                .unwrap();
+
+        let own_vm_name = vvm_config.own_cfg.name.clone();
+        tokio_runtime.block_on(async move {
+            let client = client_connector
+                .try_connect(env.clone(), &actual_server_addr, own_vm_name.as_ref())
+                .await
+                .unwrap();
+            // Note that here we are passing a root cert whose subject says "other" instead
+            // of "foo", which is what client_vvm_config.own_cfg.name has.
+            let result = client.exchange_root_certs(&other_root_cert_pem).await;
+
+            result.expect_err("Passing a root cert with a mismatching subject name must fail.");
+        });
     }
 
     /// Tests the MeshManager::Ping() gRPC method, with the service configured in locked
