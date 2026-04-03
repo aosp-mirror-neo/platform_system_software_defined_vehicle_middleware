@@ -143,6 +143,8 @@ public:
     virtual bool SendData(const void* buffer, size_t bytes_to_send) = 0;
 
     // Receives the content from exactly one corresponding SendData() call.
+    // The returned ReceivedData object (if not empty) must be destroyed or reset() before
+    // ReceiveData can be called again.
     virtual ReceivedData ReceiveData() = 0;
     virtual std::string ToString() const = 0;
     // For dumpsys stats
