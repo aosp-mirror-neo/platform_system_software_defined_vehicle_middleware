@@ -447,4 +447,55 @@ mod tests {
             )
         );
     }
+
+    #[test]
+    fn test_unit_type_shadowing_integration() {
+        let mut test_provider = TestAclPolicyProvider::new();
+        let vm = VmName::from_str("vm-cdc").unwrap();
+
+        // Parent package: com.android
+        test_provider.set_authz_policy(
+            vm.clone(),
+            PackageName::from_str("com.android").unwrap(),
+            None,
+            AclPolicyModel::try_from(
+                text_format::parse_from_str::<AclPolicyProto>(
+                    r#"
+                        acls { name: "ParentAcl" include: "vm-other:*" }
+                        unit_types { name: "TirePressure" acl_names: "ParentAcl" }
+                    "#,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+
+        // Child package: com.android.child
+        test_provider.set_authz_policy(
+            vm.clone(),
+            PackageName::from_str("com.android.child").unwrap(),
+            None,
+            AclPolicyModel::try_from(
+                text_format::parse_from_str::<AclPolicyProto>(
+                    r#"
+                        acls { name: "ChildAcl" include: "vm-cdc:*" }
+                        unit_types { name: "TirePressure" acl_names: "ChildAcl" }
+                    "#,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let authz_via_acls = AuthzViaAcls::new(Arc::new(test_provider));
+
+        let subject = ServiceFqin::from_str("vm-cdc:com.oem.App/main").unwrap();
+        let child_pkg = PackageName::from_str("com.android.child").unwrap();
+        let unit_type = UnitTypeName::from_str("TirePressure").unwrap();
+
+        let result =
+            authz_via_acls.check_authorization_for_unit_type(&subject, &child_pkg, &unit_type);
+
+        assert!(matches!(result, AuthzResult::Permitted(_)), "Authorization failed: {:?}", result);
+    }
 }
