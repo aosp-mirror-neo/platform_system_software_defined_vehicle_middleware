@@ -67,6 +67,10 @@ impl MeshAclPolicyProvider {
 
         remote_providers.remove(vm_name);
     }
+
+    pub fn get_local_vm_acl_policy_provider(&self) -> Arc<dyn SingleVmAclPolicyProvider> {
+        self.local_vm_acl_policy_provider.clone()
+    }
 }
 
 impl AclPolicyProvider for MeshAclPolicyProvider {

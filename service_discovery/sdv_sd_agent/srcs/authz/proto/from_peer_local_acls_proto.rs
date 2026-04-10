@@ -22,21 +22,21 @@ use crate::authz::RemoteVmAclPolicyProvider;
 
 use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
 use sdv_comms_id::names::{PackageName, ServiceName as ServiceBundleName};
-use sdv_sd_mesh_api::sdv_sd_mesh::GetPeerLocalAclsResponse;
+use sdv_sd_mesh_api::sdv_sd_mesh::ServiceBundleAclPolicy;
 
 use anyhow::{anyhow, Context};
 use protobuf::MessageDyn;
 use tracing::instrument;
 
-/// Parses GetPeerLocalAclsResponse proto message into a RemoteVmAclPolicyProvider.
-#[instrument(name = "authz_perf::mesh::from_peer_local_acls_proto", skip_all, fields(size_bytes=proto.compute_size_dyn()))]
+/// Parses Vec<ServiceBundleAclPolicy> proto message into a RemoteVmAclPolicyProvider.
+#[instrument(name = "authz_perf::mesh::from_peer_local_acls_proto", skip_all, fields(size_bytes=proto.iter().fold(0, |acc, item| acc + item.compute_size_dyn())))]
 pub(crate) fn from_peer_local_acls_proto(
-    proto: GetPeerLocalAclsResponse,
+    proto: Vec<ServiceBundleAclPolicy>,
 ) -> Result<RemoteVmAclPolicyProvider, anyhow::Error> {
     let mut mapping: HashMap<(PackageName, Option<ServiceBundleName>), AclPolicyProto> =
         HashMap::new();
 
-    for mut item in proto.service_bundle_acl_policies {
+    for mut item in proto {
         let package_name = PackageName::from_str(&item.package_name)
             .with_context(|| "Failed to parse package name")?;
         let service_bundle_name =

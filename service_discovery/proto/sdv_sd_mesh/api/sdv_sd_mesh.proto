@@ -29,7 +29,12 @@ service MeshManager {
   rpc SubscribePeerLocalServiceUnits(SubscribePeerLocalServiceUnitsRequest)
       returns (stream PeerLocalServiceUnitsEvent) {}
 
-  // Requests all local ACLs from a remote peer.
+  // Exchange all local ACLs with a remote peer.
+  //
+  // "GetPeerLocalAcls" name is used for backwards compatibility.
+  //
+  // The request optionally contains the caller's VM name and Authz policies.
+  // The response contains the callee's VM ACLs.
   rpc GetPeerLocalAcls(GetPeerLocalAclsRequest) returns (GetPeerLocalAclsResponse) {}
 
   // Pings the remote peer to confirm liveness.
@@ -81,21 +86,33 @@ message RemoveByIdentityEvent {
 }
 
 // Messages for GetPeerLocalAcls
-message GetPeerLocalAclsRequest {}  // No request parameters needed
+message GetPeerLocalAclsRequest {
+  // Caller's VM name.
+  //
+  // Provided value will be verified against RPC authn context in "locked" mesh case.
+  //
+  // Can be empty if peer is a pre-SDV 2.0 VM.
+  string vm_name = 1;
+
+  // List of Service Bundles which has an ACL policy on the caller VM.
+  //
+  // Can be empty if peer is a pre-SDV 2.0 VM.
+  repeated ServiceBundleAclPolicy service_bundle_acl_policies = 2;
+}
+
+message ServiceBundleAclPolicy {
+  // Required.
+  string package_name = 1;
+  // Required.
+  string service_bundle_name = 2;
+  // Required.
+  sdv.authz.policy.authz_policy.AuthzPolicy acl_policy = 3;
+}
 
 // Response for the GetPeerLocalAcls RPC call.
 //
 // Contains ACL policy for Service Bundles on a remote peer.
 message GetPeerLocalAclsResponse {
-  message ServiceBundleAclPolicy {
-    // Required.
-    string package_name = 1;
-    // Required.
-    string service_bundle_name = 2;
-    // Required.
-    sdv.authz.policy.authz_policy.AuthzPolicy acl_policy = 3;
-  }
-
   // Required.
   //
   // List of Service Bundles which has an ACL policy. Service Bundles without

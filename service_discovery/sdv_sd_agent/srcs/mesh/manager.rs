@@ -16,7 +16,7 @@ use rustutils::android::system_properties;
 
 use super::peer_connection::PeerConnection;
 use super::{vvm_config::VmConfig, VvmConfig};
-use crate::authz::proto::from_peer_local_acls_proto;
+use crate::authz::proto::{from_peer_local_acls_proto, to_peer_local_acls_proto};
 use crate::authz::MeshAclPolicyProvider;
 use crate::ca::service::RootCertCommand;
 use crate::kv::ServiceRegistry;
@@ -435,22 +435,31 @@ impl MeshManager {
     async fn update_acls_from_remote(
         &self,
         peer: &dyn MeshManagerAsyncClient,
-        vm_name: &VmName,
+        remote_vm_name: &VmName,
     ) -> anyhow::Result<()> {
         let proto = peer
-            .get_peer_local_acls(&GetPeerLocalAclsRequest { ..Default::default() })
+            .get_peer_local_acls(&GetPeerLocalAclsRequest {
+                vm_name: self.vvm_config.own_cfg.name.name().to_string(),
+                service_bundle_acl_policies: to_peer_local_acls_proto(
+                    self.mesh_acl_policy_provider.as_ref(),
+                )?,
+                ..Default::default()
+            })
             .await
             .inspect_err(|err| {
-                self.mesh_acl_policy_provider.remove_remote_acl_policy_provider(vm_name);
-                error!("Failed to get list of ACLs from VM {vm_name}: {err:?}");
+                self.mesh_acl_policy_provider.remove_remote_acl_policy_provider(remote_vm_name);
+                error!("Failed to get list of ACLs from VM {remote_vm_name}: {err:?}");
             })?;
 
-        let remote_acl_policy_provider = from_peer_local_acls_proto(proto).inspect_err(|err| {
-            error!("Failed to parse remote ACLs from VM {vm_name}: {err:?}");
-        })?;
+        let remote_acl_policy_provider =
+            from_peer_local_acls_proto(proto.service_bundle_acl_policies).inspect_err(|err| {
+                error!("Failed to parse remote ACLs from VM {remote_vm_name}: {err:?}");
+            })?;
 
-        self.mesh_acl_policy_provider
-            .set_remote_acl_policy_provider(vm_name.clone(), Box::new(remote_acl_policy_provider));
+        self.mesh_acl_policy_provider.set_remote_acl_policy_provider(
+            remote_vm_name.clone(),
+            Box::new(remote_acl_policy_provider),
+        );
 
         Ok(())
     }
@@ -806,9 +815,14 @@ mod tests {
 
     /// Set expectation for the get_peer_local_acls() method to be called once.
     fn expect_get_peer_local_acls(mock_client: &mut Box<MockMeshManagerAsyncClient>) {
-        mock_client.expect_get_peer_local_acls().return_once(move |_| {
-            Ok(text_format::parse_from_str::<GetPeerLocalAclsResponse>(
-                r#"
+        mock_client.expect_get_peer_local_acls().return_once(
+            move |req: &GetPeerLocalAclsRequest| {
+                if req.vm_name != VM_INSTANCE_1_NAME {
+                    return Err(GrpcError::RpcFailure(RpcStatus::new(RpcStatusCode::INTERNAL)));
+                }
+
+                Ok(text_format::parse_from_str::<GetPeerLocalAclsResponse>(
+                    r#"
                     service_bundle_acl_policies {
                         package_name: "com.sdv.sd_test"
                         service_bundle_name: "MeshManagerTest"
@@ -824,9 +838,10 @@ mod tests {
                         }
                     }
                 "#,
-            )
-            .unwrap())
-        });
+                )
+                .unwrap())
+            },
+        );
     }
 
     /// Builds a MeshManager configured for unit tests

@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use sdv_authz::SingleVmAclPolicyProvider;
+use crate::authz::MeshAclPolicyProvider;
+
 use sdv_sd_mesh_api::identity::ServiceUnitIdentifier;
 use sdv_sd_mesh_api::sdv_sd_mesh::{
     peer_local_service_units_event::Event::{AddServiceUnit, RemoveByIdentity, RemoveServiceUnit},
@@ -23,7 +24,7 @@ use sdv_sd_mesh_api::sdv_sd_mesh::{
 };
 use sdv_sd_mesh_api::sdv_sd_mesh_grpc::{create_mesh_manager, MeshManager};
 
-use crate::authz::proto::to_peer_local_acls_proto;
+use crate::authz::proto::{from_peer_local_acls_proto, to_peer_local_acls_proto};
 use crate::ca::service::RootCertCommand;
 use crate::kv::{ServiceRegistry, ServiceUnitEvent};
 use crate::mesh::aidl_to_proto::ToProto;
@@ -39,8 +40,6 @@ use crate::mesh::VvmConfig;
 use crypto_rpc::cert::base32_x509_common_name_to_string;
 use std::ops::Mul;
 use std::sync::Arc;
-
-use sdv_authz_local_vm_acl_policy_provider_factory::create_local_vm_acl_policy_provider;
 
 use futures::{stream, SinkExt, StreamExt};
 use futures_util::future::{FutureExt as _, TryFutureExt as _};
@@ -182,27 +181,7 @@ impl LockedMesh {
 
         let vm_name = extract_vm_name_from_root_cert(root_cert.as_slice())?;
 
-        let auth_ctx = match ctx.auth_context() {
-            Some(auth_ctx) => auth_ctx,
-            None => {
-                error!("No auth context available");
-                return Err(RpcStatus::new(RpcStatusCode::UNAUTHENTICATED));
-            }
-        };
-
-        // Extra check, given that it's not possible for a client to connect to the gRPC server in
-        // a locked-mesh configuration without authentication. Connections must be mutually
-        // authenticated TLS in a locked mesh.
-        if !auth_ctx.peer_is_authenticated() {
-            error!("Peer is not authenticated");
-            return Err(RpcStatus::new(RpcStatusCode::UNAUTHENTICATED));
-        }
-
-        // The name of the SDV VM instance where the peer service discovery agent is running,
-        // which is the gRPC client that called this method.
-        // That name is stated in the gRPC client's certificate subject used in the DICE-based
-        // TLS authentication. See crate::mesh::credentials_checker::CredentialsChecker.
-        let peer_vm_name = get_vm_name_from_auth_ctx(&auth_ctx)?;
+        let peer_vm_name = extract_vm_name_from_rpc_context(ctx)?;
         if peer_vm_name != vm_name {
             error!(
                 "VM name mismatch: root cert is for '{vm_name}', but TLS identity is for \
@@ -308,7 +287,7 @@ pub(crate) trait ServerFactory: Send {
 }
 
 struct ServerFactoryImpl {
-    local_vm_acl_policy_provider: Arc<dyn SingleVmAclPolicyProvider>,
+    mesh_acl_policy_provider: Arc<MeshAclPolicyProvider>,
     service_registry: Arc<ServiceRegistry>,
     vvm_config: Arc<VvmConfig>,
     mesh_mode: MeshMode,
@@ -351,7 +330,7 @@ impl ServerFactoryImpl {
         let socket_addr_str = self.vvm_config.own_cfg.addr.to_string();
 
         let mesh_manager_service = MeshManagerService::new(
-            self.local_vm_acl_policy_provider.clone(),
+            self.mesh_acl_policy_provider.clone(),
             self.service_registry.clone(),
             self.vvm_config.clone(),
             self.mesh_mode.clone(),
@@ -378,7 +357,7 @@ impl ServerFactoryImpl {
 
 #[derive(Clone)]
 struct MeshManagerService {
-    local_vm_acl_policy_provider: Arc<dyn SingleVmAclPolicyProvider>,
+    mesh_acl_policy_provider: Arc<MeshAclPolicyProvider>,
     service_registry: Arc<ServiceRegistry>,
     vvm_config: Arc<VvmConfig>,
     mesh_mode: MeshMode,
@@ -387,14 +366,14 @@ struct MeshManagerService {
 
 impl MeshManagerService {
     fn new(
-        local_vm_acl_policy_provider: Arc<dyn SingleVmAclPolicyProvider>,
+        mesh_acl_policy_provider: Arc<MeshAclPolicyProvider>,
         service_registry: Arc<ServiceRegistry>,
         vvm_config: Arc<VvmConfig>,
         mesh_mode: MeshMode,
         new_client_notifier: broadcast::Sender<()>,
     ) -> Self {
         MeshManagerService {
-            local_vm_acl_policy_provider,
+            mesh_acl_policy_provider,
             service_registry,
             vvm_config,
             mesh_mode,
@@ -404,6 +383,27 @@ impl MeshManagerService {
 
     fn notify_new_client(&mut self) {
         let _ = self.new_client_notifier.send(());
+    }
+
+    fn set_peer_acls(
+        &mut self,
+        ctx: &RpcContext,
+        req: GetPeerLocalAclsRequest,
+    ) -> Result<(), RpcStatus> {
+        let caller_vm = VmName::from_str(&req.vm_name)
+            .map_err(|_| RpcStatus::new(RpcStatusCode::INVALID_ARGUMENT))?;
+
+        let verified_caller_vm = match self.mesh_mode {
+            MeshMode::Locked(_) => extract_vm_name_from_rpc_context(ctx)?,
+            MeshMode::Unlocked(_) => caller_vm,
+        };
+
+        let caller_acls = from_peer_local_acls_proto(req.service_bundle_acl_policies)
+            .map_err(|_| RpcStatus::new(RpcStatusCode::INVALID_ARGUMENT))?;
+
+        self.mesh_acl_policy_provider
+            .set_remote_acl_policy_provider(verified_caller_vm, Box::new(caller_acls));
+        Ok(())
     }
 }
 
@@ -490,11 +490,32 @@ impl MeshManager for MeshManagerService {
     fn get_peer_local_acls(
         &mut self,
         ctx: RpcContext,
-        _req: GetPeerLocalAclsRequest,
+        req: GetPeerLocalAclsRequest,
         sink: UnarySink<GetPeerLocalAclsResponse>,
     ) {
-        let result = match to_peer_local_acls_proto(self.local_vm_acl_policy_provider.as_ref()) {
-            Ok(proto) => sink.success(proto),
+        if req.vm_name.is_empty() {
+            info!(
+                "Empty VM name argument provided for GetPeerLocalAcls RPC call. \
+                Peer is pre-SDV 2.0 VM."
+            )
+        } else {
+            // Set caller's VM ACLs from GetPeerLocalAclsRequest proto.
+            if let Err(err) = self.set_peer_acls(&ctx, req) {
+                error!("Failed to set peer ACLs: {err:?}");
+                ctx.spawn(
+                    sink.fail(RpcStatus::new(RpcStatusCode::INTERNAL))
+                        .map_err(move |e| error!("failed to reply: {e:?}"))
+                        .map(|_| ()),
+                );
+                return;
+            }
+        }
+
+        let result = match to_peer_local_acls_proto(self.mesh_acl_policy_provider.as_ref()) {
+            Ok(service_bundle_acl_policies) => sink.success(GetPeerLocalAclsResponse {
+                service_bundle_acl_policies,
+                ..Default::default()
+            }),
             Err(err) => {
                 error!("Failed to fetch local ACL policy to send over mesh: {err:?}");
                 sink.fail(RpcStatus::new(RpcStatusCode::INTERNAL))
@@ -613,6 +634,29 @@ fn get_vm_name_from_auth_ctx(auth_ctx: &AuthContext) -> Result<VmName, RpcStatus
     Err(RpcStatus::new(RpcStatusCode::UNAUTHENTICATED))
 }
 
+/// Extracts the VM name from the peer's certificate stored in the gRPC authentication context.
+///
+/// The name of the SDV VM instance where the peer service discovery agent is running,
+/// which is the gRPC client that called this method.
+/// That name is stated in the gRPC client's certificate subject used in the DICE-based
+/// TLS authentication. See crate::mesh::credentials_checker::CredentialsChecker.
+fn extract_vm_name_from_rpc_context(ctx: &RpcContext) -> Result<VmName, RpcStatus> {
+    let auth_ctx = ctx.auth_context().ok_or_else(|| {
+        error!("No auth context available");
+        RpcStatus::new(RpcStatusCode::UNAUTHENTICATED)
+    })?;
+
+    // Extra check, given that it's not possible for a client to connect to the gRPC server in
+    // a locked-mesh configuration without authentication. Connections must be mutually
+    // authenticated TLS in a locked mesh.
+    if !auth_ctx.peer_is_authenticated() {
+        error!("Peer is not authenticated");
+        return Err(RpcStatus::new(RpcStatusCode::UNAUTHENTICATED));
+    }
+
+    get_vm_name_from_auth_ctx(&auth_ctx)
+}
+
 pub struct LockedMeshServiceControllerBuilder {
     pub service_registry: Arc<ServiceRegistry>,
     pub vvm_config: Arc<VvmConfig>,
@@ -625,12 +669,13 @@ pub struct LockedMeshServiceControllerBuilder {
     pub sd_priv: PKey<Private>,
     pub credentials_checker: CredentialsChecker,
     pub server_port_tx: watch::Sender<Option<u16>>,
+    pub mesh_acl_policy_provider: Arc<MeshAclPolicyProvider>,
 }
 
 impl LockedMeshServiceControllerBuilder {
     pub fn build(self) -> anyhow::Result<MeshServiceController> {
         let server_factory = Box::new(ServerFactoryImpl {
-            local_vm_acl_policy_provider: create_local_vm_acl_policy_provider()?,
+            mesh_acl_policy_provider: self.mesh_acl_policy_provider,
             service_registry: self.service_registry,
             vvm_config: self.vvm_config,
             mesh_mode: MeshMode::new_locked(
@@ -663,6 +708,7 @@ pub struct UnlockedMeshServiceControllerBuilder {
     pub mesh_manager_wake_notifier: broadcast::Sender<()>,
     pub env: Arc<Environment>,
     pub server_port_tx: watch::Sender<Option<u16>>,
+    pub mesh_acl_policy_provider: Arc<MeshAclPolicyProvider>,
 }
 
 /// Specifies in which mode the mesh is and carries any extra data that MeshServiceController needs
@@ -693,7 +739,7 @@ pub struct MeshServiceController {
 impl UnlockedMeshServiceControllerBuilder {
     pub fn build(self) -> anyhow::Result<MeshServiceController> {
         let server_factory = Box::new(ServerFactoryImpl {
-            local_vm_acl_policy_provider: create_local_vm_acl_policy_provider()?,
+            mesh_acl_policy_provider: self.mesh_acl_policy_provider,
             service_registry: self.service_registry,
             vvm_config: self.vvm_config,
             mesh_mode: MeshMode::new_unlocked(self.local_vm_uds_pubs)?,
@@ -830,6 +876,11 @@ mod tests {
     use crate::mesh::peer_connection::test_support::wait_for;
     use crate::mesh::uds_pubs::test_support::{create_example_key1, create_example_key2};
     use crate::mesh::vvm_config::{create_test_uds_ca_pub, VmConfig};
+    use sdv_sd_mesh_api::sdv_sd_mesh::ServiceBundleAclPolicy;
+
+    use sdv_authz::AclPolicyModel;
+    use sdv_authz::AclPolicyProvider;
+
     struct FakeGracePeriodSleeper {
         notify: Arc<Notify>,
     }
@@ -895,7 +946,10 @@ mod tests {
         let vvm_config = Arc::new(vvm_config);
 
         let server_factory = ServerFactoryImpl {
-            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            mesh_acl_policy_provider: Arc::new(MeshAclPolicyProvider::new(
+                vvm_config.own_cfg.name.clone(),
+                Arc::new(TestSingleVmAclPolicyProvider::new()),
+            )),
             service_registry: Arc::new(ServiceRegistry::default()),
             vvm_config: vvm_config.clone(),
             mesh_mode: MeshMode::Locked(locked_mesh.clone()),
@@ -1028,7 +1082,10 @@ mod tests {
         let vvm_config = Arc::new(vvm_config);
 
         let server_factory = ServerFactoryImpl {
-            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            mesh_acl_policy_provider: Arc::new(MeshAclPolicyProvider::new(
+                vvm_config.own_cfg.name.clone(),
+                Arc::new(TestSingleVmAclPolicyProvider::new()),
+            )),
             service_registry: Arc::new(ServiceRegistry::default()),
             vvm_config: vvm_config.clone(),
             mesh_mode: MeshMode::Locked(locked_mesh.clone()),
@@ -1131,7 +1188,10 @@ mod tests {
         );
 
         let server_factory = ServerFactoryImpl {
-            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            mesh_acl_policy_provider: Arc::new(MeshAclPolicyProvider::new(
+                vvm_config.own_cfg.name.clone(),
+                Arc::new(TestSingleVmAclPolicyProvider::new()),
+            )),
             service_registry: Arc::new(ServiceRegistry::default()),
             vvm_config: vvm_config.clone(),
             mesh_mode,
@@ -1208,7 +1268,10 @@ mod tests {
         let (new_client_notifier, _) = broadcast::channel(1);
 
         let server_factory = ServerFactoryImpl {
-            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            mesh_acl_policy_provider: Arc::new(MeshAclPolicyProvider::new(
+                vvm_config.own_cfg.name.clone(),
+                Arc::new(TestSingleVmAclPolicyProvider::new()),
+            )),
             service_registry: Arc::new(ServiceRegistry::default()),
             vvm_config: vvm_config.clone(),
             mesh_mode,
@@ -1264,7 +1327,10 @@ mod tests {
         let vvm_config = Arc::new(prepare_test_vm_config().unwrap());
 
         let server_factory = ServerFactoryImpl {
-            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            mesh_acl_policy_provider: Arc::new(MeshAclPolicyProvider::new(
+                vvm_config.own_cfg.name.clone(),
+                Arc::new(TestSingleVmAclPolicyProvider::new()),
+            )),
             service_registry: Arc::new(ServiceRegistry::default()),
             vvm_config: vvm_config.clone(),
             mesh_mode: MeshMode::Locked(locked_mesh),
@@ -1318,7 +1384,10 @@ mod tests {
         );
 
         let server_factory = ServerFactoryImpl {
-            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            mesh_acl_policy_provider: Arc::new(MeshAclPolicyProvider::new(
+                vvm_config.own_cfg.name.clone(),
+                Arc::new(TestSingleVmAclPolicyProvider::new()),
+            )),
             service_registry: service_registry.clone(),
             vvm_config: vvm_config.clone(),
             mesh_mode: MeshMode::new_locked(
@@ -1408,9 +1477,13 @@ mod tests {
         .unwrap();
         acl_policy_provider.add_policy(package_name.clone(), service_name.clone(), acl_policy);
         let acl_policy_provider = Arc::new(acl_policy_provider);
+        let mesh_acl_policy_provider = Arc::new(MeshAclPolicyProvider::new(
+            vvm_config.own_cfg.name.clone(),
+            acl_policy_provider.clone(),
+        ));
 
         let server_factory = ServerFactoryImpl {
-            local_vm_acl_policy_provider: acl_policy_provider.clone(),
+            mesh_acl_policy_provider: mesh_acl_policy_provider.clone(),
             service_registry: Arc::new(ServiceRegistry::default()),
             vvm_config: vvm_config.clone(),
             mesh_mode,
@@ -1431,12 +1504,141 @@ mod tests {
             .await
             .unwrap();
 
-        let response =
-            client.get_peer_local_acls(&GetPeerLocalAclsRequest::default()).await.unwrap();
+        let caller_vm_name = VmName::from_str("caller-vm-name").unwrap();
+        let request = GetPeerLocalAclsRequest {
+            vm_name: caller_vm_name.clone().into(),
+            service_bundle_acl_policies: vec![
+                text_format::parse_from_str::<ServiceBundleAclPolicy>(
+                    r#"
+                    package_name: "com.sdv.sd_test"
+                    service_bundle_name: "MeshServiceTest"
+                    acl_policy {
+                        acls {
+                            name: "Acl"
+                            include: "*"
+                        }
+                        service_units {
+                            name: "test-service-unit"
+                            acl_names: "Acl"
+                        }
+                    }
+                "#,
+                )
+                .unwrap(),
+            ],
+            ..Default::default()
+        };
+        let response = client.get_peer_local_acls(&request).await.unwrap();
 
-        let expected_response = to_peer_local_acls_proto(acl_policy_provider.as_ref()).unwrap();
+        // Verify request data was handled correctly:
+        // 1. The "caller-vm-name" was added to the available VM names
+        assert_eq!(
+            mesh_acl_policy_provider.get_available_vm_names(),
+            vec![own_vm_name.clone(), caller_vm_name.clone()]
+        );
+        // 2. Caller's ACL policies were correctly parsed
+        assert_eq!(
+            mesh_acl_policy_provider
+                .get_acl_policy(
+                    &caller_vm_name,
+                    &PackageName::from_str("com.sdv.sd_test").unwrap(),
+                    Some(&ServiceName::from_str("MeshServiceTest").unwrap())
+                )
+                .unwrap(),
+            AclPolicyModel::try_from(
+                text_format::parse_from_str::<AclPolicyProto>(
+                    r#"
+                        acls {
+                            name: "Acl"
+                            include: "*"
+                        }
+                        service_units {
+                            name: "test-service-unit"
+                            acl_names: "Acl"
+                        }
+                    "#,
+                )
+                .unwrap()
+            )
+            .unwrap()
+            .into()
+        );
 
-        assert_eq!(response, expected_response);
+        // Verify expected response.
+        let expected_response =
+            to_peer_local_acls_proto(mesh_acl_policy_provider.as_ref()).unwrap();
+        assert_eq!(response.service_bundle_acl_policies, expected_response);
+    }
+
+    /// Tests the MeshManager::GetPeerLocalAcls() gRPC method, with the service configured in
+    /// unlocked mesh mode, when called by a legacy client (without ACL policies / VM name).
+    #[tokio::test]
+    async fn unlocked_service_get_peer_local_acls_by_legacy_client() {
+        use protobuf::text_format;
+        use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
+        use std::str::FromStr;
+
+        let vvm_config = Arc::new(prepare_test_vm_config().unwrap());
+
+        let local_uds_keys = vec![create_example_key1(), create_example_key2()];
+        let mesh_mode = MeshMode::new_unlocked(local_uds_keys.clone()).unwrap();
+
+        let (new_client_notifier, _) = broadcast::channel(1);
+
+        let mut acl_policy_provider = TestSingleVmAclPolicyProvider::new();
+        let package_name = PackageName::from_str("com.google.test").unwrap();
+        let service_name = ServiceName::from_str("TestService").unwrap();
+        let acl_policy = text_format::parse_from_str::<AclPolicyProto>(
+            r#"
+                acls {
+                    name: "Acl"
+                    include: "*"
+                }
+                service_units {
+                    name: "test-service-unit"
+                    acl_names: "Acl"
+                }
+            "#,
+        )
+        .unwrap();
+        acl_policy_provider.add_policy(package_name.clone(), service_name.clone(), acl_policy);
+        let acl_policy_provider = Arc::new(acl_policy_provider);
+        let mesh_acl_policy_provider = Arc::new(MeshAclPolicyProvider::new(
+            vvm_config.own_cfg.name.clone(),
+            acl_policy_provider.clone(),
+        ));
+
+        let server_factory = ServerFactoryImpl {
+            mesh_acl_policy_provider: mesh_acl_policy_provider.clone(),
+            service_registry: Arc::new(ServiceRegistry::default()),
+            vvm_config: vvm_config.clone(),
+            mesh_mode,
+            new_client_notifier,
+        };
+
+        let env = Arc::new(EnvBuilder::new().build());
+        let (_server, bound_port) =
+            server_factory.start(env.clone(), ServerCredentials::insecure()).unwrap();
+
+        let mut actual_server_addr = vvm_config.own_cfg.addr;
+        actual_server_addr.set_port(bound_port);
+
+        let mesh_connector = UnsecureMeshConnector {};
+        let own_vm_name = vvm_config.own_cfg.name.clone();
+        let client = mesh_connector
+            .try_connect(env, &actual_server_addr, own_vm_name.as_ref())
+            .await
+            .unwrap();
+
+        // Call GetPeerLocalAcls() with empty request, to emulate legacy client
+        // => server should handle it gracefully.
+        let request = GetPeerLocalAclsRequest::default();
+        let response = client.get_peer_local_acls(&request).await.unwrap();
+
+        // Verify expected response.
+        let expected_response =
+            to_peer_local_acls_proto(mesh_acl_policy_provider.as_ref()).unwrap();
+        assert_eq!(response.service_bundle_acl_policies, expected_response);
     }
 
     #[test]
@@ -1518,7 +1720,10 @@ mod tests {
         }
 
         let server_factory = ServerFactoryImpl {
-            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            mesh_acl_policy_provider: Arc::new(MeshAclPolicyProvider::new(
+                vvm_config.own_cfg.name.clone(),
+                Arc::new(TestSingleVmAclPolicyProvider::new()),
+            )),
             service_registry,
             vvm_config: vvm_config.clone(),
             mesh_mode: MeshMode::new_locked(
@@ -1583,7 +1788,10 @@ mod tests {
         );
 
         let server_factory = Box::new(ServerFactoryImpl {
-            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            mesh_acl_policy_provider: Arc::new(MeshAclPolicyProvider::new(
+                vvm_config.own_cfg.name.clone(),
+                Arc::new(TestSingleVmAclPolicyProvider::new()),
+            )),
             service_registry: Arc::new(ServiceRegistry::default()),
             vvm_config: vvm_config.clone(),
             mesh_mode,
@@ -1708,7 +1916,10 @@ mod tests {
         let mesh_mode = MeshMode::new_unlocked(local_uds_keys.clone()).unwrap();
 
         let server_factory = Box::new(ServerFactoryImpl {
-            local_vm_acl_policy_provider: Arc::new(TestSingleVmAclPolicyProvider::new()),
+            mesh_acl_policy_provider: Arc::new(MeshAclPolicyProvider::new(
+                vvm_config.own_cfg.name.clone(),
+                Arc::new(TestSingleVmAclPolicyProvider::new()),
+            )),
             service_registry: Arc::new(ServiceRegistry::default()),
             vvm_config: vvm_config.clone(),
             mesh_mode,
