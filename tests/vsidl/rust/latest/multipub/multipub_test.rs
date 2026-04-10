@@ -65,8 +65,8 @@ mod test {
         .await
         .expect("taking footwell pub failed.");
 
-        // AND GIVEN a 'multipub' subscriber, observer
-        // and history reader (see VSIDL declaration).
+        // AND GIVEN a 'multipub' subscriber, observer,
+        // history and instant reader (see VSIDL declaration).
         let subscriber = sdv::mw::clientlib::create_subscriber(
             sdv_comms.as_ref(),
             HvacSubscriberDescriptors::<CabinTemperature>::MULTIPUB,
@@ -88,6 +88,13 @@ mod test {
         )
         .await
         .expect("Create CabinTemperature history reader failed.");
+        let instant_reader = sdv::mw::clientlib::create_instant_reader(
+            sdv_comms.as_ref(),
+            HvacSubscriberDescriptors::<CabinTemperature>::MULTIPUB,
+            &SubscribeOptions::default(),
+        )
+        .await
+        .expect("Create InstantRead should succeed with valid parameter.");
 
         // SLEEP to ensure the multiplexer is created on a separate process.
         thread::sleep(MULTIPUB_PROCESSING_DURATION);
@@ -139,15 +146,6 @@ mod test {
         assert_eq!(history_buf.len(), 2);
         assert!(history_buf.contains(&cabin_temp));
         assert!(history_buf.contains(&footwell_temp));
-
-        // WHEN trying to instant read a multipub message.
-        let instant_reader = sdv::mw::clientlib::create_instant_reader(
-            sdv_comms.as_ref(),
-            HvacSubscriberDescriptors::<CabinTemperature>::MULTIPUB,
-            &SubscribeOptions::default(),
-        )
-        .await
-        .expect("Create InstantRead should succeed with valid parameter.");
 
         // WHEN dropping both publishers
         drop(cabin_pub);
