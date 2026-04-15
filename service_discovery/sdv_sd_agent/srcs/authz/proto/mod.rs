@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Functions to create/parse GetPeerLocalAclsResponse proto message.
+//! Functions to create/parse Vec<ServiceBundleAclPolicy>.
 
 pub(crate) mod from_peer_local_acls_proto;
 pub(crate) mod to_peer_local_acls_proto;

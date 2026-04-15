@@ -15,6 +15,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::{from_peer_local_acls_proto, to_peer_local_acls_proto};
+    use crate::authz::MeshAclPolicyProvider;
 
     use std::collections::HashMap;
     use std::str::FromStr;
@@ -106,7 +107,11 @@ mod tests {
             expected_acl_policy.clone(),
         );
 
-        let proto = to_peer_local_acls_proto(&local_provider).unwrap();
+        let mesh_provider = MeshAclPolicyProvider::new(
+            VmName::from_str("local-vm").unwrap(),
+            std::sync::Arc::new(local_provider),
+        );
+        let proto = to_peer_local_acls_proto(&mesh_provider).unwrap();
         let remote_provider = from_peer_local_acls_proto(proto).unwrap();
 
         let actual_acl_policy = remote_provider

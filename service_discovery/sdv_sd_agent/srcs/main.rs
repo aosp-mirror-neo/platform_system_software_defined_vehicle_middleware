@@ -473,7 +473,7 @@ fn setup_locked_mode(
     let root_cert_pem = pkey_and_cert.root_cert.to_pem()?;
 
     let mesh_manager_params = MeshManagerParams {
-        mesh_acl_policy_provider,
+        mesh_acl_policy_provider: mesh_acl_policy_provider.clone(),
         service_registry: service_registry.clone(),
         authz_service: authz_service.clone(),
         vvm_config: vvm_config.clone(),
@@ -500,6 +500,7 @@ fn setup_locked_mode(
         sd_cert,
         sd_priv,
         credentials_checker,
+        mesh_acl_policy_provider,
     }
     .build()?;
 
@@ -535,7 +536,7 @@ fn setup_unlocked_mode(
     )?));
 
     let mesh_manager_params = MeshManagerParams {
-        mesh_acl_policy_provider,
+        mesh_acl_policy_provider: mesh_acl_policy_provider.clone(),
         service_registry: service_registry.clone(),
         authz_service: authz_service.clone(),
         vvm_config: vvm_config.clone(),
@@ -557,6 +558,7 @@ fn setup_unlocked_mode(
         local_vm_uds_pubs,
         mesh_manager_wake_notifier,
         env,
+        mesh_acl_policy_provider,
     }
     .build()?;
 

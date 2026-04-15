@@ -12,25 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Uses local VM ACL policy provider to create a GetPeerLocalAclsResponse proto message.
+//! Uses local VM ACL policy provider to create a Vec<ServiceBundleAclPolicy>.
 
-use sdv_authz::SingleVmAclPolicyProvider;
+use crate::MeshAclPolicyProvider;
+
 use sdv_authz_policy_proto_rust::authz_policy::AuthzPolicy as AclPolicyProto;
-use sdv_sd_mesh_api::sdv_sd_mesh::{
-    get_peer_local_acls_response::ServiceBundleAclPolicy, GetPeerLocalAclsResponse,
-};
+use sdv_sd_mesh_api::sdv_sd_mesh::ServiceBundleAclPolicy;
 
 use anyhow::{anyhow, Context};
 use protobuf::MessageDyn;
 use protobuf::MessageField;
 use tracing::{instrument, trace};
 
-/// Uses SingleVmAclPolicyProvider to crate GetPeerLocalAclsResponse proto message.
+/// Uses SingleVmAclPolicyProvider to create Vec<ServiceBundleAclPolicy>.
 #[instrument(name = "authz_perf::mesh::to_peer_local_acls_proto", skip_all)]
 pub(crate) fn to_peer_local_acls_proto(
-    provider: &dyn SingleVmAclPolicyProvider,
-) -> Result<GetPeerLocalAclsResponse, anyhow::Error> {
-    let mut response: GetPeerLocalAclsResponse = Default::default();
+    provider: &MeshAclPolicyProvider,
+) -> Result<Vec<ServiceBundleAclPolicy>, anyhow::Error> {
+    let mut result: Vec<ServiceBundleAclPolicy> = Vec::new();
+    let provider = provider.get_local_vm_acl_policy_provider();
 
     let subjects = provider
         .get_namespace_with_acl_policy()
@@ -59,10 +59,14 @@ pub(crate) fn to_peer_local_acls_proto(
             ..Default::default()
         };
 
-        response.service_bundle_acl_policies.push(item);
+        result.push(item);
     }
 
-    trace!(name: "authz_perf::provider::get_peer_local_acls_response_proto", size_bytes = response.compute_size_dyn(), subjects_with_acls_count = subjects.len());
+    trace!(
+        name: "authz_perf::provider::get_peer_local_acls_response_proto",
+        size_bytes = result.iter().fold(0, |acc, item| acc + item.compute_size_dyn()),
+        subjects_with_acls_count = subjects.len()
+    );
 
-    Ok(response)
+    Ok(result)
 }
